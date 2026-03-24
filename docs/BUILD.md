@@ -36,6 +36,21 @@ cmd /c "call \"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC
 cmake --build --preset default
 ```
 
+From the repo root on Windows, the fastest local workflow is now:
+
+```bat
+build.bat
+```
+
+Useful variants:
+
+```bat
+build.bat clean
+build.bat release clean
+build.bat notest
+build.bat debug
+```
+
 For the verified local MSVC build directory:
 
 ```powershell
@@ -59,5 +74,10 @@ cmd /c "call \"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC
 - LM Studio should expose the OpenAI-compatible API on `http://localhost:1234`
 - The app discovers models from `/v1/models`
 - Voice generation starts only when sentence boundaries are detected from streamed output
+- The default premium voice profile targets a calm English delivery:
+  - preferred Piper voice families: `en_GB-*` medium voices, especially `en_GB-alba-medium`
+  - enforced speed range: `0.85` to `0.92`
+  - enforced lowered pitch range: `0.90` to `0.97`
+  - FFmpeg post-processing adds mild EQ, light reverb, compression, and limiting
 - Identity is loaded from `config/identity.json`
 - User profile is loaded from `config/user_profile.json`

@@ -18,6 +18,18 @@ Window {
         hide()
     }
 
+    onVisibleChanged: {
+        if (!visible) {
+            return
+        }
+
+        backend.refreshAudioDevices()
+        const inputIndex = backend.audioInputDeviceIds.indexOf(backend.selectedAudioInputDeviceId)
+        inputDeviceCombo.currentIndex = inputIndex >= 0 ? inputIndex : 0
+        const outputIndex = backend.audioOutputDeviceIds.indexOf(backend.selectedAudioOutputDeviceId)
+        outputDeviceCombo.currentIndex = outputIndex >= 0 ? outputIndex : 0
+    }
+
     JarvisUi.AnimationController {
         id: heroMotion
         stateName: "PROCESSING"

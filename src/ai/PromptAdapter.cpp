@@ -42,7 +42,10 @@ QList<AiMessage> PromptAdapter::buildConversationMessages(
                        "Maintain a %3 tone. "
                        "Address the user with a %4 style. "
                        "Respond with concise, confident, minimal verbosity. "
-                       "Stay practical and directly useful.")
+                       "Use short, clean sentences. "
+                       "Avoid filler words and long paragraphs. "
+                       "When a reply may be spoken aloud, use natural punctuation for calm pauses. "
+                       "Sound intelligent, precise, controlled, and directly useful.")
             .arg(identity.assistantName, identity.personality, identity.tone, identity.addressingStyle);
 
     systemPrompt += QStringLiteral("\nUser profile:");

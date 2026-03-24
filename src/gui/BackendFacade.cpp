@@ -60,12 +60,6 @@ QString findFileRecursive(const QString &rootPath, const QString &fileName)
 
 QString detectPiperVoiceModel(const QString &appDataRoot)
 {
-    const QStringList patterns = {
-        QStringLiteral("en_GB-*.onnx"),
-        QStringLiteral("en_US-*.onnx"),
-        QStringLiteral("*.onnx")
-    };
-
     const QStringList roots = {
         appDataRoot + QStringLiteral("/tools/piper-voices"),
         appDataRoot + QStringLiteral("/tools/piper"),
@@ -73,10 +67,33 @@ QString detectPiperVoiceModel(const QString &appDataRoot)
         QStringLiteral(JARVIS_SOURCE_DIR) + QStringLiteral("/models")
     };
 
+    const QStringList preferredFiles = {
+        QStringLiteral("en_GB-alba-medium.onnx"),
+        QStringLiteral("en_GB-northern_english_male-medium.onnx"),
+        QStringLiteral("en_GB-southern_english_female-medium.onnx"),
+        QStringLiteral("en_US-ryan-medium.onnx")
+    };
+
+    const QStringList patterns = {
+        QStringLiteral("en_GB-*-medium.onnx"),
+        QStringLiteral("en_GB-*.onnx"),
+        QStringLiteral("en_US-*-medium.onnx"),
+        QStringLiteral("en_US-*.onnx"),
+        QStringLiteral("*-medium.onnx"),
+        QStringLiteral("*.onnx")
+    };
+
     for (const QString &rootPath : roots) {
         QDir root(rootPath);
         if (!root.exists()) {
             continue;
+        }
+
+        for (const QString &preferred : preferredFiles) {
+            const QString directMatch = findFileRecursive(rootPath, preferred);
+            if (!directMatch.isEmpty()) {
+                return directMatch;
+            }
         }
 
         for (const QString &pattern : patterns) {
@@ -265,8 +282,8 @@ void BackendFacade::completeInitialSetup(
         piperPath,
         voicePath,
         ffmpegPath,
-        0.88,
-        0.94,
+        0.89,
+        0.93,
         0.02,
         audioInputDeviceId,
         audioOutputDeviceId,
@@ -402,7 +419,7 @@ function Install-LatestZip {
         throw "Unable to find a matching release asset for $Repo"
     }
 
-    $zipPath = Join-Path $toolsRoot ($Repo.Replace('/','_') + '.zip')
+    $zipPath = Join-Path $toolsRoot (($Repo -replace '/', '_') + '.zip')
     Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zipPath
     if (Test-Path $Destination) { Remove-Item -Recurse -Force $Destination }
     Expand-Archive -Path $zipPath -DestinationPath $Destination -Force
@@ -438,7 +455,7 @@ if (-not (Test-Path $voiceModel)) {
 if (-not (Test-Path $voiceJson)) {
     Invoke-WebRequest -Uri 'https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/alba/medium/en_GB-alba-medium.onnx.json?download=true' -OutFile $voiceJson
 }
-)POWERSHELL").arg(toolsRoot.replace("'", "''"));
+)POWERSHELL").arg(toolsRoot);
 
     QProcess installer;
     installer.start(

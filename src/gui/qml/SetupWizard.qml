@@ -35,6 +35,7 @@ Window {
 
     onVisibleChanged: {
         if (visible) {
+            backend.refreshAudioDevices()
             syncVoiceFieldsFromBackend()
         }
     }

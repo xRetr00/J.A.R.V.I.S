@@ -1,5 +1,7 @@
 #include "settings/AppSettings.h"
 
+#include <algorithm>
+
 #include <QDir>
 #include <QFile>
 #include <QStandardPaths>
@@ -7,6 +9,13 @@
 #include <nlohmann/json.hpp>
 
 namespace {
+constexpr double kMinVoiceSpeed = 0.85;
+constexpr double kMaxVoiceSpeed = 0.92;
+constexpr double kDefaultVoiceSpeed = 0.89;
+constexpr double kMinVoicePitch = 0.90;
+constexpr double kMaxVoicePitch = 0.97;
+constexpr double kDefaultVoicePitch = 0.93;
+
 QString settingsFilePath()
 {
     const auto root = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
@@ -39,6 +48,16 @@ ReasoningMode reasoningModeFromString(const QString &value)
     }
 
     return ReasoningMode::Balanced;
+}
+
+double clampVoiceSpeed(double value)
+{
+    return std::clamp(value, kMinVoiceSpeed, kMaxVoiceSpeed);
+}
+
+double clampVoicePitch(double value)
+{
+    return std::clamp(value, kMinVoicePitch, kMaxVoicePitch);
 }
 }
 
@@ -74,8 +93,8 @@ bool AppSettings::load()
     m_piperExecutable = QString::fromStdString(parsed.value("piperExecutable", std::string{}));
     m_piperVoiceModel = QString::fromStdString(parsed.value("piperVoiceModel", std::string{}));
     m_ffmpegExecutable = QString::fromStdString(parsed.value("ffmpegExecutable", std::string{}));
-    m_voiceSpeed = parsed.value("voiceSpeed", 0.88);
-    m_voicePitch = parsed.value("voicePitch", 0.94);
+    m_voiceSpeed = clampVoiceSpeed(parsed.value("voiceSpeed", kDefaultVoiceSpeed));
+    m_voicePitch = clampVoicePitch(parsed.value("voicePitch", kDefaultVoicePitch));
     m_micSensitivity = parsed.value("micSensitivity", 0.02);
     m_selectedAudioInputDeviceId = QString::fromStdString(parsed.value("selectedAudioInputDeviceId", std::string{}));
     m_selectedAudioOutputDeviceId = QString::fromStdString(parsed.value("selectedAudioOutputDeviceId", std::string{}));
@@ -137,9 +156,9 @@ void AppSettings::setPiperVoiceModel(const QString &path) { m_piperVoiceModel = 
 QString AppSettings::ffmpegExecutable() const { return m_ffmpegExecutable; }
 void AppSettings::setFfmpegExecutable(const QString &path) { m_ffmpegExecutable = path; emit settingsChanged(); }
 double AppSettings::voiceSpeed() const { return m_voiceSpeed; }
-void AppSettings::setVoiceSpeed(double speed) { m_voiceSpeed = speed; emit settingsChanged(); }
+void AppSettings::setVoiceSpeed(double speed) { m_voiceSpeed = clampVoiceSpeed(speed); emit settingsChanged(); }
 double AppSettings::voicePitch() const { return m_voicePitch; }
-void AppSettings::setVoicePitch(double pitch) { m_voicePitch = pitch; emit settingsChanged(); }
+void AppSettings::setVoicePitch(double pitch) { m_voicePitch = clampVoicePitch(pitch); emit settingsChanged(); }
 double AppSettings::micSensitivity() const { return m_micSensitivity; }
 void AppSettings::setMicSensitivity(double sensitivity) { m_micSensitivity = sensitivity; emit settingsChanged(); }
 QString AppSettings::selectedAudioInputDeviceId() const { return m_selectedAudioInputDeviceId; }

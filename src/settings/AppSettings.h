@@ -82,8 +82,8 @@ private:
     QString m_piperExecutable;
     QString m_piperVoiceModel;
     QString m_ffmpegExecutable;
-    double m_voiceSpeed = 0.88;
-    double m_voicePitch = 0.94;
+    double m_voiceSpeed = 0.89;
+    double m_voicePitch = 0.93;
     double m_micSensitivity = 0.02;
     QString m_selectedAudioInputDeviceId;
     QString m_selectedAudioOutputDeviceId;
