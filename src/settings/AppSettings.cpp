@@ -59,6 +59,11 @@ double clampVoicePitch(double value)
 {
     return std::clamp(value, kMinVoicePitch, kMaxVoicePitch);
 }
+
+double clampPorcupineSensitivity(double value)
+{
+    return std::clamp(value, 0.1, 0.95);
+}
 }
 
 AppSettings::AppSettings(QObject *parent)
@@ -94,6 +99,11 @@ bool AppSettings::load()
     m_piperExecutable = QString::fromStdString(parsed.value("piperExecutable", std::string{}));
     m_piperVoiceModel = QString::fromStdString(parsed.value("piperVoiceModel", std::string{}));
     m_selectedVoicePresetId = QString::fromStdString(parsed.value("selectedVoicePresetId", m_selectedVoicePresetId.toStdString()));
+    m_porcupineAccessKey = QString::fromStdString(parsed.value("porcupineAccessKey", std::string{}));
+    m_porcupineLibraryPath = QString::fromStdString(parsed.value("porcupineLibraryPath", std::string{}));
+    m_porcupineModelPath = QString::fromStdString(parsed.value("porcupineModelPath", std::string{}));
+    m_porcupineKeywordPath = QString::fromStdString(parsed.value("porcupineKeywordPath", std::string{}));
+    m_porcupineSensitivity = clampPorcupineSensitivity(parsed.value("porcupineSensitivity", 0.65));
     m_ffmpegExecutable = QString::fromStdString(parsed.value("ffmpegExecutable", std::string{}));
     m_voiceSpeed = clampVoiceSpeed(parsed.value("voiceSpeed", kDefaultVoiceSpeed));
     m_voicePitch = clampVoicePitch(parsed.value("voicePitch", kDefaultVoicePitch));
@@ -121,6 +131,11 @@ bool AppSettings::save() const
         {"piperExecutable", m_piperExecutable.toStdString()},
         {"piperVoiceModel", m_piperVoiceModel.toStdString()},
         {"selectedVoicePresetId", m_selectedVoicePresetId.toStdString()},
+        {"porcupineAccessKey", m_porcupineAccessKey.toStdString()},
+        {"porcupineLibraryPath", m_porcupineLibraryPath.toStdString()},
+        {"porcupineModelPath", m_porcupineModelPath.toStdString()},
+        {"porcupineKeywordPath", m_porcupineKeywordPath.toStdString()},
+        {"porcupineSensitivity", m_porcupineSensitivity},
         {"ffmpegExecutable", m_ffmpegExecutable.toStdString()},
         {"voiceSpeed", m_voiceSpeed},
         {"voicePitch", m_voicePitch},
@@ -163,6 +178,16 @@ QString AppSettings::piperVoiceModel() const { return m_piperVoiceModel; }
 void AppSettings::setPiperVoiceModel(const QString &path) { m_piperVoiceModel = path; emit settingsChanged(); }
 QString AppSettings::selectedVoicePresetId() const { return m_selectedVoicePresetId; }
 void AppSettings::setSelectedVoicePresetId(const QString &voicePresetId) { m_selectedVoicePresetId = voicePresetId; emit settingsChanged(); }
+QString AppSettings::porcupineAccessKey() const { return m_porcupineAccessKey; }
+void AppSettings::setPorcupineAccessKey(const QString &accessKey) { m_porcupineAccessKey = accessKey.trimmed(); emit settingsChanged(); }
+QString AppSettings::porcupineLibraryPath() const { return m_porcupineLibraryPath; }
+void AppSettings::setPorcupineLibraryPath(const QString &path) { m_porcupineLibraryPath = path; emit settingsChanged(); }
+QString AppSettings::porcupineModelPath() const { return m_porcupineModelPath; }
+void AppSettings::setPorcupineModelPath(const QString &path) { m_porcupineModelPath = path; emit settingsChanged(); }
+QString AppSettings::porcupineKeywordPath() const { return m_porcupineKeywordPath; }
+void AppSettings::setPorcupineKeywordPath(const QString &path) { m_porcupineKeywordPath = path; emit settingsChanged(); }
+double AppSettings::porcupineSensitivity() const { return m_porcupineSensitivity; }
+void AppSettings::setPorcupineSensitivity(double sensitivity) { m_porcupineSensitivity = clampPorcupineSensitivity(sensitivity); emit settingsChanged(); }
 QString AppSettings::ffmpegExecutable() const { return m_ffmpegExecutable; }
 void AppSettings::setFfmpegExecutable(const QString &path) { m_ffmpegExecutable = path; emit settingsChanged(); }
 double AppSettings::voiceSpeed() const { return m_voiceSpeed; }

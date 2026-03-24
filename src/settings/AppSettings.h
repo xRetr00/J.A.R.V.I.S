@@ -48,6 +48,21 @@ public:
     QString selectedVoicePresetId() const;
     void setSelectedVoicePresetId(const QString &voicePresetId);
 
+    QString porcupineAccessKey() const;
+    void setPorcupineAccessKey(const QString &accessKey);
+
+    QString porcupineLibraryPath() const;
+    void setPorcupineLibraryPath(const QString &path);
+
+    QString porcupineModelPath() const;
+    void setPorcupineModelPath(const QString &path);
+
+    QString porcupineKeywordPath() const;
+    void setPorcupineKeywordPath(const QString &path);
+
+    double porcupineSensitivity() const;
+    void setPorcupineSensitivity(double sensitivity);
+
     QString ffmpegExecutable() const;
     void setFfmpegExecutable(const QString &path);
 
@@ -92,6 +107,11 @@ private:
     QString m_piperExecutable;
     QString m_piperVoiceModel;
     QString m_selectedVoicePresetId = QStringLiteral("en_GB-alba-medium");
+    QString m_porcupineAccessKey;
+    QString m_porcupineLibraryPath;
+    QString m_porcupineModelPath;
+    QString m_porcupineKeywordPath;
+    double m_porcupineSensitivity = 0.65;
     QString m_ffmpegExecutable;
     double m_voiceSpeed = 0.89;
     double m_voicePitch = 0.93;

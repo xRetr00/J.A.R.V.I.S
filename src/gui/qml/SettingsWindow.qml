@@ -34,6 +34,10 @@ Window {
             modelCombo.currentText,
             whisperPathField.text,
             whisperModelPathField.text,
+            porcupineAccessKeyField.text,
+            porcupineLibraryPathField.text,
+            porcupineModelPathField.text,
+            porcupineKeywordPathField.text,
             piperPathField.text,
             voicePathField.text,
             ffmpegPathField.text
@@ -424,6 +428,52 @@ Window {
                     Text { text: "Mic sensitivity"; color: "#c9def3"; font.pixelSize: 13 }
                     Slider { id: micSlider; Layout.fillWidth: true; from: 0.01; to: 0.10; value: backend.micSensitivity }
 
+                    Text { text: "Picovoice AccessKey"; color: "#c9def3"; font.pixelSize: 13 }
+                    TextField {
+                        id: porcupineAccessKeyField
+                        Layout.fillWidth: true
+                        text: backend.porcupineAccessKey
+                        echoMode: TextInput.PasswordEchoOnEdit
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Rectangle { width: 10; height: 10; radius: 5; color: settingsWindow.statusColor(requirementStatus.porcupineAccessKeyOk === true) }
+                        Text { text: "AccessKey: " + settingsWindow.statusText(requirementStatus.porcupineAccessKeyOk === true); color: "#9ab0ca"; font.pixelSize: 12 }
+                    }
+
+                    Text { text: "Porcupine library"; color: "#c9def3"; font.pixelSize: 13 }
+                    TextField { id: porcupineLibraryPathField; Layout.fillWidth: true; text: backend.porcupineLibraryPath }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Rectangle { width: 10; height: 10; radius: 5; color: settingsWindow.statusColor(requirementStatus.porcupineLibraryOk === true) }
+                        Text { text: "Library: " + settingsWindow.statusText(requirementStatus.porcupineLibraryOk === true); color: "#9ab0ca"; font.pixelSize: 12 }
+                    }
+
+                    Text { text: "Porcupine model"; color: "#c9def3"; font.pixelSize: 13 }
+                    TextField { id: porcupineModelPathField; Layout.fillWidth: true; text: backend.porcupineModelPath }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Rectangle { width: 10; height: 10; radius: 5; color: settingsWindow.statusColor(requirementStatus.porcupineModelOk === true) }
+                        Text { text: "Model: " + settingsWindow.statusText(requirementStatus.porcupineModelOk === true); color: "#9ab0ca"; font.pixelSize: 12 }
+                    }
+
+                    Text { text: "Jarvis keyword"; color: "#c9def3"; font.pixelSize: 13 }
+                    TextField { id: porcupineKeywordPathField; Layout.fillWidth: true; text: backend.porcupineKeywordPath }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Rectangle { width: 10; height: 10; radius: 5; color: settingsWindow.statusColor(requirementStatus.porcupineKeywordOk === true) }
+                        Text { text: "Keyword: " + settingsWindow.statusText(requirementStatus.porcupineKeywordOk === true); color: "#9ab0ca"; font.pixelSize: 12 }
+                    }
+
+                    Text { text: "Wake sensitivity"; color: "#c9def3"; font.pixelSize: 13 }
+                    Slider {
+                        id: porcupineSensitivitySlider
+                        Layout.fillWidth: true
+                        from: 0.3
+                        to: 0.9
+                        value: backend.porcupineSensitivity
+                    }
+
                     Text { text: "Input device (microphone)"; color: "#c9def3"; font.pixelSize: 13 }
                     ComboBox {
                         id: inputDeviceCombo
@@ -533,6 +583,11 @@ Window {
                                         timeoutSpin.value,
                                         whisperPathField.text,
                                         whisperModelPathField.text,
+                                        porcupineAccessKeyField.text,
+                                        porcupineLibraryPathField.text,
+                                        porcupineModelPathField.text,
+                                        porcupineKeywordPathField.text,
+                                        porcupineSensitivitySlider.value,
                                         piperPathField.text,
                                         voicePathField.text,
                                         ffmpegPathField.text,

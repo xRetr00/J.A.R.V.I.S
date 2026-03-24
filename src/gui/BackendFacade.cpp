@@ -301,6 +301,63 @@ QString detectWhisperModel(const QString &appDataRoot)
     return {};
 }
 
+QString detectPorcupineLibrary(const QString &appDataRoot)
+{
+    const QStringList roots = {
+        appDataRoot + QStringLiteral("/tools/porcupine"),
+        appDataRoot + QStringLiteral("/tools"),
+    };
+
+    for (const QString &rootPath : roots) {
+        const QString match = findFileRecursive(rootPath, QStringLiteral("libpv_porcupine.dll"));
+        if (!match.isEmpty()) {
+            return match;
+        }
+    }
+
+    return {};
+}
+
+QString detectPorcupineModel(const QString &appDataRoot)
+{
+    const QStringList roots = {
+        appDataRoot + QStringLiteral("/tools/porcupine"),
+        appDataRoot + QStringLiteral("/tools")
+    };
+
+    for (const QString &rootPath : roots) {
+        const QString match = findFileRecursive(rootPath, QStringLiteral("porcupine_params.pv"));
+        if (!match.isEmpty()) {
+            return match;
+        }
+    }
+
+    return {};
+}
+
+QString detectPorcupineKeyword(const QString &appDataRoot, const QString &wakeWord)
+{
+    const QString normalizedWakeWord = wakeWord.trimmed().isEmpty() ? QStringLiteral("jarvis") : wakeWord.trimmed().toLower();
+    const QString preferredName = normalizedWakeWord + QStringLiteral("_windows.ppn");
+    const QStringList roots = {
+        appDataRoot + QStringLiteral("/tools/porcupine"),
+        appDataRoot + QStringLiteral("/tools")
+    };
+
+    for (const QString &rootPath : roots) {
+        const QString preferred = findFileRecursive(rootPath, preferredName);
+        if (!preferred.isEmpty()) {
+            return preferred;
+        }
+        const QString fallback = findFirstMatchingFileRecursive(rootPath, {QStringLiteral("*_windows.ppn")});
+        if (!fallback.isEmpty()) {
+            return fallback;
+        }
+    }
+
+    return {};
+}
+
 QString resolveExecutableFromDirectory(const QString &directoryPath, const QStringList &candidateNames)
 {
     QDir directory(directoryPath);
@@ -393,6 +450,41 @@ QString resolveWhisperModelSelection(const QString &selection)
 
     if (info.exists() && info.isDir()) {
         return findFirstMatchingFileRecursive(info.absoluteFilePath(), {QStringLiteral("ggml-*.bin")});
+    }
+
+    return {};
+}
+
+QString resolveExistingFileSelection(const QString &selection, const QStringList &exactFileNames, const QStringList &fallbackPatterns = {})
+{
+    const QString trimmed = selection.trimmed();
+    if (trimmed.isEmpty()) {
+        return {};
+    }
+
+    QFileInfo info(trimmed);
+    if (info.exists() && info.isFile()) {
+        if (exactFileNames.isEmpty()) {
+            return info.absoluteFilePath();
+        }
+        for (const QString &fileName : exactFileNames) {
+            if (info.fileName().compare(fileName, Qt::CaseInsensitive) == 0) {
+                return info.absoluteFilePath();
+            }
+        }
+        return {};
+    }
+
+    if (info.exists() && info.isDir()) {
+        for (const QString &fileName : exactFileNames) {
+            const QString match = findFileRecursive(info.absoluteFilePath(), fileName);
+            if (!match.isEmpty()) {
+                return match;
+            }
+        }
+        if (!fallbackPatterns.isEmpty()) {
+            return findFirstMatchingFileRecursive(info.absoluteFilePath(), fallbackPatterns);
+        }
     }
 
     return {};
@@ -520,6 +612,11 @@ QString BackendFacade::whisperExecutable() const { return m_settings->whisperExe
 QString BackendFacade::whisperModelPath() const { return m_settings->whisperModelPath(); }
 QString BackendFacade::piperExecutable() const { return m_settings->piperExecutable(); }
 QString BackendFacade::piperVoiceModel() const { return m_settings->piperVoiceModel(); }
+QString BackendFacade::porcupineAccessKey() const { return m_settings->porcupineAccessKey(); }
+QString BackendFacade::porcupineLibraryPath() const { return m_settings->porcupineLibraryPath(); }
+QString BackendFacade::porcupineModelPath() const { return m_settings->porcupineModelPath(); }
+QString BackendFacade::porcupineKeywordPath() const { return m_settings->porcupineKeywordPath(); }
+double BackendFacade::porcupineSensitivity() const { return m_settings->porcupineSensitivity(); }
 QString BackendFacade::ffmpegExecutable() const { return m_settings->ffmpegExecutable(); }
 double BackendFacade::voiceSpeed() const { return m_settings->voiceSpeed(); }
 double BackendFacade::voicePitch() const { return m_settings->voicePitch(); }
@@ -609,6 +706,11 @@ void BackendFacade::saveSettings(
     int timeoutMs,
     const QString &whisperPath,
     const QString &whisperModelPath,
+    const QString &porcupineAccessKey,
+    const QString &porcupineLibraryPath,
+    const QString &porcupineModelPath,
+    const QString &porcupineKeywordPath,
+    double porcupineSensitivity,
     const QString &piperPath,
     const QString &voicePath,
     const QString &ffmpegPath,
@@ -628,6 +730,11 @@ void BackendFacade::saveSettings(
         endpoint, modelId, defaultMode, autoRouting, streaming, timeoutMs,
         whisperPath,
         whisperModelPath,
+        porcupineAccessKey,
+        porcupineLibraryPath,
+        porcupineModelPath,
+        porcupineKeywordPath,
+        porcupineSensitivity,
         piperPath,
         voicePath,
         ffmpegPath,
@@ -684,6 +791,11 @@ bool BackendFacade::completeInitialSetup(
     const QString &modelId,
     const QString &whisperPath,
     const QString &whisperModelPath,
+    const QString &porcupineAccessKey,
+    const QString &porcupineLibraryPath,
+    const QString &porcupineModelPath,
+    const QString &porcupineKeywordPath,
+    double porcupineSensitivity,
     const QString &piperPath,
     const QString &voicePath,
     const QString &ffmpegPath,
@@ -718,6 +830,31 @@ bool BackendFacade::completeInitialSetup(
     const QString resolvedWhisperModel = resolveWhisperModelSelection(whisperModelPath);
     if (resolvedWhisperModel.isEmpty()) {
         setToolInstallStatus(QStringLiteral("Whisper model is invalid. Select a valid ggml-*.bin model file."));
+        return false;
+    }
+
+    const QString resolvedPorcupineLibrary = resolveExecutableSelection(
+        porcupineLibraryPath,
+        { QStringLiteral("libpv_porcupine.dll") });
+    if (resolvedPorcupineLibrary.isEmpty()) {
+        setToolInstallStatus(QStringLiteral("Porcupine library is invalid. Select libpv_porcupine.dll."));
+        return false;
+    }
+
+    const QString resolvedPorcupineModel = resolveExistingFileSelection(
+        porcupineModelPath,
+        { QStringLiteral("porcupine_params.pv") });
+    if (resolvedPorcupineModel.isEmpty()) {
+        setToolInstallStatus(QStringLiteral("Porcupine model is invalid. Select porcupine_params.pv."));
+        return false;
+    }
+
+    const QString resolvedPorcupineKeyword = resolveExistingFileSelection(
+        porcupineKeywordPath,
+        {},
+        { QStringLiteral("*_windows.ppn") });
+    if (resolvedPorcupineKeyword.isEmpty()) {
+        setToolInstallStatus(QStringLiteral("Porcupine keyword file is invalid. Select a Windows .ppn file."));
         return false;
     }
 
@@ -773,6 +910,11 @@ bool BackendFacade::completeInitialSetup(
         12000,
         resolvedWhisper,
         resolvedWhisperModel,
+        porcupineAccessKey.trimmed(),
+        resolvedPorcupineLibrary,
+        resolvedPorcupineModel,
+        resolvedPorcupineKeyword,
+        porcupineSensitivity,
         resolvedPiper,
         resolvedVoiceModel,
         resolvedFfmpeg,
@@ -786,7 +928,9 @@ bool BackendFacade::completeInitialSetup(
     m_overlayController->setClickThrough(clickThrough);
     m_settings->setInitialSetupCompleted(true);
     m_settings->save();
-    setToolInstallStatus(QStringLiteral("Setup validation passed. Configuration saved."));
+    setToolInstallStatus(porcupineAccessKey.trimmed().isEmpty()
+            ? QStringLiteral("Setup saved. Enter a Picovoice AccessKey to enable always-listening wake word detection.")
+            : QStringLiteral("Setup validation passed. Configuration saved."));
     emit profileChanged();
     emit settingsChanged();
     emit initialSetupFinished();
@@ -800,6 +944,11 @@ bool BackendFacade::runSetupScenario(
     const QString &modelId,
     const QString &whisperPath,
     const QString &whisperModelPath,
+    const QString &porcupineAccessKey,
+    const QString &porcupineLibraryPath,
+    const QString &porcupineModelPath,
+    const QString &porcupineKeywordPath,
+    double porcupineSensitivity,
     const QString &piperPath,
     const QString &voicePath,
     const QString &ffmpegPath,
@@ -838,6 +987,31 @@ bool BackendFacade::runSetupScenario(
         return false;
     }
 
+    const QString resolvedPorcupineLibrary = resolveExecutableSelection(
+        porcupineLibraryPath,
+        { QStringLiteral("libpv_porcupine.dll") });
+    if (resolvedPorcupineLibrary.isEmpty()) {
+        setToolInstallStatus(QStringLiteral("Porcupine library is invalid. Select libpv_porcupine.dll."));
+        return false;
+    }
+
+    const QString resolvedPorcupineModel = resolveExistingFileSelection(
+        porcupineModelPath,
+        { QStringLiteral("porcupine_params.pv") });
+    if (resolvedPorcupineModel.isEmpty()) {
+        setToolInstallStatus(QStringLiteral("Porcupine model is invalid. Select porcupine_params.pv."));
+        return false;
+    }
+
+    const QString resolvedPorcupineKeyword = resolveExistingFileSelection(
+        porcupineKeywordPath,
+        {},
+        { QStringLiteral("*_windows.ppn") });
+    if (resolvedPorcupineKeyword.isEmpty()) {
+        setToolInstallStatus(QStringLiteral("Porcupine keyword file is invalid. Select a Windows .ppn file."));
+        return false;
+    }
+
     const QString resolvedPiper = resolveExecutableSelection(
         piperPath,
         {
@@ -890,6 +1064,11 @@ bool BackendFacade::runSetupScenario(
         12000,
         resolvedWhisper,
         resolvedWhisperModel,
+        porcupineAccessKey.trimmed(),
+        resolvedPorcupineLibrary,
+        resolvedPorcupineModel,
+        resolvedPorcupineKeyword,
+        porcupineSensitivity,
         resolvedPiper,
         resolvedVoiceModel,
         resolvedFfmpeg,
@@ -921,6 +1100,10 @@ QVariantMap BackendFacade::evaluateSetupRequirements(
     const QString &modelId,
     const QString &whisperPath,
     const QString &whisperModelPath,
+    const QString &porcupineAccessKey,
+    const QString &porcupineLibraryPath,
+    const QString &porcupineModelPath,
+    const QString &porcupineKeywordPath,
     const QString &piperPath,
     const QString &voicePath,
     const QString &ffmpegPath)
@@ -938,6 +1121,16 @@ QVariantMap BackendFacade::evaluateSetupRequirements(
             QStringLiteral("whisper.exe")
         });
     const QString resolvedWhisperModel = resolveWhisperModelSelection(whisperModelPath);
+    const QString resolvedPorcupineLibrary = resolveExecutableSelection(
+        porcupineLibraryPath,
+        { QStringLiteral("libpv_porcupine.dll") });
+    const QString resolvedPorcupineModel = resolveExistingFileSelection(
+        porcupineModelPath,
+        { QStringLiteral("porcupine_params.pv") });
+    const QString resolvedPorcupineKeyword = resolveExistingFileSelection(
+        porcupineKeywordPath,
+        {},
+        { QStringLiteral("*_windows.ppn") });
     const QString resolvedPiper = resolveExecutableSelection(
         piperPath,
         {
@@ -952,6 +1145,10 @@ QVariantMap BackendFacade::evaluateSetupRequirements(
 
     const bool whisperOk = !resolvedWhisper.isEmpty();
     const bool whisperModelOk = !resolvedWhisperModel.isEmpty();
+    const bool porcupineAccessKeyOk = !porcupineAccessKey.trimmed().isEmpty();
+    const bool porcupineLibraryOk = !resolvedPorcupineLibrary.isEmpty();
+    const bool porcupineModelOk = !resolvedPorcupineModel.isEmpty();
+    const bool porcupineKeywordOk = !resolvedPorcupineKeyword.isEmpty();
     const bool piperOk = !resolvedPiper.isEmpty();
     const bool ffmpegOk = !resolvedFfmpeg.isEmpty();
     const bool voiceOk = !resolvedVoice.isEmpty();
@@ -968,12 +1165,19 @@ QVariantMap BackendFacade::evaluateSetupRequirements(
     result.insert(QStringLiteral("modelOk"), modelOk);
     result.insert(QStringLiteral("whisperOk"), whisperOk);
     result.insert(QStringLiteral("whisperModelOk"), whisperModelOk);
+    result.insert(QStringLiteral("porcupineAccessKeyOk"), porcupineAccessKeyOk);
+    result.insert(QStringLiteral("porcupineLibraryOk"), porcupineLibraryOk);
+    result.insert(QStringLiteral("porcupineModelOk"), porcupineModelOk);
+    result.insert(QStringLiteral("porcupineKeywordOk"), porcupineKeywordOk);
     result.insert(QStringLiteral("piperOk"), piperOk);
     result.insert(QStringLiteral("voiceOk"), voiceOk);
     result.insert(QStringLiteral("ffmpegOk"), ffmpegOk);
 
     result.insert(QStringLiteral("whisperPathResolved"), resolvedWhisper);
     result.insert(QStringLiteral("whisperModelPathResolved"), resolvedWhisperModel);
+    result.insert(QStringLiteral("porcupineLibraryPathResolved"), resolvedPorcupineLibrary);
+    result.insert(QStringLiteral("porcupineModelPathResolved"), resolvedPorcupineModel);
+    result.insert(QStringLiteral("porcupineKeywordPathResolved"), resolvedPorcupineKeyword);
     result.insert(QStringLiteral("piperPathResolved"), resolvedPiper);
     result.insert(QStringLiteral("voicePathResolved"), resolvedVoice);
     result.insert(QStringLiteral("ffmpegPathResolved"), resolvedFfmpeg);
@@ -988,7 +1192,16 @@ QVariantMap BackendFacade::evaluateSetupRequirements(
     result.insert(QStringLiteral("piperLatestOk"), looksLatestEnough(piperVersion, piperLatest));
     result.insert(QStringLiteral("ffmpegLatestOk"), looksLatestEnough(ffmpegVersion, ffmpegLatest));
 
-    const bool allValid = endpointOk && modelOk && whisperOk && whisperModelOk && piperOk && voiceOk && ffmpegOk;
+    const bool allValid = endpointOk
+        && modelOk
+        && whisperOk
+        && whisperModelOk
+        && porcupineLibraryOk
+        && porcupineModelOk
+        && porcupineKeywordOk
+        && piperOk
+        && voiceOk
+        && ffmpegOk;
     result.insert(QStringLiteral("allValid"), allValid);
 
     return result;
@@ -1052,6 +1265,21 @@ bool BackendFacade::autoDetectVoiceTools()
         whisperModel = detectWhisperModel(appDataRoot);
     }
 
+    QString porcupineLibrary = m_settings->porcupineLibraryPath();
+    if (porcupineLibrary.isEmpty() || !QFileInfo::exists(porcupineLibrary)) {
+        porcupineLibrary = detectPorcupineLibrary(appDataRoot);
+    }
+
+    QString porcupineModel = m_settings->porcupineModelPath();
+    if (porcupineModel.isEmpty() || !QFileInfo::exists(porcupineModel)) {
+        porcupineModel = detectPorcupineModel(appDataRoot);
+    }
+
+    QString porcupineKeyword = m_settings->porcupineKeywordPath();
+    if (porcupineKeyword.isEmpty() || !QFileInfo::exists(porcupineKeyword)) {
+        porcupineKeyword = detectPorcupineKeyword(appDataRoot, m_settings->wakeWordPhrase());
+    }
+
     QString piper = resolveExecutable(
         {QStringLiteral("piper")},
         {
@@ -1088,6 +1316,15 @@ bool BackendFacade::autoDetectVoiceTools()
     if (!piper.isEmpty()) {
         m_settings->setPiperExecutable(piper);
     }
+    if (!porcupineLibrary.isEmpty()) {
+        m_settings->setPorcupineLibraryPath(porcupineLibrary);
+    }
+    if (!porcupineModel.isEmpty()) {
+        m_settings->setPorcupineModelPath(porcupineModel);
+    }
+    if (!porcupineKeyword.isEmpty()) {
+        m_settings->setPorcupineKeywordPath(porcupineKeyword);
+    }
     if (!ffmpeg.isEmpty()) {
         m_settings->setFfmpegExecutable(ffmpeg);
     }
@@ -1101,12 +1338,15 @@ bool BackendFacade::autoDetectVoiceTools()
 
     const bool complete = !m_settings->whisperExecutable().isEmpty()
         && !m_settings->whisperModelPath().isEmpty()
+        && !m_settings->porcupineLibraryPath().isEmpty()
+        && !m_settings->porcupineModelPath().isEmpty()
+        && !m_settings->porcupineKeywordPath().isEmpty()
         && !m_settings->piperExecutable().isEmpty()
         && !m_settings->ffmpegExecutable().isEmpty()
         && !m_settings->piperVoiceModel().isEmpty();
 
     setToolInstallStatus(complete
-            ? QStringLiteral("Voice tools detected and fields populated.")
+            ? QStringLiteral("Voice and wake tools detected and fields populated.")
             : QStringLiteral("Some tools are still missing. Use Install Missing Tools."));
 
     m_settings->save();
@@ -1194,6 +1434,22 @@ if (-not (Test-Path $voiceModel)) {
 if (-not (Test-Path $voiceJson)) {
     Invoke-WebRequest -Uri '%4' -OutFile $voiceJson
 }
+
+$porcupineDir = Join-Path $toolsRoot 'porcupine'
+New-Item -ItemType Directory -Force -Path $porcupineDir | Out-Null
+$porcupineDll = Join-Path $porcupineDir 'libpv_porcupine.dll'
+$porcupineModel = Join-Path $porcupineDir 'porcupine_params.pv'
+$porcupineKeyword = Join-Path $porcupineDir 'jarvis_windows.ppn'
+
+if (-not (Test-Path $porcupineDll)) {
+    Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/Picovoice/porcupine/v4.0.0/lib/windows/amd64/libpv_porcupine.dll' -OutFile $porcupineDll
+}
+if (-not (Test-Path $porcupineModel)) {
+    Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/Picovoice/porcupine/v4.0.0/lib/common/porcupine_params.pv' -OutFile $porcupineModel
+}
+if (-not (Test-Path $porcupineKeyword)) {
+    Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/Picovoice/porcupine/v4.0.0/resources/keyword_files/windows/jarvis_windows.ppn' -OutFile $porcupineKeyword
+}
 )POWERSHELL").arg(toolsRoot, voicePreset.id, voicePreset.modelUrl, voicePreset.configUrl);
 
     QProcess installer;
@@ -1214,7 +1470,7 @@ if (-not (Test-Path $voiceJson)) {
 
     const bool complete = autoDetectVoiceTools();
     setToolInstallStatus(complete
-            ? QStringLiteral("Voice tools installed and configured.")
+            ? QStringLiteral("Voice and wake tools installed and configured.")
             : QStringLiteral("Install finished, but some paths still need manual review."));
     return complete;
 #else

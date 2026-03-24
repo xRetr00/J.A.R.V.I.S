@@ -46,7 +46,7 @@ WhisperSttEngine::WhisperSttEngine(AppSettings *settings, LoggingService *loggin
 {
 }
 
-void WhisperSttEngine::transcribePcm(const QByteArray &pcmData)
+void WhisperSttEngine::transcribePcm(const QByteArray &pcmData, const QString &initialPrompt, bool suppressNonSpeechTokens)
 {
     if (m_settings->whisperExecutable().isEmpty()) {
         const QString message = QStringLiteral("whisper.cpp executable is not configured");
@@ -87,9 +87,11 @@ void WhisperSttEngine::transcribePcm(const QByteArray &pcmData)
 
     if (m_loggingService) {
         m_loggingService->info(
-            QStringLiteral("Starting whisper.cpp transcription. executable=\"%1\" model=\"%2\" input=\"%3\" bytes=%4")
+            QStringLiteral("Starting whisper.cpp transcription. executable=\"%1\" model=\"%2\" input=\"%3\" bytes=%4 prompt=\"%5\" suppressNonSpeech=%6")
                 .arg(m_settings->whisperExecutable(), m_settings->whisperModelPath(), waveFile)
-                .arg(pcmData.size()));
+                .arg(pcmData.size())
+                .arg(initialPrompt.left(120))
+                .arg(suppressNonSpeechTokens ? QStringLiteral("true") : QStringLiteral("false")));
     }
 
     auto *process = new QProcess(this);
@@ -137,13 +139,22 @@ void WhisperSttEngine::transcribePcm(const QByteArray &pcmData)
         emit transcriptionReady({text, text.isEmpty() ? 0.0f : 0.85f});
     });
 
-    process->start(
-        m_settings->whisperExecutable(),
-        {
-            QStringLiteral("-m"), m_settings->whisperModelPath(),
-            QStringLiteral("-f"), waveFile,
-            QStringLiteral("-nt")
-        });
+    QStringList arguments{
+        QStringLiteral("-m"), m_settings->whisperModelPath(),
+        QStringLiteral("-f"), waveFile,
+        QStringLiteral("-nt"),
+        QStringLiteral("-l"), QStringLiteral("en")
+    };
+
+    if (suppressNonSpeechTokens) {
+        arguments << QStringLiteral("-sns");
+    }
+
+    if (!initialPrompt.trimmed().isEmpty()) {
+        arguments << QStringLiteral("--prompt") << initialPrompt.trimmed();
+    }
+
+    process->start(m_settings->whisperExecutable(), arguments);
 }
 
 QString WhisperSttEngine::writeWaveFile(const QByteArray &pcmData) const

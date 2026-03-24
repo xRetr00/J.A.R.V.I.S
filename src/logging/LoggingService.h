@@ -19,6 +19,7 @@ public:
     void info(const QString &message) const;
     void warn(const QString &message) const;
     void error(const QString &message) const;
+    bool logAiExchange(const QString &prompt, const QString &response, const QString &source, const QString &status = QString()) const;
     QString logFilePath() const;
 
 private:

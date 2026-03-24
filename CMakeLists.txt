@@ -53,6 +53,16 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(libfvad)
 
+FetchContent_Declare(
+    porcupine_sdk
+    GIT_REPOSITORY https://github.com/Picovoice/porcupine.git
+    GIT_TAG v4.0
+)
+FetchContent_GetProperties(porcupine_sdk)
+if(NOT porcupine_sdk_POPULATED)
+    FetchContent_Populate(porcupine_sdk)
+endif()
+
 add_library(fvad STATIC
     ${libfvad_SOURCE_DIR}/src/fvad.c
     ${libfvad_SOURCE_DIR}/src/signal_processing/division_operations.c
@@ -98,6 +108,7 @@ set(JARVIS_SOURCES
     src/settings/IdentityProfileService.cpp
     src/stt/WhisperSttEngine.cpp
     src/tts/PiperTtsEngine.cpp
+    src/wakeword/PorcupineWakeWordEngine.cpp
 )
 
 set(JARVIS_HEADERS
@@ -123,6 +134,7 @@ set(JARVIS_HEADERS
     src/settings/IdentityProfileService.h
     src/stt/WhisperSttEngine.h
     src/tts/PiperTtsEngine.h
+    src/wakeword/PorcupineWakeWordEngine.h
 )
 
 qt_add_resources(JARVIS_RESOURCES src/gui/resources.qrc)
@@ -146,6 +158,7 @@ target_include_directories(jarvis_lib
         src
     PRIVATE
         ${libfvad_SOURCE_DIR}/include
+        ${porcupine_sdk_SOURCE_DIR}/include
 )
 target_compile_definitions(jarvis_lib PUBLIC JARVIS_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 

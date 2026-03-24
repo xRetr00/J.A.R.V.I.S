@@ -31,6 +31,11 @@ class BackendFacade : public QObject
     Q_PROPERTY(QString whisperModelPath READ whisperModelPath NOTIFY settingsChanged)
     Q_PROPERTY(QString piperExecutable READ piperExecutable NOTIFY settingsChanged)
     Q_PROPERTY(QString piperVoiceModel READ piperVoiceModel NOTIFY settingsChanged)
+    Q_PROPERTY(QString porcupineAccessKey READ porcupineAccessKey NOTIFY settingsChanged)
+    Q_PROPERTY(QString porcupineLibraryPath READ porcupineLibraryPath NOTIFY settingsChanged)
+    Q_PROPERTY(QString porcupineModelPath READ porcupineModelPath NOTIFY settingsChanged)
+    Q_PROPERTY(QString porcupineKeywordPath READ porcupineKeywordPath NOTIFY settingsChanged)
+    Q_PROPERTY(double porcupineSensitivity READ porcupineSensitivity NOTIFY settingsChanged)
     Q_PROPERTY(QString ffmpegExecutable READ ffmpegExecutable NOTIFY settingsChanged)
     Q_PROPERTY(double voiceSpeed READ voiceSpeed NOTIFY settingsChanged)
     Q_PROPERTY(double voicePitch READ voicePitch NOTIFY settingsChanged)
@@ -77,6 +82,11 @@ public:
     QString whisperModelPath() const;
     QString piperExecutable() const;
     QString piperVoiceModel() const;
+    QString porcupineAccessKey() const;
+    QString porcupineLibraryPath() const;
+    QString porcupineModelPath() const;
+    QString porcupineKeywordPath() const;
+    double porcupineSensitivity() const;
     QString ffmpegExecutable() const;
     double voiceSpeed() const;
     double voicePitch() const;
@@ -111,6 +121,11 @@ public:
         int timeoutMs,
         const QString &whisperPath,
         const QString &whisperModelPath,
+        const QString &porcupineAccessKey,
+        const QString &porcupineLibraryPath,
+        const QString &porcupineModelPath,
+        const QString &porcupineKeywordPath,
+        double porcupineSensitivity,
         const QString &piperPath,
         const QString &voicePath,
         const QString &ffmpegPath,
@@ -128,6 +143,11 @@ public:
         const QString &modelId,
         const QString &whisperPath,
         const QString &whisperModelPath,
+        const QString &porcupineAccessKey,
+        const QString &porcupineLibraryPath,
+        const QString &porcupineModelPath,
+        const QString &porcupineKeywordPath,
+        double porcupineSensitivity,
         const QString &piperPath,
         const QString &voicePath,
         const QString &ffmpegPath,
@@ -141,6 +161,11 @@ public:
         const QString &modelId,
         const QString &whisperPath,
         const QString &whisperModelPath,
+        const QString &porcupineAccessKey,
+        const QString &porcupineLibraryPath,
+        const QString &porcupineModelPath,
+        const QString &porcupineKeywordPath,
+        double porcupineSensitivity,
         const QString &piperPath,
         const QString &voicePath,
         const QString &ffmpegPath,
@@ -153,6 +178,10 @@ public:
         const QString &modelId,
         const QString &whisperPath,
         const QString &whisperModelPath,
+        const QString &porcupineAccessKey,
+        const QString &porcupineLibraryPath,
+        const QString &porcupineModelPath,
+        const QString &porcupineKeywordPath,
         const QString &piperPath,
         const QString &voicePath,
         const QString &ffmpegPath);

@@ -1,7 +1,12 @@
 #include "logging/LoggingService.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDir>
+#include <QFile>
+#include <QRandomGenerator>
+#include <QStringConverter>
+#include <QTextStream>
 
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/rotating_file_sink.h>
@@ -56,6 +61,42 @@ void LoggingService::error(const QString &message) const
     if (m_logger) {
         m_logger->error(message.toStdString());
     }
+}
+
+bool LoggingService::logAiExchange(const QString &prompt, const QString &response, const QString &source, const QString &status) const
+{
+    const QString root = QCoreApplication::applicationDirPath() + QStringLiteral("/logs/AI");
+    if (!QDir().mkpath(root)) {
+        return false;
+    }
+
+    const QString timestamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss_zzz"));
+    const QString randomToken = QString::number(QRandomGenerator::global()->generate(), 16);
+    const QString path = root + QStringLiteral("/") + timestamp + QStringLiteral("_") + randomToken + QStringLiteral(".log");
+
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
+        return false;
+    }
+
+    QTextStream out(&file);
+    out.setEncoding(QStringConverter::Utf8);
+    out << "timestamp=" << QDateTime::currentDateTime().toString(Qt::ISODateWithMs) << "\n";
+    out << "source=" << source << "\n";
+    if (!status.trimmed().isEmpty()) {
+        out << "status=" << status.trimmed() << "\n";
+    }
+    out << "\n[PROMPT]\n";
+    out << prompt.trimmed() << "\n";
+    out << "\n[RESPONSE]\n";
+    out << response.trimmed() << "\n";
+    out.flush();
+    file.close();
+
+    if (m_logger) {
+        m_logger->info(QStringLiteral("AI exchange log written: %1").arg(path).toStdString());
+    }
+    return true;
 }
 
 QString LoggingService::logFilePath() const

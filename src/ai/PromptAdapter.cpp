@@ -63,13 +63,14 @@ QList<AiMessage> PromptAdapter::buildConversationMessages(
 {
     QString systemPrompt =
         QStringLiteral("You are %1, a %2 desktop AI assistant. "
-                       "Maintain a %3 tone. "
-                       "Address the user with a %4 style. "
-                       "Respond with concise, confident, minimal verbosity. "
-                       "Use short, clean sentences. "
-                       "Avoid filler words and long paragraphs. "
-                       "When a reply may be spoken aloud, use natural punctuation for calm pauses. "
-                       "Sound intelligent, precise, controlled, and directly useful.")
+                       "Maintain a %3 tone and a %4 addressing style. "
+                       "Primary goals: accuracy, usefulness, and calm delivery. "
+                       "Do not invent facts, tools, or outcomes. "
+                       "If required information is missing, ask one concise clarification question. "
+                       "Keep replies concise by default: 1-3 short sentences unless the user asks for detail. "
+                       "Prefer direct language over filler. "
+                       "When the answer may be spoken aloud, use smooth punctuation for natural pauses. "
+                       "Do not include markdown formatting unless the user explicitly asks for it.")
             .arg(identity.assistantName, identity.personality, identity.tone, identity.addressingStyle);
 
     const QString displayName = resolvedDisplayName(userProfile);
@@ -79,9 +80,15 @@ QList<AiMessage> PromptAdapter::buildConversationMessages(
     systemPrompt += QStringLiteral("\n- display name: %1").arg(displayName.isEmpty() ? QStringLiteral("unknown") : displayName);
     systemPrompt += QStringLiteral("\n- spoken name: %1").arg(spokenName.isEmpty() ? QStringLiteral("unknown") : spokenName);
     systemPrompt += QStringLiteral("\n- preferences: %1").arg(profilePreferencesText(userProfile));
+    systemPrompt += QStringLiteral("\n- naming rule: use display name for visual references; when directly addressing the user in spoken-style phrasing, prefer spoken name for pronunciation.");
     systemPrompt += QStringLiteral("\nCurrent runtime context:");
     systemPrompt += QStringLiteral("\n%1").arg(currentTimeContext());
     systemPrompt += QStringLiteral("\n- wake phrase: Jarvis");
+
+    systemPrompt += QStringLiteral("\nResponse contract:");
+    systemPrompt += QStringLiteral("\n- If the user asks for steps, return a short numbered list.");
+    systemPrompt += QStringLiteral("\n- If the user asks for comparison, present concise tradeoffs.");
+    systemPrompt += QStringLiteral("\n- If unsure, state uncertainty briefly and request only missing details.");
 
     if (!memory.isEmpty()) {
         systemPrompt += QStringLiteral("\nRelevant user memory:");
@@ -123,10 +130,13 @@ QList<AiMessage> PromptAdapter::buildCommandMessages(
                 QStringLiteral("You are %1. "
                                "The user display name is %2. "
                                "The user spoken name is %3. "
-                               "You extract desktop assistant commands. "
+                               "You extract desktop assistant commands from natural language. "
                                "Current runtime context:\n%4\n"
-                               "Return strict JSON only with keys: intent, target, action, confidence, args. "
-                               "Use confidence from 0.0 to 1.0. If uncertain, return intent as \"unknown\".")
+                               "Return exactly one JSON object with keys: intent, target, action, confidence, args. "
+                               "Do not include markdown, code fences, explanations, or extra keys. "
+                               "Schema: intent (string), target (string), action (string), confidence (number), args (object). "
+                               "Set confidence between 0.0 and 1.0. "
+                               "If uncertain, set intent to \"unknown\", confidence <= 0.4, and args to {}.")
                     .arg(identity.assistantName,
                          displayName.isEmpty() ? QStringLiteral("unknown") : displayName,
                          spokenName.isEmpty() ? QStringLiteral("unknown") : spokenName,

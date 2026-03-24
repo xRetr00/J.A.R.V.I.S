@@ -26,6 +26,7 @@
 #include "settings/IdentityProfileService.h"
 #include "stt/WhisperSttEngine.h"
 #include "tts/PiperTtsEngine.h"
+#include "wakeword/PorcupineWakeWordEngine.h"
 
 namespace {
 QString stateToString(AssistantState state)
@@ -203,6 +204,7 @@ AssistantController::AssistantController(
     m_localResponseEngine = new LocalResponseEngine(this);
     m_audioInputService = new AudioInputService(this);
     m_whisperSttEngine = new WhisperSttEngine(m_settings, m_loggingService, this);
+    m_porcupineWakeWordEngine = new PorcupineWakeWordEngine(m_loggingService, this);
     m_piperTtsEngine = new PiperTtsEngine(m_settings, this);
 }
 
@@ -225,9 +227,7 @@ void AssistantController::initialize()
     });
     connect(m_audioInputService, &AudioInputService::speechDetected, this, [this]() {
         if (m_loggingService) {
-            const QString mode = m_audioCaptureMode == AudioCaptureMode::WakeMonitor
-                ? QStringLiteral("wake-monitor")
-                : m_audioCaptureMode == AudioCaptureMode::Direct
+            const QString mode = m_audioCaptureMode == AudioCaptureMode::Direct
                     ? QStringLiteral("direct")
                     : QStringLiteral("none");
             m_loggingService->info(QStringLiteral("Audio speech detected. mode=%1").arg(mode));
@@ -235,9 +235,7 @@ void AssistantController::initialize()
     });
     connect(m_audioInputService, &AudioInputService::captureWindowElapsed, this, [this](bool hadSpeech) {
         if (m_loggingService) {
-            const QString mode = m_audioCaptureMode == AudioCaptureMode::WakeMonitor
-                ? QStringLiteral("wake-monitor")
-                : m_audioCaptureMode == AudioCaptureMode::Direct
+            const QString mode = m_audioCaptureMode == AudioCaptureMode::Direct
                     ? QStringLiteral("direct")
                     : QStringLiteral("none");
             m_loggingService->info(QStringLiteral("Audio capture window elapsed. mode=%1 hadSpeech=%2")
@@ -249,12 +247,9 @@ void AssistantController::initialize()
             m_audioInputService->stop();
             m_audioCaptureMode = AudioCaptureMode::None;
             m_lastCompletedCaptureMode = AudioCaptureMode::None;
-            if (m_wakeMonitorEnabled) {
-                scheduleWakeMonitorRestart(50);
-            } else {
-                setStatus(QStringLiteral("No speech detected"));
-                emit idleRequested();
-            }
+            setStatus(QStringLiteral("No speech detected"));
+            scheduleWakeMonitorRestart(50);
+            emit idleRequested();
             return;
         }
 
@@ -262,36 +257,35 @@ void AssistantController::initialize()
     });
     connect(m_audioInputService, &AudioInputService::speechEnded, this, &AssistantController::stopListening);
 
+    connect(m_porcupineWakeWordEngine, &PorcupineWakeWordEngine::wakeWordDetected, this, [this]() {
+        stopWakeMonitor();
+        m_followUpListeningAfterWakeAck = true;
+        m_lastPromptForAiLog = m_settings->wakeWordPhrase();
+        deliverLocalResponse(
+            m_localResponseEngine->wakeWordReady(buildLocalResponseContext()),
+            QStringLiteral("Wake word detected"),
+            true);
+    });
+    connect(m_porcupineWakeWordEngine, &PorcupineWakeWordEngine::errorOccurred, this, [this](const QString &message) {
+        if (m_loggingService) {
+            m_loggingService->error(QStringLiteral("Porcupine wake engine error: %1").arg(message));
+        }
+        setStatus(message);
+    });
+
     connect(m_whisperSttEngine, &WhisperSttEngine::transcriptionReady, this, [this](const TranscriptionResult &result) {
         m_transcript = result.text;
         emit transcriptChanged();
         if (result.text.isEmpty()) {
-            if (m_lastCompletedCaptureMode == AudioCaptureMode::WakeMonitor) {
-                scheduleWakeMonitorRestart();
-                return;
-            }
             setStatus(QStringLiteral("No speech detected"));
+            scheduleWakeMonitorRestart();
             emit idleRequested();
             return;
         }
 
         if (m_loggingService) {
-            const QString mode = m_lastCompletedCaptureMode == AudioCaptureMode::WakeMonitor
-                ? QStringLiteral("wake-monitor")
-                : QStringLiteral("direct");
-            m_loggingService->info(QStringLiteral("Transcription ready. mode=%1 text=\"%2\"")
-                .arg(mode, result.text.left(240)));
-        }
-
-        if (m_lastCompletedCaptureMode == AudioCaptureMode::WakeMonitor) {
-            QString payload;
-            if (!extractWakeWordPayload(result.text, m_settings->wakeWordPhrase(), &payload)) {
-                if (m_loggingService) {
-                    m_loggingService->info(QStringLiteral("Wake monitor ignored non-wake speech."));
-                }
-                scheduleWakeMonitorRestart();
-                return;
-            }
+            m_loggingService->info(QStringLiteral("Transcription ready. mode=direct text=\"%1\"")
+                .arg(result.text.left(240)));
         }
         submitText(result.text);
     });
@@ -415,6 +409,8 @@ void AssistantController::submitText(const QString &text)
         return;
     }
 
+    m_lastPromptForAiLog = trimmed;
+
     const QString wakeWord = m_settings->wakeWordPhrase().trimmed().isEmpty()
         ? QStringLiteral("Jarvis")
         : m_settings->wakeWordPhrase().trimmed();
@@ -501,18 +497,27 @@ void AssistantController::startWakeMonitor()
         return;
     }
 
-    startAudioCapture(AudioCaptureMode::WakeMonitor, false);
+    if (!m_porcupineWakeWordEngine->start(
+            m_settings->porcupineAccessKey(),
+            m_settings->porcupineLibraryPath(),
+            m_settings->porcupineModelPath(),
+            m_settings->porcupineKeywordPath(),
+            static_cast<float>(m_settings->porcupineSensitivity()),
+            m_settings->selectedAudioInputDeviceId())) {
+        if (m_loggingService) {
+            m_loggingService->warn(QStringLiteral("Wake monitor could not start."));
+        }
+    }
 }
 
 void AssistantController::stopWakeMonitor()
 {
     m_wakeMonitorEnabled = false;
-    if (m_audioCaptureMode == AudioCaptureMode::WakeMonitor) {
-        m_audioInputService->stop();
-        m_audioCaptureMode = AudioCaptureMode::None;
-        if (m_loggingService) {
-            m_loggingService->info(QStringLiteral("Wake monitor stopped."));
-        }
+    if (m_porcupineWakeWordEngine->isActive()) {
+        m_porcupineWakeWordEngine->stop();
+    }
+    if (m_loggingService) {
+        m_loggingService->info(QStringLiteral("Wake monitor stopped."));
     }
 }
 
@@ -524,9 +529,7 @@ void AssistantController::stopListening()
     m_audioInputService->stop();
     m_audioCaptureMode = AudioCaptureMode::None;
     if (m_loggingService) {
-        const QString mode = completedMode == AudioCaptureMode::WakeMonitor
-            ? QStringLiteral("wake-monitor")
-            : completedMode == AudioCaptureMode::Direct
+        const QString mode = completedMode == AudioCaptureMode::Direct
                 ? QStringLiteral("direct")
                 : QStringLiteral("none");
         m_loggingService->info(QStringLiteral("Audio capture stopped. mode=%1 bytes=%2").arg(mode).arg(pcm.size()));
@@ -567,6 +570,11 @@ void AssistantController::saveSettings(
     int timeoutMs,
     const QString &whisperPath,
     const QString &whisperModelPath,
+    const QString &porcupineAccessKey,
+    const QString &porcupineLibraryPath,
+    const QString &porcupineModelPath,
+    const QString &porcupineKeywordPath,
+    double porcupineSensitivity,
     const QString &piperPath,
     const QString &voicePath,
     const QString &ffmpegPath,
@@ -585,6 +593,11 @@ void AssistantController::saveSettings(
     m_settings->setRequestTimeoutMs(timeoutMs);
     m_settings->setWhisperExecutable(whisperPath);
     m_settings->setWhisperModelPath(whisperModelPath);
+    m_settings->setPorcupineAccessKey(porcupineAccessKey);
+    m_settings->setPorcupineLibraryPath(porcupineLibraryPath);
+    m_settings->setPorcupineModelPath(porcupineModelPath);
+    m_settings->setPorcupineKeywordPath(porcupineKeywordPath);
+    m_settings->setPorcupineSensitivity(porcupineSensitivity);
     m_settings->setPiperExecutable(piperPath);
     m_settings->setPiperVoiceModel(voicePath);
     m_settings->setFfmpegExecutable(ffmpegPath);
@@ -659,9 +672,12 @@ bool AssistantController::canStartWakeMonitor() const
     return m_wakeMonitorEnabled
         && m_currentState == AssistantState::Idle
         && !m_audioInputService->isActive()
+        && !m_porcupineWakeWordEngine->isActive()
         && !m_piperTtsEngine->isSpeaking()
-        && !m_settings->whisperExecutable().isEmpty()
-        && !m_settings->whisperModelPath().isEmpty();
+        && !m_settings->porcupineAccessKey().isEmpty()
+        && !m_settings->porcupineLibraryPath().isEmpty()
+        && !m_settings->porcupineModelPath().isEmpty()
+        && !m_settings->porcupineKeywordPath().isEmpty();
 }
 
 bool AssistantController::startAudioCapture(AudioCaptureMode mode, bool announceListening)
@@ -673,9 +689,7 @@ bool AssistantController::startAudioCapture(AudioCaptureMode mode, bool announce
     if (m_audioInputService->start(m_settings->micSensitivity(), m_settings->selectedAudioInputDeviceId())) {
         m_audioCaptureMode = mode;
         if (m_loggingService) {
-            const QString modeText = mode == AudioCaptureMode::WakeMonitor
-                ? QStringLiteral("wake-monitor")
-                : QStringLiteral("direct");
+            const QString modeText = QStringLiteral("direct");
             m_loggingService->info(QStringLiteral("Audio capture started. mode=%1 device=\"%2\" sensitivity=%3")
                 .arg(modeText, m_settings->selectedAudioInputDeviceId())
                 .arg(m_settings->micSensitivity(), 0, 'f', 3));
@@ -748,6 +762,7 @@ void AssistantController::deliverLocalResponse(const QString &text, const QStrin
         m_loggingService->info(QStringLiteral("Local response delivered. status=\"%1\" text=\"%2\"")
             .arg(status, text.left(240)));
     }
+    logPromptResponsePair(text, QStringLiteral("local"), status);
     setStatus(status);
     if (speak) {
         m_piperTtsEngine->enqueueSentence(text);
@@ -826,6 +841,7 @@ void AssistantController::handleConversationFinished(const QString &text)
         scheduleWakeMonitorRestart();
         emit idleRequested();
     }
+    logPromptResponsePair(text, QStringLiteral("conversation"), QStringLiteral("Response ready"));
     setStatus(QStringLiteral("Response ready"));
 }
 
@@ -850,7 +866,26 @@ void AssistantController::handleCommandFinished(const QString &text)
     emit responseTextChanged();
     m_memoryStore->appendConversation(QStringLiteral("assistant"), message);
     m_piperTtsEngine->enqueueSentence(message);
+    logPromptResponsePair(message, QStringLiteral("command"), QStringLiteral("Command executed"));
     setStatus(QStringLiteral("Command executed"));
+}
+
+void AssistantController::logPromptResponsePair(const QString &response, const QString &source, const QString &status)
+{
+    if (!m_loggingService) {
+        return;
+    }
+
+    const QString prompt = m_lastPromptForAiLog.trimmed().isEmpty()
+        ? QStringLiteral("[no prompt captured]")
+        : m_lastPromptForAiLog.trimmed();
+
+    const bool ok = m_loggingService->logAiExchange(prompt, response, source, status);
+    if (!ok) {
+        m_loggingService->warn(QStringLiteral("Failed to write AI exchange log file."));
+    }
+
+    m_lastPromptForAiLog.clear();
 }
 
 CommandEnvelope AssistantController::parseCommand(const QString &payload) const

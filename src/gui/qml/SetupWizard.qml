@@ -18,6 +18,11 @@ Window {
     function syncVoiceFieldsFromBackend() {
         whisperPathField.text = backend.whisperExecutable
         whisperModelPathField.text = backend.whisperModelPath
+        porcupineAccessKeyField.text = backend.porcupineAccessKey
+        porcupineLibraryPathField.text = backend.porcupineLibraryPath
+        porcupineModelPathField.text = backend.porcupineModelPath
+        porcupineKeywordPathField.text = backend.porcupineKeywordPath
+        porcupineSensitivitySlider.value = backend.porcupineSensitivity
         piperPathField.text = backend.piperExecutable
         voicePathField.text = backend.piperVoiceModel
         ffmpegPathField.text = backend.ffmpegExecutable
@@ -191,7 +196,7 @@ Window {
                     text: wizard.stepIndex === 0 ? "Define how the assistant should address you."
                         : wizard.stepIndex === 1 ? "Point JARVIS at LM Studio and choose the active model."
                         : wizard.stepIndex === 2 ? "Connect whisper.cpp, Piper, FFmpeg, and the voice model you want."
-                        : wizard.stepIndex === 3 ? "Use Jarvis as the wake phrase and understand how the current phrase-aware flow behaves."
+                        : wizard.stepIndex === 3 ? "Configure the dedicated Porcupine wake word engine for always-listening detection."
                         : "Run final checks, trigger tests, and confirm the real startup behavior."
                     color: "#89a3c4"
                     font.pixelSize: 14
@@ -376,7 +381,7 @@ Window {
 
                         Text {
                             Layout.fillWidth: true
-                            text: backend.toolInstallStatus.length > 0 ? backend.toolInstallStatus : "Auto-detection checks PATH and local tool folders."
+                            text: backend.toolInstallStatus.length > 0 ? backend.toolInstallStatus : "Auto-detection checks PATH and local tool folders for voice and wake assets."
                             color: "#9ab0ca"
                             font.pixelSize: 12
                             wrapMode: Text.Wrap
@@ -386,12 +391,7 @@ Window {
                     ColumnLayout {
                         spacing: 14
 
-                        Text {
-                            text: "Wake phrase"
-                            color: "#d0e3f5"
-                            font.pixelSize: 13
-                        }
-
+                        Text { text: "Wake phrase"; color: "#d0e3f5"; font.pixelSize: 13 }
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 58
@@ -409,15 +409,54 @@ Window {
                             }
                         }
 
+                        Text { text: "Picovoice AccessKey"; color: "#d0e3f5"; font.pixelSize: 13 }
+                        TextField {
+                            id: porcupineAccessKeyField
+                            Layout.fillWidth: true
+                            text: backend.porcupineAccessKey
+                            echoMode: TextInput.PasswordEchoOnEdit
+                            placeholderText: "Required for always-listening wake word detection"
+                        }
+
+                        Text { text: "Porcupine library"; color: "#d0e3f5"; font.pixelSize: 13 }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            TextField { id: porcupineLibraryPathField; Layout.fillWidth: true; text: backend.porcupineLibraryPath }
+                            Button { text: "Open Dir"; onClicked: backend.openContainingDirectory(porcupineLibraryPathField.text) }
+                        }
+
+                        Text { text: "Porcupine model"; color: "#d0e3f5"; font.pixelSize: 13 }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            TextField { id: porcupineModelPathField; Layout.fillWidth: true; text: backend.porcupineModelPath }
+                            Button { text: "Open Dir"; onClicked: backend.openContainingDirectory(porcupineModelPathField.text) }
+                        }
+
+                        Text { text: "Jarvis keyword file"; color: "#d0e3f5"; font.pixelSize: 13 }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            TextField { id: porcupineKeywordPathField; Layout.fillWidth: true; text: backend.porcupineKeywordPath }
+                            Button { text: "Open Dir"; onClicked: backend.openContainingDirectory(porcupineKeywordPathField.text) }
+                        }
+
+                        Text { text: "Wake sensitivity"; color: "#d0e3f5"; font.pixelSize: 13 }
+                        Slider {
+                            id: porcupineSensitivitySlider
+                            Layout.fillWidth: true
+                            from: 0.3
+                            to: 0.9
+                            value: backend.porcupineSensitivity
+                        }
+
                         Text {
-                            text: "Typed and transcribed phrases beginning with \"" + backend.wakeWordPhrase + "\" are stripped and routed cleanly through the assistant."
+                            text: "JARVIS uses Picovoice Porcupine for dedicated wake detection. Whisper is only used after the wake word has been detected."
                             color: "#9ab0ca"
                             font.pixelSize: 14
                             wrapMode: Text.Wrap
                         }
 
                         Text {
-                            text: "True background wake word detection with Picovoice Porcupine requires a Picovoice AccessKey and a custom Jarvis .ppn keyword file. This setup prepares the phrase-aware flow now."
+                            text: "The official Windows Jarvis keyword file can be auto-downloaded. Enter your Picovoice AccessKey here to enable always-listening wake detection."
                             color: "#7f97b7"
                             font.pixelSize: 13
                             wrapMode: Text.Wrap
@@ -477,6 +516,11 @@ Window {
                                             modelCombo.currentText,
                                             whisperPathField.text,
                                             whisperModelPathField.text,
+                                            porcupineAccessKeyField.text,
+                                            porcupineLibraryPathField.text,
+                                            porcupineModelPathField.text,
+                                            porcupineKeywordPathField.text,
+                                            porcupineSensitivitySlider.value,
                                             piperPathField.text,
                                             voicePathField.text,
                                             ffmpegPathField.text,
@@ -499,6 +543,11 @@ Window {
                                             modelCombo.currentText,
                                             whisperPathField.text,
                                             whisperModelPathField.text,
+                                            porcupineAccessKeyField.text,
+                                            porcupineLibraryPathField.text,
+                                            porcupineModelPathField.text,
+                                            porcupineKeywordPathField.text,
+                                            porcupineSensitivitySlider.value,
                                             piperPathField.text,
                                             voicePathField.text,
                                             ffmpegPathField.text,
@@ -544,6 +593,11 @@ Window {
                                     modelCombo.currentText,
                                     whisperPathField.text,
                                     whisperModelPathField.text,
+                                    porcupineAccessKeyField.text,
+                                    porcupineLibraryPathField.text,
+                                    porcupineModelPathField.text,
+                                    porcupineKeywordPathField.text,
+                                    porcupineSensitivitySlider.value,
                                     piperPathField.text,
                                     voicePathField.text,
                                     ffmpegPathField.text,
@@ -571,6 +625,11 @@ Window {
                                     modelCombo.currentText,
                                     whisperPathField.text,
                                     whisperModelPathField.text,
+                                    porcupineAccessKeyField.text,
+                                    porcupineLibraryPathField.text,
+                                    porcupineModelPathField.text,
+                                    porcupineKeywordPathField.text,
+                                    porcupineSensitivitySlider.value,
                                     piperPathField.text,
                                     voicePathField.text,
                                     ffmpegPathField.text,

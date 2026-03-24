@@ -19,6 +19,7 @@ class ReasoningRouter;
 class IdentityProfileService;
 class StreamAssembler;
 class WhisperSttEngine;
+class PorcupineWakeWordEngine;
 
 class AssistantController : public QObject
 {
@@ -65,6 +66,11 @@ public slots:
         int timeoutMs,
         const QString &whisperPath,
         const QString &whisperModelPath,
+        const QString &porcupineAccessKey,
+        const QString &porcupineLibraryPath,
+        const QString &porcupineModelPath,
+        const QString &porcupineKeywordPath,
+        double porcupineSensitivity,
         const QString &piperPath,
         const QString &voicePath,
         const QString &ffmpegPath,
@@ -107,6 +113,7 @@ private:
     void startCommandRequest(const QString &input);
     void handleConversationFinished(const QString &text);
     void handleCommandFinished(const QString &text);
+    void logPromptResponsePair(const QString &response, const QString &source, const QString &status = QString());
     CommandEnvelope parseCommand(const QString &payload) const;
 
     AppSettings *m_settings = nullptr;
@@ -123,6 +130,7 @@ private:
     LocalResponseEngine *m_localResponseEngine = nullptr;
     AudioInputService *m_audioInputService = nullptr;
     WhisperSttEngine *m_whisperSttEngine = nullptr;
+    PorcupineWakeWordEngine *m_porcupineWakeWordEngine = nullptr;
     PiperTtsEngine *m_piperTtsEngine = nullptr;
     AssistantState m_currentState = AssistantState::Idle;
     QString m_transcript;
@@ -131,6 +139,7 @@ private:
     float m_audioLevel = 0.0f;
     quint64 m_activeRequestId = 0;
     RequestKind m_activeRequestKind = RequestKind::Conversation;
+    QString m_lastPromptForAiLog;
     AudioCaptureMode m_audioCaptureMode = AudioCaptureMode::None;
     AudioCaptureMode m_lastCompletedCaptureMode = AudioCaptureMode::None;
     bool m_wakeMonitorEnabled = false;

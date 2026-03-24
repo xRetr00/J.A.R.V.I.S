@@ -14,7 +14,10 @@ class WhisperSttEngine : public QObject
 public:
     explicit WhisperSttEngine(AppSettings *settings, LoggingService *loggingService, QObject *parent = nullptr);
 
-    void transcribePcm(const QByteArray &pcmData);
+    void transcribePcm(
+        const QByteArray &pcmData,
+        const QString &initialPrompt = {},
+        bool suppressNonSpeechTokens = false);
 
 signals:
     void transcriptionReady(const TranscriptionResult &result);
