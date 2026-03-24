@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/qt/qml/JARVIS/gui/qml">
+        <file>qml/Main.qml</file>
+        <file>qml/SettingsWindow.qml</file>
+    </qresource>
+</RCC>

@@ -1,0 +1,26 @@
+#pragma once
+
+#include <QObject>
+
+#include "core/AssistantTypes.h"
+
+class AppSettings;
+
+class WhisperSttEngine : public QObject
+{
+    Q_OBJECT
+
+public:
+    explicit WhisperSttEngine(AppSettings *settings, QObject *parent = nullptr);
+
+    void transcribePcm(const QByteArray &pcmData);
+
+signals:
+    void transcriptionReady(const TranscriptionResult &result);
+    void transcriptionFailed(const QString &errorText);
+
+private:
+    QString writeWaveFile(const QByteArray &pcmData) const;
+
+    AppSettings *m_settings = nullptr;
+};

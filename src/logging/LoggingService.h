@@ -1,0 +1,25 @@
+#pragma once
+
+#include <memory>
+
+#include <QObject>
+
+namespace spdlog {
+class logger;
+}
+
+class LoggingService : public QObject
+{
+    Q_OBJECT
+
+public:
+    explicit LoggingService(QObject *parent = nullptr);
+
+    bool initialize();
+    void info(const QString &message) const;
+    void warn(const QString &message) const;
+    void error(const QString &message) const;
+
+private:
+    std::shared_ptr<spdlog::logger> m_logger;
+};
