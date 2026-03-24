@@ -27,6 +27,7 @@ find_package(Qt6 6.6 REQUIRED COMPONENTS
     Test
     Widgets
 )
+find_package(Qt6ShaderToolsTools REQUIRED)
 find_package(nlohmann_json CONFIG QUIET)
 if(NOT nlohmann_json_FOUND)
     FetchContent_Declare(
@@ -96,11 +97,19 @@ set(JARVIS_HEADERS
 )
 
 qt_add_resources(JARVIS_RESOURCES src/gui/resources.qrc)
+set_source_files_properties(src/gui/shaders/orb.frag PROPERTIES QT_RESOURCE_ALIAS orb.frag)
 
 add_library(jarvis_lib STATIC
     ${JARVIS_SOURCES}
     ${JARVIS_HEADERS}
     ${JARVIS_RESOURCES}
+)
+
+qt_add_shaders(jarvis_lib "jarvis_shaders"
+    PREFIX
+        "/qt/qml/JARVIS/gui/shaders"
+    FILES
+        src/gui/shaders/orb.frag
 )
 
 target_include_directories(jarvis_lib PUBLIC src)
@@ -130,6 +139,11 @@ target_link_libraries(jarvis PRIVATE jarvis_lib)
 set_target_properties(jarvis PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin"
 )
+
+if(WIN32)
+    # Build as a Windows GUI app to prevent an extra console window.
+    set_target_properties(jarvis PROPERTIES WIN32_EXECUTABLE TRUE)
+endif()
 
 get_target_property(QT_CORE_DLL Qt6::Core IMPORTED_LOCATION_DEBUG)
 if(NOT QT_CORE_DLL)

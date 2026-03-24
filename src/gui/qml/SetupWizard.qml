@@ -2,14 +2,17 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Window
+import "." as JarvisUi
 
 Window {
     id: wizard
-    width: 760
-    height: 560
+
+    width: 860
+    height: 720
     visible: false
     title: backend.assistantName + " Setup"
-    color: "#09111a"
+    color: "#050912"
+
     onClosing: function(close) {
         close.accepted = false
         hide()
@@ -17,145 +20,303 @@ Window {
 
     property int stepIndex: 0
 
-    Rectangle {
-        anchors.fill: parent
-        gradient: Gradient {
-            GradientStop { position: 0.0; color: "#122437" }
-            GradientStop { position: 1.0; color: "#07111a" }
-        }
+    JarvisUi.AnimationController {
+        id: setupMotion
+        stateName: stepIndex === 0 ? "IDLE" : stepIndex === 1 ? "PROCESSING" : stepIndex === 2 ? "LISTENING" : "SPEAKING"
+        inputLevel: 0.04
+        overlayVisible: wizard.visible
     }
 
-    ColumnLayout {
+    Rectangle {
         anchors.fill: parent
-        anchors.margins: 28
-        spacing: 18
+        color: "#050912"
+    }
 
-        Label {
-            text: backend.assistantName + " Initial Setup"
-            color: "#e5f8ff"
-            font.pixelSize: 28
-            font.bold: true
-        }
+    Rectangle {
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        height: 280
+        color: "#091224"
+    }
 
-        Label {
-            text: "Complete the essentials before the overlay starts."
-            color: "#8db4ca"
-            font.pixelSize: 14
-        }
+    RowLayout {
+        anchors.fill: parent
+        anchors.margins: 26
+        spacing: 22
 
-        ProgressBar {
-            Layout.fillWidth: true
-            from: 0
-            to: 3
-            value: stepIndex + 1
-        }
-
-        StackLayout {
-            id: steps
-            Layout.fillWidth: true
+        Rectangle {
+            Layout.preferredWidth: 280
             Layout.fillHeight: true
-            currentIndex: wizard.stepIndex
+            radius: 36
+            color: "#9f08111d"
+            border.width: 1
+            border.color: "#20314e"
 
-            ColumnLayout {
-                spacing: 12
-                Label { text: "Step 1 of 4"; color: "#6da1bb" }
-                Label { text: "User Profile"; color: "#e5f8ff"; font.pixelSize: 22; font.bold: true }
-                Label {
-                    text: "Set the basic identity your assistant will use immediately."
-                    color: "#9bb8c7"
+            Column {
+                anchors.fill: parent
+                anchors.margins: 24
+                spacing: 18
+
+                JarvisUi.OrbRenderer {
+                    width: 220
+                    height: 220
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    stateName: setupMotion.stateName
+                    time: setupMotion.time
+                    audioLevel: setupMotion.inputBoost
+                    speakingLevel: setupMotion.speakingSignal
+                    distortion: setupMotion.distortion
+                    glow: setupMotion.glow
+                    orbScale: setupMotion.orbScale
+                    orbitalRotation: setupMotion.orbitalRotation
+                }
+
+                Text {
+                    width: parent.width
+                    text: backend.assistantName + " Setup"
+                    color: "#eff7ff"
+                    font.pixelSize: 30
+                    font.weight: Font.Medium
+                    horizontalAlignment: Text.AlignHCenter
+                }
+
+                Text {
+                    width: parent.width
+                    text: "Shape the local stack before the assistant enters the overlay."
+                    color: "#8ca5c5"
+                    font.pixelSize: 14
                     wrapMode: Text.Wrap
+                    horizontalAlignment: Text.AlignHCenter
                 }
-                Label { text: "Your name"; color: "#d8f1ff" }
-                TextField {
-                    id: userNameField
-                    text: backend.userName
-                    placeholderText: "How should " + backend.assistantName + " address you?"
-                }
-            }
 
-            ColumnLayout {
-                spacing: 12
-                Label { text: "Step 2 of 4"; color: "#6da1bb" }
-                Label { text: "AI Core"; color: "#e5f8ff"; font.pixelSize: 22; font.bold: true }
-                Label { text: "Confirm the LM Studio endpoint and preferred model."; color: "#9bb8c7"; wrapMode: Text.Wrap }
-                Label { text: "LM Studio endpoint"; color: "#d8f1ff" }
-                TextField { id: endpointField; text: backend.lmStudioEndpoint }
-                RowLayout {
-                    Button { text: "Refresh Models"; onClicked: backend.refreshModels() }
-                    ComboBox {
-                        id: modelCombo
-                        Layout.fillWidth: true
-                        model: backend.models
-                        Component.onCompleted: {
-                            const index = backend.models.indexOf(backend.selectedModel)
-                            if (index >= 0) currentIndex = index
+                Column {
+                    width: parent.width
+                    spacing: 10
+
+                    Repeater {
+                        model: 4
+
+                        delegate: Rectangle {
+                            required property int index
+
+                            width: parent.width
+                            height: 44
+                            radius: 22
+                            color: wizard.stepIndex === index ? "#17375d" : "#0d1829"
+                            border.width: 1
+                            border.color: wizard.stepIndex === index ? "#5ba5ff" : "#213754"
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: index === 0 ? "Profile"
+                                    : index === 1 ? "AI Core"
+                                    : index === 2 ? "Voice"
+                                    : "Overlay"
+                                color: "#e5f4ff"
+                                font.pixelSize: 14
+                            }
                         }
                     }
                 }
             }
-
-            ColumnLayout {
-                spacing: 12
-                Label { text: "Step 3 of 4"; color: "#6da1bb" }
-                Label { text: "Voice Tooling"; color: "#e5f8ff"; font.pixelSize: 22; font.bold: true }
-                Label { text: "Point JARVIS to the local speech binaries and voice model."; color: "#9bb8c7"; wrapMode: Text.Wrap }
-                Label { text: "whisper.cpp executable"; color: "#d8f1ff" }
-                TextField { id: whisperPathField; text: backend.whisperExecutable }
-                Label { text: "Piper executable"; color: "#d8f1ff" }
-                TextField { id: piperPathField; text: backend.piperExecutable }
-                Label { text: "Piper voice model"; color: "#d8f1ff" }
-                TextField { id: voicePathField; text: backend.piperVoiceModel }
-                Label { text: "ffmpeg executable"; color: "#d8f1ff" }
-                TextField { id: ffmpegPathField; text: backend.ffmpegExecutable }
-            }
-
-            ColumnLayout {
-                spacing: 12
-                Label { text: "Step 4 of 4"; color: "#6da1bb" }
-                Label { text: "Overlay Behavior"; color: "#e5f8ff"; font.pixelSize: 22; font.bold: true }
-                Label { text: "Finalize the desktop overlay defaults."; color: "#9bb8c7"; wrapMode: Text.Wrap }
-                CheckBox {
-                    id: clickThroughCheck
-                    text: "Enable click-through overlay by default"
-                    checked: backend.clickThroughEnabled
-                }
-                Label {
-                    text: "Finish setup to save your base configuration and unlock the assistant."
-                    color: "#d8f1ff"
-                    wrapMode: Text.Wrap
-                }
-            }
         }
 
-        RowLayout {
+        Rectangle {
             Layout.fillWidth: true
+            Layout.fillHeight: true
+            radius: 36
+            color: "#9208111d"
+            border.width: 1
+            border.color: "#20314e"
 
-            Button {
-                text: "Back"
-                enabled: wizard.stepIndex > 0
-                onClicked: wizard.stepIndex--
-            }
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 28
+                spacing: 18
 
-            Item { Layout.fillWidth: true }
+                Text {
+                    text: wizard.stepIndex === 0 ? "Identity"
+                        : wizard.stepIndex === 1 ? "AI Core"
+                        : wizard.stepIndex === 2 ? "Voice Pipeline"
+                        : "Presence"
+                    color: "#f0f8ff"
+                    font.pixelSize: 28
+                    font.weight: Font.Medium
+                }
 
-            Button {
-                text: wizard.stepIndex === 3 ? "Finish Setup" : "Next"
-                onClicked: {
-                    if (wizard.stepIndex < 3) {
-                        wizard.stepIndex++
-                        return
+                Text {
+                    text: wizard.stepIndex === 0 ? "Define how the assistant should address you."
+                        : wizard.stepIndex === 1 ? "Point JARVIS at LM Studio and choose a model."
+                        : wizard.stepIndex === 2 ? "Connect whisper.cpp, Piper, and the voice model."
+                        : "Set the overlay’s starting behavior."
+                    color: "#89a3c4"
+                    font.pixelSize: 14
+                    wrapMode: Text.Wrap
+                }
+
+                ProgressBar {
+                    Layout.fillWidth: true
+                    from: 0
+                    to: 4
+                    value: wizard.stepIndex + 1
+                }
+
+                StackLayout {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    currentIndex: wizard.stepIndex
+
+                    ColumnLayout {
+                        spacing: 14
+                        Text { text: "Your name"; color: "#d0e3f5"; font.pixelSize: 13 }
+                        TextField {
+                            id: userNameField
+                            Layout.fillWidth: true
+                            text: backend.userName
+                            placeholderText: "How should " + backend.assistantName + " address you?"
+                        }
                     }
 
-                    backend.completeInitialSetup(
-                        userNameField.text,
-                        endpointField.text,
-                        modelCombo.currentText,
-                        whisperPathField.text,
-                        piperPathField.text,
-                        voicePathField.text,
-                        ffmpegPathField.text,
-                        clickThroughCheck.checked
-                    )
+                    ColumnLayout {
+                        spacing: 14
+                        Text { text: "LM Studio endpoint"; color: "#d0e3f5"; font.pixelSize: 13 }
+                        TextField { id: endpointField; Layout.fillWidth: true; text: backend.lmStudioEndpoint }
+                        RowLayout {
+                            Layout.fillWidth: true
+
+                            Rectangle {
+                                Layout.preferredWidth: 150
+                                Layout.preferredHeight: 48
+                                radius: 24
+                                color: "#15253c"
+                                border.width: 1
+                                border.color: "#2a4667"
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "Refresh models"
+                                    color: "#edf8ff"
+                                    font.pixelSize: 14
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: backend.refreshModels()
+                                }
+                            }
+
+                            ComboBox {
+                                id: modelCombo
+                                Layout.fillWidth: true
+                                model: backend.models
+                                Component.onCompleted: {
+                                    const index = backend.models.indexOf(backend.selectedModel)
+                                    if (index >= 0) {
+                                        currentIndex = index
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    ColumnLayout {
+                        spacing: 14
+                        Text { text: "whisper.cpp executable"; color: "#d0e3f5"; font.pixelSize: 13 }
+                        TextField { id: whisperPathField; Layout.fillWidth: true; text: backend.whisperExecutable }
+                        Text { text: "Piper executable"; color: "#d0e3f5"; font.pixelSize: 13 }
+                        TextField { id: piperPathField; Layout.fillWidth: true; text: backend.piperExecutable }
+                        Text { text: "Piper voice model"; color: "#d0e3f5"; font.pixelSize: 13 }
+                        TextField { id: voicePathField; Layout.fillWidth: true; text: backend.piperVoiceModel }
+                        Text { text: "ffmpeg executable"; color: "#d0e3f5"; font.pixelSize: 13 }
+                        TextField { id: ffmpegPathField; Layout.fillWidth: true; text: backend.ffmpegExecutable }
+                    }
+
+                    ColumnLayout {
+                        spacing: 14
+                        CheckBox {
+                            id: clickThroughCheck
+                            text: "Enable click-through overlay by default"
+                            checked: backend.clickThroughEnabled
+                        }
+
+                        Text {
+                            text: "You can still change all of this later from the tray menu."
+                            color: "#9ab0ca"
+                            font.pixelSize: 14
+                            wrapMode: Text.Wrap
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    Rectangle {
+                        Layout.preferredWidth: 130
+                        Layout.preferredHeight: 50
+                        radius: 25
+                        color: wizard.stepIndex > 0 ? "#15253c" : "#0d1521"
+                        border.width: 1
+                        border.color: wizard.stepIndex > 0 ? "#2a4667" : "#1a293e"
+                        opacity: wizard.stepIndex > 0 ? 1.0 : 0.45
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "Back"
+                            color: "#edf8ff"
+                            font.pixelSize: 14
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            enabled: wizard.stepIndex > 0
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onClicked: wizard.stepIndex--
+                        }
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    Rectangle {
+                        Layout.preferredWidth: 168
+                        Layout.preferredHeight: 50
+                        radius: 25
+                        color: "#183657"
+                        border.width: 1
+                        border.color: "#4d8fd1"
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: wizard.stepIndex === 3 ? "Finish setup" : "Continue"
+                            color: "#f2fbff"
+                            font.pixelSize: 14
+                            font.weight: Font.Medium
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                if (wizard.stepIndex < 3) {
+                                    wizard.stepIndex++
+                                    return
+                                }
+
+                                backend.completeInitialSetup(
+                                    userNameField.text,
+                                    endpointField.text,
+                                    modelCombo.currentText,
+                                    whisperPathField.text,
+                                    piperPathField.text,
+                                    voicePathField.text,
+                                    ffmpegPathField.text,
+                                    clickThroughCheck.checked
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }

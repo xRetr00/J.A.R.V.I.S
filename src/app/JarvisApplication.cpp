@@ -11,6 +11,7 @@
 #include <QQuickWindow>
 #include <QStyle>
 #include <QSystemTrayIcon>
+#include <QWindow>
 #include <functional>
 
 #include "core/AssistantController.h"
@@ -105,7 +106,7 @@ bool JarvisApplication::initialize()
 
     m_engine->rootContext()->setContextProperty(QStringLiteral("backend"), m_backendFacade.get());
     qInfo() << "Loading QML windows";
-    m_engine->load(QUrl(QStringLiteral("qrc:/qt/qml/JARVIS/gui/qml/Main.qml")));
+    m_engine->load(QUrl(QStringLiteral("qrc:/qt/qml/JARVIS/gui/qml/OverlayWindow.qml")));
     m_engine->load(QUrl(QStringLiteral("qrc:/qt/qml/JARVIS/gui/qml/SettingsWindow.qml")));
     m_engine->load(QUrl(QStringLiteral("qrc:/qt/qml/JARVIS/gui/qml/SetupWizard.qml")));
     if (m_engine->rootObjects().isEmpty()) {
@@ -140,6 +141,11 @@ bool JarvisApplication::initialize()
             }
             m_setupWindow->hide();
         }
+    }
+    if (m_setupWindow) {
+        connect(m_setupWindow, &QWindow::visibleChanged, this, [this]() {
+            m_overlayController->setSetupVisible(m_setupWindow && m_setupWindow->isVisible());
+        });
     }
 
 #ifdef Q_OS_WIN
@@ -181,13 +187,12 @@ bool JarvisApplication::initialize()
         }
     });
 
-    connect(m_overlayController.get(), &OverlayController::visibilityChanged, this, [this](bool visible) {
-        if (!visible) {
-            m_assistantController->cancelActiveRequest();
-        }
+    connect(m_assistantController.get(), &AssistantController::stateChanged, this, [this]() {
+        m_overlayController->setAssistantState(m_assistantController->stateName());
     });
 
     m_assistantController->initialize();
+    m_overlayController->setAssistantState(m_assistantController->stateName());
     if (!m_settings->initialSetupCompleted() && m_setupWindow) {
         qInfo() << "First run detected. Opening setup wizard.";
         m_setupWindow->show();
@@ -206,9 +211,7 @@ bool JarvisApplication::initialize()
         if (m_setupWindow) {
             m_setupWindow->hide();
         }
-        if (m_mainWindow) {
-            m_mainWindow->show();
-        }
+        m_overlayController->showOverlay();
         qInfo() << "Initial setup completed";
     });
     return true;

@@ -79,6 +79,7 @@ void BackendFacade::saveSettings(
     m_assistantController->saveSettings(
         endpoint, modelId, defaultMode, autoRouting, streaming, timeoutMs,
         whisperPath, piperPath, voicePath, ffmpegPath, voiceSpeed, voicePitch, micSensitivity, clickThrough);
+    m_overlayController->setClickThrough(clickThrough);
     emit settingsChanged();
 }
 
@@ -112,6 +113,7 @@ void BackendFacade::completeInitialSetup(
         0.02,
         clickThrough);
 
+    m_overlayController->setClickThrough(clickThrough);
     m_settings->setInitialSetupCompleted(true);
     m_settings->save();
     emit profileChanged();
