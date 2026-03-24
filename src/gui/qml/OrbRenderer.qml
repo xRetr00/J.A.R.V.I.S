@@ -20,123 +20,72 @@ Item {
     implicitWidth: 520
     implicitHeight: 520
 
-    Rectangle {
-        anchors.centerIn: parent
-        width: parent.width * 1.02
-        height: width
-        radius: width / 2
-        color: stateName === "SPEAKING" ? "#52156f" : "#12253d"
-        opacity: 0.03 + root.glow * 0.04
-        scale: 0.92 + root.glow * 0.22
-    }
-
-    Rectangle {
-        anchors.centerIn: parent
-        width: parent.width * 0.78
-        height: width
-        radius: width / 2
-        color: stateName === "SPEAKING" ? "#7630cc" : "#1f4f93"
-        opacity: 0.05 + root.glow * 0.04
-        scale: 1.0 + root.glow * 0.12
-    }
-
     ShaderEffect {
         id: auraLayer
         anchors.centerIn: parent
-        width: parent.width * 0.96
+        width: parent.width * 1.18
         height: width
         blending: true
 
-        property real time: root.time * 0.82
-        property real level: root.audioLevel * 0.7
-        property real speaking: root.speakingLevel * 0.65
+        property real time: root.time * 0.68 + 8.0
+        property real level: root.audioLevel * 0.75
+        property real speaking: root.speakingLevel * 0.7
         property real mode: root.stateIndex
-        property real distortion: root.distortion * 1.35
+        property real distortion: root.distortion * 1.45
         property vector2d resolution: Qt.vector2d(width, height)
-        property color colorA: root.stateName === "SPEAKING" ? "#d7d0ff" : "#b9fcff"
-        property color colorB: root.stateName === "PROCESSING" ? "#8073ff" : "#51a7ff"
-        property color colorC: root.stateName === "SPEAKING" ? "#7124d5" : "#11335d"
+        property color colorA: root.stateName === "SPEAKING" ? "#f0c8ff" : "#b8fbff"
+        property color colorB: root.stateName === "PROCESSING" ? "#7b74ff" : "#53b4ff"
+        property color colorC: root.stateName === "SPEAKING" ? "#4c1296" : "#07172c"
 
         fragmentShader: "qrc:/qt/qml/JARVIS/gui/shaders/src/gui/shaders/orb.frag.qsb"
-        opacity: 0.28 + root.glow * 0.2
-        scale: 1.05 + root.glow * 0.16
+        opacity: 0.24 + root.glow * 0.22
+        scale: 1.02 + root.glow * 0.2
+        rotation: root.orbitalRotation * 0.18
+    }
+
+    ShaderEffect {
+        id: plasmaLayer
+        anchors.centerIn: parent
+        width: parent.width * 0.86
+        height: width
+        blending: true
+
+        property real time: root.time * 0.97
+        property real level: root.audioLevel * 0.92
+        property real speaking: root.speakingLevel * 0.9
+        property real mode: root.stateIndex
+        property real distortion: root.distortion * 1.08
+        property vector2d resolution: Qt.vector2d(width, height)
+        property color colorA: root.stateName === "SPEAKING" ? "#f7e4ff" : "#ddffff"
+        property color colorB: root.stateName === "PROCESSING" ? "#6a6cff" : "#2da3ff"
+        property color colorC: root.stateName === "SPEAKING" ? "#7927e0" : "#0d2551"
+
+        fragmentShader: "qrc:/qt/qml/JARVIS/gui/shaders/src/gui/shaders/orb.frag.qsb"
+        opacity: 0.92
+        scale: root.orbScale
+        rotation: root.orbitalRotation * -0.32
     }
 
     ShaderEffect {
         id: coreLayer
         anchors.centerIn: parent
-        width: parent.width * 0.74
+        width: parent.width * 0.56
         height: width
         blending: true
 
-        property real time: root.time
-        property real level: root.audioLevel
-        property real speaking: root.speakingLevel
+        property real time: root.time * 1.34 + 17.0
+        property real level: root.audioLevel * 0.62
+        property real speaking: root.speakingLevel * 0.88
         property real mode: root.stateIndex
-        property real distortion: root.distortion
+        property real distortion: root.distortion * 0.74
         property vector2d resolution: Qt.vector2d(width, height)
-        property color colorA: root.stateName === "SPEAKING" ? "#f3e3ff" : "#cbffff"
-        property color colorB: root.stateName === "PROCESSING" ? "#7a78ff" : "#39a5ff"
-        property color colorC: root.stateName === "SPEAKING" ? "#a53fff" : "#16345c"
+        property color colorA: "#f7ffff"
+        property color colorB: root.stateName === "SPEAKING" ? "#f39cff" : "#90e3ff"
+        property color colorC: root.stateName === "SPEAKING" ? "#6a21bd" : "#163864"
 
         fragmentShader: "qrc:/qt/qml/JARVIS/gui/shaders/src/gui/shaders/orb.frag.qsb"
-        scale: root.orbScale
-    }
-
-    ShaderEffect {
-        id: innerLayer
-        anchors.centerIn: parent
-        width: parent.width * 0.48
-        height: width
-        blending: true
-
-        property real time: root.time * 1.3 + 4.0
-        property real level: root.audioLevel * 0.6
-        property real speaking: root.speakingLevel * 0.8
-        property real mode: root.stateIndex
-        property real distortion: root.distortion * 0.75
-        property vector2d resolution: Qt.vector2d(width, height)
-        property color colorA: "#e8ffff"
-        property color colorB: root.stateName === "SPEAKING" ? "#d978ff" : "#7cd8ff"
-        property color colorC: root.stateName === "SPEAKING" ? "#6c2db9" : "#173764"
-
-        fragmentShader: "qrc:/qt/qml/JARVIS/gui/shaders/src/gui/shaders/orb.frag.qsb"
-        opacity: 0.82
-        scale: 0.96 + root.orbScale * 0.04
-        rotation: root.orbitalRotation * 0.55
-    }
-
-    Rectangle {
-        anchors.centerIn: parent
-        width: parent.width * 0.18
-        height: width
-        radius: width / 2
-        color: "#f5fcff"
-        opacity: 0.16 + root.glow * 0.1 + root.speakingLevel * 0.08
+        opacity: 0.98
         scale: 0.92 + root.orbScale * 0.08
-    }
-
-    Repeater {
-        model: 4
-
-        delegate: Item {
-            required property int index
-
-            width: root.width
-            height: root.height
-            rotation: root.orbitalRotation * (index % 2 === 0 ? 1.0 : -0.65) + index * 90
-            opacity: root.stateName === "PROCESSING" || root.stateName === "SPEAKING" ? 0.65 : 0.22
-
-            Rectangle {
-                width: index % 2 === 0 ? 16 : 10
-                height: width
-                radius: width / 2
-                color: index % 2 === 0 ? "#8ce7ff" : "#cc8cff"
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.verticalCenterOffset: -root.height * (0.24 + index * 0.015)
-                opacity: 0.55 + root.glow * 0.2
-            }
-        }
+        rotation: root.orbitalRotation * 0.46
     }
 }
