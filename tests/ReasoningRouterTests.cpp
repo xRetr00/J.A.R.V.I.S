@@ -37,5 +37,5 @@ void ReasoningRouterTests::respectsDefaultModeWhenAutoRoutingDisabled()
     QCOMPARE(router.chooseMode(QStringLiteral("turn off the light"), false, ReasoningMode::Deep), ReasoningMode::Deep);
 }
 
-QTEST_MAIN(ReasoningRouterTests)
+QTEST_APPLESS_MAIN(ReasoningRouterTests)
 #include "ReasoningRouterTests.moc"

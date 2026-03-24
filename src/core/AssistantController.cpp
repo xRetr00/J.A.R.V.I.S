@@ -1,6 +1,5 @@
 #include "core/AssistantController.h"
 
-#include <QState>
 #include <QTime>
 
 #include <nlohmann/json.hpp>
@@ -287,27 +286,30 @@ void AssistantController::saveSettings(
 
 void AssistantController::setupStateMachine()
 {
-    auto *idle = new QState(&m_stateMachine);
-    auto *listening = new QState(&m_stateMachine);
-    auto *processing = new QState(&m_stateMachine);
-    auto *speaking = new QState(&m_stateMachine);
+    connect(this, &AssistantController::idleRequested, this, [this]() {
+        transitionToState(AssistantState::Idle);
+    });
+    connect(this, &AssistantController::listeningRequested, this, [this]() {
+        transitionToState(AssistantState::Listening);
+    });
+    connect(this, &AssistantController::processingRequested, this, [this]() {
+        transitionToState(AssistantState::Processing);
+    });
+    connect(this, &AssistantController::speakingRequested, this, [this]() {
+        transitionToState(AssistantState::Speaking);
+    });
 
-    idle->addTransition(this, &AssistantController::listeningRequested, listening);
-    idle->addTransition(this, &AssistantController::processingRequested, processing);
-    listening->addTransition(this, &AssistantController::processingRequested, processing);
-    listening->addTransition(this, &AssistantController::idleRequested, idle);
-    processing->addTransition(this, &AssistantController::speakingRequested, speaking);
-    processing->addTransition(this, &AssistantController::idleRequested, idle);
-    speaking->addTransition(this, &AssistantController::idleRequested, idle);
-    speaking->addTransition(this, &AssistantController::processingRequested, processing);
+    transitionToState(AssistantState::Idle);
+}
 
-    connect(idle, &QState::entered, this, [this]() { m_currentState = AssistantState::Idle; emit stateChanged(); });
-    connect(listening, &QState::entered, this, [this]() { m_currentState = AssistantState::Listening; emit stateChanged(); });
-    connect(processing, &QState::entered, this, [this]() { m_currentState = AssistantState::Processing; emit stateChanged(); });
-    connect(speaking, &QState::entered, this, [this]() { m_currentState = AssistantState::Speaking; emit stateChanged(); });
+void AssistantController::transitionToState(AssistantState state)
+{
+    if (m_currentState == state) {
+        return;
+    }
 
-    m_stateMachine.setInitialState(idle);
-    m_stateMachine.start();
+    m_currentState = state;
+    emit stateChanged();
 }
 
 void AssistantController::setStatus(const QString &status)

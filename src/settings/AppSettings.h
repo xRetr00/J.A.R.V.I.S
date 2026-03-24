@@ -57,6 +57,9 @@ public:
     bool clickThroughEnabled() const;
     void setClickThroughEnabled(bool enabled);
 
+    bool initialSetupCompleted() const;
+    void setInitialSetupCompleted(bool completed);
+
     QString storagePath() const;
 
 signals:
@@ -77,4 +80,5 @@ private:
     double m_voicePitch = 1.0;
     double m_micSensitivity = 0.02;
     bool m_clickThroughEnabled = false;
+    bool m_initialSetupCompleted = false;
 };

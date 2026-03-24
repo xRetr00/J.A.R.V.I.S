@@ -1,6 +1,5 @@
 #pragma once
 
-#include <QStateMachine>
 #include <QObject>
 
 #include "core/AssistantTypes.h"
@@ -85,6 +84,7 @@ signals:
 
 private:
     void setupStateMachine();
+    void transitionToState(AssistantState state);
     void setStatus(const QString &status);
     void updateUserProfileFromInput(const QString &input);
     LocalResponseContext buildLocalResponseContext() const;
@@ -110,7 +110,6 @@ private:
     AudioInputService *m_audioInputService = nullptr;
     WhisperSttEngine *m_whisperSttEngine = nullptr;
     PiperTtsEngine *m_piperTtsEngine = nullptr;
-    QStateMachine m_stateMachine;
     AssistantState m_currentState = AssistantState::Idle;
     QString m_transcript;
     QString m_responseText;

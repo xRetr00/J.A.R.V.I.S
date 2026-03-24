@@ -78,6 +78,7 @@ bool AppSettings::load()
     m_voicePitch = parsed.value("voicePitch", 1.0);
     m_micSensitivity = parsed.value("micSensitivity", 0.02);
     m_clickThroughEnabled = parsed.value("clickThroughEnabled", false);
+    m_initialSetupCompleted = parsed.value("initialSetupCompleted", false);
     emit settingsChanged();
     return true;
 }
@@ -98,7 +99,8 @@ bool AppSettings::save() const
         {"voiceSpeed", m_voiceSpeed},
         {"voicePitch", m_voicePitch},
         {"micSensitivity", m_micSensitivity},
-        {"clickThroughEnabled", m_clickThroughEnabled}
+        {"clickThroughEnabled", m_clickThroughEnabled},
+        {"initialSetupCompleted", m_initialSetupCompleted}
     };
 
     QFile file(settingsFilePath());
@@ -138,4 +140,6 @@ double AppSettings::micSensitivity() const { return m_micSensitivity; }
 void AppSettings::setMicSensitivity(double sensitivity) { m_micSensitivity = sensitivity; emit settingsChanged(); }
 bool AppSettings::clickThroughEnabled() const { return m_clickThroughEnabled; }
 void AppSettings::setClickThroughEnabled(bool enabled) { m_clickThroughEnabled = enabled; emit settingsChanged(); }
+bool AppSettings::initialSetupCompleted() const { return m_initialSetupCompleted; }
+void AppSettings::setInitialSetupCompleted(bool completed) { m_initialSetupCompleted = completed; emit settingsChanged(); }
 QString AppSettings::storagePath() const { return settingsFilePath(); }

@@ -80,18 +80,24 @@ bool JarvisApplication::initialize()
         m_identityProfileService.get(),
         m_loggingService.get());
     m_overlayController = std::make_unique<OverlayController>();
-    m_backendFacade = std::make_unique<BackendFacade>(m_settings.get(), m_assistantController.get(), m_overlayController.get());
+    m_backendFacade = std::make_unique<BackendFacade>(
+        m_settings.get(),
+        m_identityProfileService.get(),
+        m_assistantController.get(),
+        m_overlayController.get());
     m_engine = std::make_unique<QQmlApplicationEngine>();
     m_trayIcon = std::make_unique<QSystemTrayIcon>(qApp->style()->standardIcon(QStyle::SP_ComputerIcon), this);
 
     m_engine->rootContext()->setContextProperty(QStringLiteral("backend"), m_backendFacade.get());
     m_engine->load(QUrl(QStringLiteral("qrc:/qt/qml/JARVIS/gui/qml/Main.qml")));
     m_engine->load(QUrl(QStringLiteral("qrc:/qt/qml/JARVIS/gui/qml/SettingsWindow.qml")));
+    m_engine->load(QUrl(QStringLiteral("qrc:/qt/qml/JARVIS/gui/qml/SetupWizard.qml")));
     if (m_engine->rootObjects().isEmpty()) {
         return false;
     }
 
     if (auto *window = qobject_cast<QQuickWindow *>(m_engine->rootObjects().first())) {
+        m_mainWindow = window;
         m_overlayController->attachWindow(window);
         m_overlayController->setClickThrough(m_settings->clickThroughEnabled());
         window->setColor(Qt::transparent);
@@ -101,6 +107,12 @@ bool JarvisApplication::initialize()
         m_settingsWindow = qobject_cast<QQuickWindow *>(m_engine->rootObjects().at(1));
         if (m_settingsWindow) {
             m_settingsWindow->hide();
+        }
+    }
+    if (m_engine->rootObjects().size() > 2) {
+        m_setupWindow = qobject_cast<QQuickWindow *>(m_engine->rootObjects().at(2));
+        if (m_setupWindow) {
+            m_setupWindow->hide();
         }
     }
 
@@ -133,5 +145,19 @@ bool JarvisApplication::initialize()
     });
 
     m_assistantController->initialize();
+    if (!m_settings->initialSetupCompleted() && m_setupWindow) {
+        m_setupWindow->show();
+        m_setupWindow->raise();
+        m_setupWindow->requestActivate();
+    }
+
+    connect(m_backendFacade.get(), &BackendFacade::initialSetupFinished, this, [this]() {
+        if (m_setupWindow) {
+            m_setupWindow->hide();
+        }
+        if (m_mainWindow) {
+            m_mainWindow->show();
+        }
+    });
     return true;
 }

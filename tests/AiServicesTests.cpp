@@ -63,5 +63,5 @@ void AiServicesTests::streamAssemblerEmitsSentences()
     QCOMPARE(spy.takeFirst().at(0).toString(), QStringLiteral("Hello world."));
 }
 
-QTEST_MAIN(AiServicesTests)
+QTEST_APPLESS_MAIN(AiServicesTests)
 #include "AiServicesTests.moc"

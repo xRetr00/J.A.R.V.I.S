@@ -12,7 +12,7 @@ public:
     explicit DeviceManager(QObject *parent = nullptr);
 
     void registerDefaults();
-    QString execute(const CommandEnvelope &command) const;
+    QString execute(const CommandEnvelope &command);
 
 private:
     QList<Device *> m_devices;

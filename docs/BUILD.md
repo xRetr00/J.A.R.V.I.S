@@ -24,16 +24,34 @@ If you are using `vcpkg` for dependencies, set `VCPKG_ROOT` first and use:
 cmake --preset vcpkg
 ```
 
+For the Qt kit currently installed on this machine, this working MSVC configure flow is:
+
+```powershell
+cmd /c "call \"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat\" && cmake -S d:\J.A.R.V.I.S -B d:\J.A.R.V.I.S\build-msvc -G Ninja -DCMAKE_PREFIX_PATH=C:\Qt\6.10.2\msvc2022_64"
+```
+
 ## Build
 
 ```powershell
 cmake --build --preset default
 ```
 
+For the verified local MSVC build directory:
+
+```powershell
+cmd /c "call \"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat\" && cmake --build d:\J.A.R.V.I.S\build-msvc --parallel"
+```
+
 ## Test
 
 ```powershell
 ctest --preset default
+```
+
+For the verified local MSVC build directory:
+
+```powershell
+cmd /c "call \"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat\" && ctest --test-dir d:\J.A.R.V.I.S\build-msvc --output-on-failure"
 ```
 
 ## Runtime notes

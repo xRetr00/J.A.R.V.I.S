@@ -6,6 +6,44 @@
 #include <QJsonObject>
 #include <QRandomGenerator>
 
+namespace {
+QHash<QString, QStringList> defaultResponses()
+{
+    return {
+        {QStringLiteral("greeting_morning"), {
+             QStringLiteral("Good morning, {user_name}. {assistant_name} is steady and available."),
+             QStringLiteral("Good morning, {user_name}. {assistant_name} is online."),
+             QStringLiteral("Morning, {user_name}. {assistant_name} is ready when you are.")
+         }},
+        {QStringLiteral("greeting_evening"), {
+             QStringLiteral("Good evening, {user_name}. All systems remain available."),
+             QStringLiteral("Good evening, {user_name}. {assistant_name} is standing by."),
+             QStringLiteral("Evening, {user_name}. What do you need?")
+         }},
+        {QStringLiteral("small_talk"), {
+             QStringLiteral("I am operating normally, {user_name}."),
+             QStringLiteral("All core systems are stable this {time_of_day}."),
+             QStringLiteral("Running smoothly with a {tone} tone. Let me know what you need.")
+         }},
+        {QStringLiteral("ai_offline"), {
+             QStringLiteral("I'm currently unable to reach the AI core."),
+             QStringLiteral("My processing unit is offline at the moment."),
+             QStringLiteral("The AI core is unavailable right now, but local systems remain active.")
+         }},
+        {QStringLiteral("error_timeout"), {
+             QStringLiteral("The AI core did not answer in time."),
+             QStringLiteral("The request exceeded its response window."),
+             QStringLiteral("I hit a timeout while waiting on the AI core.")
+         }},
+        {QStringLiteral("acknowledgement"), {
+             QStringLiteral("Understood. Applying that to {target}."),
+             QStringLiteral("Acknowledged. Routing the action to {target}."),
+             QStringLiteral("Confirmed. Handling {target} now.")
+         }}
+    };
+}
+}
+
 LocalResponseEngine::LocalResponseEngine(QObject *parent)
     : QObject(parent)
 {
@@ -13,9 +51,11 @@ LocalResponseEngine::LocalResponseEngine(QObject *parent)
 
 bool LocalResponseEngine::initialize()
 {
+    m_responses = defaultResponses();
+
     QFile file(QStringLiteral(":/qt/qml/JARVIS/gui/data/local_responses.json"));
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        return false;
+        return !m_responses.isEmpty();
     }
 
     const auto document = QJsonDocument::fromJson(file.readAll());

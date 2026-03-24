@@ -2,6 +2,7 @@
     <qresource prefix="/qt/qml/JARVIS/gui/qml">
         <file>qml/Main.qml</file>
         <file>qml/SettingsWindow.qml</file>
+        <file>qml/SetupWizard.qml</file>
     </qresource>
     <qresource prefix="/qt/qml/JARVIS/gui/data">
         <file>data/local_responses.json</file>

@@ -14,6 +14,7 @@ class OverlayController;
 class QQmlApplicationEngine;
 class QQuickWindow;
 class QSystemTrayIcon;
+class QWindow;
 
 class JarvisApplication : public QObject
 {
@@ -34,5 +35,7 @@ private:
     std::unique_ptr<QQmlApplicationEngine> m_engine;
     std::unique_ptr<QSystemTrayIcon> m_trayIcon;
     std::unique_ptr<NativeHotkeyFilter> m_hotkeyFilter;
+    QPointer<QQuickWindow> m_mainWindow;
     QPointer<QQuickWindow> m_settingsWindow;
+    QPointer<QQuickWindow> m_setupWindow;
 };

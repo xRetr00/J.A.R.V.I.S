@@ -4,6 +4,7 @@
 
 class AssistantController;
 class AppSettings;
+class IdentityProfileService;
 class OverlayController;
 
 class BackendFacade : public QObject
@@ -30,9 +31,17 @@ class BackendFacade : public QObject
     Q_PROPERTY(double voicePitch READ voicePitch NOTIFY settingsChanged)
     Q_PROPERTY(double micSensitivity READ micSensitivity NOTIFY settingsChanged)
     Q_PROPERTY(bool clickThroughEnabled READ clickThroughEnabled NOTIFY settingsChanged)
+    Q_PROPERTY(QString assistantName READ assistantName NOTIFY profileChanged)
+    Q_PROPERTY(QString userName READ userName NOTIFY profileChanged)
+    Q_PROPERTY(bool initialSetupCompleted READ initialSetupCompleted NOTIFY settingsChanged)
 
 public:
-    BackendFacade(AppSettings *settings, AssistantController *assistantController, OverlayController *overlayController, QObject *parent = nullptr);
+    BackendFacade(
+        AppSettings *settings,
+        IdentityProfileService *identityProfileService,
+        AssistantController *assistantController,
+        OverlayController *overlayController,
+        QObject *parent = nullptr);
 
     QString stateName() const;
     QString transcript() const;
@@ -55,6 +64,9 @@ public:
     double voicePitch() const;
     double micSensitivity() const;
     bool clickThroughEnabled() const;
+    QString assistantName() const;
+    QString userName() const;
+    bool initialSetupCompleted() const;
 
     Q_INVOKABLE void toggleOverlay();
     Q_INVOKABLE void refreshModels();
@@ -77,6 +89,15 @@ public:
         double voicePitch,
         double micSensitivity,
         bool clickThrough);
+    Q_INVOKABLE void completeInitialSetup(
+        const QString &userName,
+        const QString &endpoint,
+        const QString &modelId,
+        const QString &whisperPath,
+        const QString &piperPath,
+        const QString &voicePath,
+        const QString &ffmpegPath,
+        bool clickThrough);
 
 signals:
     void stateNameChanged();
@@ -88,9 +109,12 @@ signals:
     void selectedModelChanged();
     void overlayVisibleChanged();
     void settingsChanged();
+    void profileChanged();
+    void initialSetupFinished();
 
 private:
     AppSettings *m_settings = nullptr;
+    IdentityProfileService *m_identityProfileService = nullptr;
     AssistantController *m_assistantController = nullptr;
     OverlayController *m_overlayController = nullptr;
 };

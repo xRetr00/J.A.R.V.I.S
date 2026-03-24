@@ -23,5 +23,5 @@ void IdentityProfileTests::loadsIdentityAndUserProfile()
     QVERIFY(profile.preferences.is_object());
 }
 
-QTEST_MAIN(IdentityProfileTests)
+QTEST_APPLESS_MAIN(IdentityProfileTests)
 #include "IdentityProfileTests.moc"

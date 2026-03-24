@@ -54,5 +54,5 @@ void LocalResponseEngineTests::avoidsImmediateRepetitionWhenVariantsExist()
     QVERIFY(first != second);
 }
 
-QTEST_MAIN(LocalResponseEngineTests)
+QTEST_APPLESS_MAIN(LocalResponseEngineTests)
 #include "LocalResponseEngineTests.moc"

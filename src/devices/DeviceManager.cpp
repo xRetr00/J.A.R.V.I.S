@@ -15,9 +15,9 @@ void DeviceManager::registerDefaults()
     };
 }
 
-QString DeviceManager::execute(const CommandEnvelope &command) const
+QString DeviceManager::execute(const CommandEnvelope &command)
 {
-    for (const auto *device : m_devices) {
+    for (auto *device : m_devices) {
         if (device->deviceId() == command.target) {
             return device->execute(command);
         }
