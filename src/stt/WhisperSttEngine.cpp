@@ -3,10 +3,12 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QProcess>
 #include <QScopeGuard>
 #include <QStandardPaths>
 
+#include "logging/LoggingService.h"
 #include "settings/AppSettings.h"
 
 namespace {
@@ -37,29 +39,81 @@ void writeWaveHeader(QFile &file, quint32 pcmSize)
 }
 }
 
-WhisperSttEngine::WhisperSttEngine(AppSettings *settings, QObject *parent)
+WhisperSttEngine::WhisperSttEngine(AppSettings *settings, LoggingService *loggingService, QObject *parent)
     : QObject(parent)
     , m_settings(settings)
+    , m_loggingService(loggingService)
 {
 }
 
 void WhisperSttEngine::transcribePcm(const QByteArray &pcmData)
 {
     if (m_settings->whisperExecutable().isEmpty()) {
-        emit transcriptionFailed(QStringLiteral("whisper.cpp executable is not configured"));
+        const QString message = QStringLiteral("whisper.cpp executable is not configured");
+        if (m_loggingService) {
+            m_loggingService->error(message);
+        }
+        emit transcriptionFailed(message);
         return;
     }
 
     const QString waveFile = writeWaveFile(pcmData);
+    if (waveFile.isEmpty() || !QFileInfo::exists(waveFile)) {
+        const QString message = QStringLiteral("whisper.cpp input WAV could not be created");
+        if (m_loggingService) {
+            m_loggingService->error(message);
+        }
+        emit transcriptionFailed(message);
+        return;
+    }
+
+    if (m_loggingService) {
+        m_loggingService->info(
+            QStringLiteral("Starting whisper.cpp transcription. executable=\"%1\" input=\"%2\" bytes=%3")
+                .arg(m_settings->whisperExecutable(), waveFile)
+                .arg(pcmData.size()));
+    }
+
     auto *process = new QProcess(this);
-    connect(process, &QProcess::finished, this, [this, process](int exitCode, QProcess::ExitStatus status) {
+    connect(process, &QProcess::errorOccurred, this, [this, process, waveFile](QProcess::ProcessError error) {
+        const QString message = QStringLiteral("whisper.cpp process error (%1). executable=\"%2\" input=\"%3\" stderr=\"%4\"")
+                                    .arg(static_cast<int>(error))
+                                    .arg(m_settings->whisperExecutable(),
+                                         waveFile,
+                                         QString::fromUtf8(process->readAllStandardError()).trimmed());
+        if (m_loggingService) {
+            m_loggingService->error(message);
+        }
+    });
+
+    connect(process, &QProcess::finished, this, [this, process, waveFile](int exitCode, QProcess::ExitStatus status) {
         const auto cleanup = qScopeGuard([process]() { process->deleteLater(); });
+        const QString stdoutText = QString::fromUtf8(process->readAllStandardOutput()).trimmed();
+        const QString stderrText = QString::fromUtf8(process->readAllStandardError()).trimmed();
+
         if (status != QProcess::NormalExit || exitCode != 0) {
-            emit transcriptionFailed(QStringLiteral("whisper.cpp failed to transcribe input"));
+            const QString uiMessage = QStringLiteral("whisper.cpp failed to transcribe input");
+            if (m_loggingService) {
+                m_loggingService->error(
+                    QStringLiteral("whisper.cpp failed. exitCode=%1 status=%2 executable=\"%3\" input=\"%4\" stdout=\"%5\" stderr=\"%6\"")
+                        .arg(exitCode)
+                        .arg(status == QProcess::NormalExit ? QStringLiteral("normal") : QStringLiteral("crashed"))
+                        .arg(m_settings->whisperExecutable(), waveFile, stdoutText, stderrText));
+            }
+            emit transcriptionFailed(uiMessage);
             return;
         }
 
-        const QString text = QString::fromUtf8(process->readAllStandardOutput()).trimmed();
+        const QString text = stdoutText;
+        if (m_loggingService) {
+            m_loggingService->info(
+                QStringLiteral("whisper.cpp transcription completed. input=\"%1\" output_chars=%2")
+                    .arg(waveFile)
+                    .arg(text.size()));
+            if (!stderrText.isEmpty()) {
+                m_loggingService->warn(QStringLiteral("whisper.cpp stderr: %1").arg(stderrText));
+            }
+        }
         emit transcriptionReady({text, text.isEmpty() ? 0.0f : 0.85f});
     });
 
@@ -76,7 +130,12 @@ QString WhisperSttEngine::writeWaveFile(const QByteArray &pcmData) const
     if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         writeWaveHeader(file, static_cast<quint32>(pcmData.size()));
         file.write(pcmData);
+        file.close();
+        return path;
     }
 
-    return path;
+    if (m_loggingService) {
+        m_loggingService->error(QStringLiteral("Failed to write whisper.cpp input WAV: %1").arg(path));
+    }
+    return {};
 }

@@ -119,7 +119,7 @@ AssistantController::AssistantController(
     m_intentRouter = new IntentRouter(this);
     m_localResponseEngine = new LocalResponseEngine(this);
     m_audioInputService = new AudioInputService(this);
-    m_whisperSttEngine = new WhisperSttEngine(m_settings, this);
+    m_whisperSttEngine = new WhisperSttEngine(m_settings, m_loggingService, this);
     m_piperTtsEngine = new PiperTtsEngine(m_settings, this);
 }
 
@@ -153,6 +153,9 @@ void AssistantController::initialize()
         submitText(result.text);
     });
     connect(m_whisperSttEngine, &WhisperSttEngine::transcriptionFailed, this, [this](const QString &errorText) {
+        if (m_loggingService) {
+            m_loggingService->error(QStringLiteral("Speech transcription failed: %1").arg(errorText));
+        }
         setStatus(errorText);
         emit idleRequested();
     });

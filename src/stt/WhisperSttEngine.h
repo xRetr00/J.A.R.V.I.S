@@ -5,13 +5,14 @@
 #include "core/AssistantTypes.h"
 
 class AppSettings;
+class LoggingService;
 
 class WhisperSttEngine : public QObject
 {
     Q_OBJECT
 
 public:
-    explicit WhisperSttEngine(AppSettings *settings, QObject *parent = nullptr);
+    explicit WhisperSttEngine(AppSettings *settings, LoggingService *loggingService, QObject *parent = nullptr);
 
     void transcribePcm(const QByteArray &pcmData);
 
@@ -23,4 +24,5 @@ private:
     QString writeWaveFile(const QByteArray &pcmData) const;
 
     AppSettings *m_settings = nullptr;
+    LoggingService *m_loggingService = nullptr;
 };
