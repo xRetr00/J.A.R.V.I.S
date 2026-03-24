@@ -17,13 +17,13 @@ Item {
         : stateName === "SPEAKING" ? 3.0
         : 0.0
 
-    implicitWidth: 520
-    implicitHeight: 520
+    implicitWidth: 250
+    implicitHeight: 250
 
     ShaderEffect {
         id: auraLayer
         anchors.centerIn: parent
-        width: parent.width * 1.18
+        width: parent.width * 0.9
         height: width
         blending: true
 
@@ -33,15 +33,15 @@ Item {
         property vector2d resolution: Qt.vector2d(width, height)
 
         fragmentShader: "qrc:/qt/qml/JARVIS/gui/shaders/src/gui/shaders/orb.frag.qsb"
-        opacity: 0.18 + root.glow * 0.16
-        scale: 1.02 + root.glow * 0.2
+        opacity: 0.16 + root.glow * 0.14
+        scale: 0.96 + root.glow * 0.12 + root.audioLevel * 0.08
         rotation: root.orbitalRotation * 0.18
     }
 
     ShaderEffect {
         id: plasmaLayer
         anchors.centerIn: parent
-        width: parent.width * 0.86
+        width: parent.width * 0.75
         height: width
         blending: true
 
@@ -52,14 +52,14 @@ Item {
 
         fragmentShader: "qrc:/qt/qml/JARVIS/gui/shaders/src/gui/shaders/orb.frag.qsb"
         opacity: 0.92
-        scale: root.orbScale
+        scale: root.orbScale + root.audioLevel * 0.06
         rotation: root.orbitalRotation * -0.32
     }
 
     ShaderEffect {
         id: coreLayer
         anchors.centerIn: parent
-        width: parent.width * 0.56
+        width: parent.width * 0.45
         height: width
         blending: true
 
@@ -70,7 +70,7 @@ Item {
 
         fragmentShader: "qrc:/qt/qml/JARVIS/gui/shaders/src/gui/shaders/orb.frag.qsb"
         opacity: 0.98
-        scale: 0.92 + root.orbScale * 0.08
+        scale: 0.92 + root.orbScale * 0.08 + root.audioLevel * 0.05
         rotation: root.orbitalRotation * 0.46
     }
 }

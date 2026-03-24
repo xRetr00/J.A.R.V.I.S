@@ -86,12 +86,26 @@ void main()
     float orbRadius = 0.74 + reactive * 0.03;
     float mask = 1.0 - smoothstep(orbRadius - 0.09, orbRadius + 0.012, radius);
     float glow = smoothstep(orbRadius + 0.22, orbRadius - 0.03, radius) * (0.18 + reactive * 0.22);
+    float radial = clamp(1.0 - radius / max(orbRadius, 0.001), 0.0, 1.0);
+    float core = pow(radial, 2.8);
+    float fresnel = pow(clamp(radius / max(orbRadius, 0.001), 0.0, 1.0), 2.3);
+    float radialMod = 0.78 + 0.22 * sin(radius * 16.0 - ubuf.time * 0.9);
+    float shell = smoothstep(orbRadius - 0.16, orbRadius - 0.02, radius);
+    float innerParallax = 0.5 + 0.5 * sin((centeredUv.x - centeredUv.y) * 18.0 + ubuf.time * 1.6);
+    float refractedBand = 0.5 + 0.5 * cos(radius * 24.0 - ubuf.time * 2.2 + centeredUv.y * 10.0);
+    float specular = pow(max(0.0, 1.0 - length(centeredUv - vec2(-0.14, -0.18)) / 0.42), 4.5);
 
-    color += glow * vec3(0.26, 0.55, 0.95);
+    color *= 0.8 + core * 0.75 + radialMod * 0.08;
+    color += vec3(0.22, 0.42, 0.85) * glow;
+    color += vec3(0.42, 0.72, 1.0) * fresnel * 0.22;
+    color += vec3(0.18, 0.34, 0.62) * core * (0.45 + reactive * 0.25);
+    color += vec3(0.08, 0.18, 0.34) * shell * innerParallax * 0.35;
+    color += vec3(0.24, 0.46, 0.88) * refractedBand * shell * 0.18;
+    color += vec3(0.82, 0.93, 1.0) * specular * (0.18 + reactive * 0.14);
     color *= mask;
 
     float intensity = max(max(color.r, color.g), color.b);
-    float alpha = clamp(mask * (0.62 + intensity * 0.9) + glow * 0.9, 0.0, 1.0) * ubuf.qt_Opacity;
+    float alpha = clamp(mask * (0.58 + intensity * 0.88 + core * 0.28 + shell * 0.1) + glow * 0.95 + fresnel * 0.12, 0.0, 1.0) * ubuf.qt_Opacity;
 
     fragColor = vec4(color, alpha);
 }

@@ -83,12 +83,12 @@ Window {
         JarvisUi.OrbRenderer {
             id: orb
             anchors.horizontalCenter: parent.horizontalCenter
-            anchors.verticalCenter: parent.verticalCenter
-            anchors.verticalCenterOffset: -52
-            width: Math.min(parent.width * 0.28, 560)
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 82
+            width: Math.min(parent.width * 0.16, 250)
             height: width
-            x: backend.presenceOffsetX * 12 + motion.listeningVibration * 3
-            y: backend.presenceOffsetY * 12 + motion.listeningVibration * 2
+            x: backend.presenceOffsetX * 10 + motion.listeningVibration * 2
+            y: -backend.presenceOffsetY * 10 + motion.listeningVibration * 2
             stateName: backend.stateName
             time: motion.time
             audioLevel: motion.inputBoost
@@ -100,20 +100,20 @@ Window {
         }
 
         Column {
-            anchors.top: orb.bottom
-            anchors.topMargin: 20
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: Math.min(parent.width * 0.36, 520)
+            anchors.horizontalCenter: orb.horizontalCenter
+            anchors.bottom: orb.top
+            anchors.bottomMargin: 22
+            width: Math.min(parent.width * 0.22, 320)
             spacing: 6
-            x: backend.presenceOffsetX * 8
-            y: backend.presenceOffsetY * 8
+            x: backend.presenceOffsetX * 6
+            y: -backend.presenceOffsetY * 6
 
             Text {
                 width: parent.width
                 horizontalAlignment: Text.AlignHCenter
                 text: presenceLine()
                 color: "#edf6ff"
-                font.pixelSize: 28
+                font.pixelSize: 20
                 wrapMode: Text.Wrap
                 maximumLineCount: 2
                 elide: Text.ElideRight
@@ -125,7 +125,7 @@ Window {
                 text: compactText(backend.statusText, "")
                 visible: text.length > 0 && text !== presenceLine()
                 color: "#7f9fc7"
-                font.pixelSize: 14
+                font.pixelSize: 12
                 wrapMode: Text.Wrap
                 maximumLineCount: 1
                 elide: Text.ElideRight
