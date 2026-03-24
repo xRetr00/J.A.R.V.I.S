@@ -53,6 +53,28 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(libfvad)
 
+add_library(fvad STATIC
+    ${libfvad_SOURCE_DIR}/src/fvad.c
+    ${libfvad_SOURCE_DIR}/src/signal_processing/division_operations.c
+    ${libfvad_SOURCE_DIR}/src/signal_processing/energy.c
+    ${libfvad_SOURCE_DIR}/src/signal_processing/get_scaling_square.c
+    ${libfvad_SOURCE_DIR}/src/signal_processing/resample_48khz.c
+    ${libfvad_SOURCE_DIR}/src/signal_processing/resample_by_2_internal.c
+    ${libfvad_SOURCE_DIR}/src/signal_processing/resample_fractional.c
+    ${libfvad_SOURCE_DIR}/src/signal_processing/spl_inl.c
+    ${libfvad_SOURCE_DIR}/src/vad/vad_core.c
+    ${libfvad_SOURCE_DIR}/src/vad/vad_filterbank.c
+    ${libfvad_SOURCE_DIR}/src/vad/vad_gmm.c
+    ${libfvad_SOURCE_DIR}/src/vad/vad_sp.c
+)
+
+target_include_directories(fvad
+    PUBLIC
+        ${libfvad_SOURCE_DIR}/include
+    PRIVATE
+        ${libfvad_SOURCE_DIR}/src
+)
+
 qt_standard_project_setup(REQUIRES 6.6)
 
 set(JARVIS_SOURCES

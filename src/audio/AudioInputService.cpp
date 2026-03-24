@@ -5,7 +5,9 @@
 #include <QtMath>
 #include <QMediaDevices>
 
+extern "C" {
 #include <fvad.h>
+}
 
 namespace {
 constexpr int kLevelIntervalMs = 50;
