@@ -7,6 +7,29 @@
 #include <QScopeGuard>
 #include <QUrl>
 
+namespace {
+QString normalizeEndpoint(QString endpoint)
+{
+    endpoint = endpoint.trimmed();
+    if (endpoint.isEmpty()) {
+        return QStringLiteral("http://localhost:1234");
+    }
+
+    while (endpoint.endsWith('/')) {
+        endpoint.chop(1);
+    }
+
+    if (endpoint.endsWith(QStringLiteral("/v1"), Qt::CaseInsensitive)) {
+        endpoint.chop(3);
+        while (endpoint.endsWith('/')) {
+            endpoint.chop(1);
+        }
+    }
+
+    return endpoint;
+}
+}
+
 LmStudioClient::LmStudioClient(QObject *parent)
     : QObject(parent)
 {
@@ -21,7 +44,7 @@ LmStudioClient::LmStudioClient(QObject *parent)
 
 void LmStudioClient::setEndpoint(const QString &endpoint)
 {
-    m_endpoint = endpoint;
+    m_endpoint = normalizeEndpoint(endpoint);
 }
 
 QString LmStudioClient::endpoint() const
@@ -68,12 +91,22 @@ quint64 LmStudioClient::sendChatRequest(const QList<AiMessage> &messages, const 
         });
     }
 
-    const QJsonObject body{
+    QJsonObject body{
         {QStringLiteral("model"), model},
         {QStringLiteral("messages"), jsonMessages},
-        {QStringLiteral("temperature"), 0.7},
+        {QStringLiteral("temperature"), options.temperature},
         {QStringLiteral("stream"), options.stream}
     };
+
+    if (options.topP.has_value()) {
+        body.insert(QStringLiteral("top_p"), options.topP.value());
+    }
+    if (options.maxTokens.has_value()) {
+        body.insert(QStringLiteral("max_tokens"), options.maxTokens.value());
+    }
+    if (options.seed.has_value()) {
+        body.insert(QStringLiteral("seed"), options.seed.value());
+    }
 
     m_activeRequestId = ++m_requestCounter;
     m_streamBuffer.clear();
@@ -103,7 +136,7 @@ quint64 LmStudioClient::sendChatRequest(const QList<AiMessage> &messages, const 
         });
 
         if (reply->error() != QNetworkReply::NoError) {
-            finishWithFailure(m_activeRequestId, reply->errorString());
+            finishWithFailure(m_activeRequestId, parseErrorMessage(reply));
             return;
         }
 
@@ -147,41 +180,110 @@ QNetworkRequest LmStudioClient::buildJsonRequest(const QString &path) const
     return request;
 }
 
+QString LmStudioClient::parseErrorMessage(QNetworkReply *reply) const
+{
+    const QByteArray body = reply != nullptr ? reply->readAll() : QByteArray{};
+    const QJsonDocument document = QJsonDocument::fromJson(body);
+    if (document.isObject()) {
+        const QJsonObject root = document.object();
+        if (root.contains(QStringLiteral("error"))) {
+            const QJsonValue error = root.value(QStringLiteral("error"));
+            if (error.isObject()) {
+                const QString message = error.toObject().value(QStringLiteral("message")).toString();
+                if (!message.isEmpty()) {
+                    return message;
+                }
+            } else if (error.isString()) {
+                return error.toString();
+            }
+        }
+
+        const QString message = root.value(QStringLiteral("message")).toString();
+        if (!message.isEmpty()) {
+            return message;
+        }
+    }
+
+    if (!body.trimmed().isEmpty()) {
+        return QString::fromUtf8(body).trimmed();
+    }
+
+    return reply != nullptr ? reply->errorString() : QStringLiteral("LM Studio request failed");
+}
+
 void LmStudioClient::handleStreamingReply(quint64 requestId, QNetworkReply *reply)
 {
     m_streamBuffer += reply->readAll();
-    const QList<QByteArray> events = m_streamBuffer.split('\n');
-    const bool hasPartialTail = !m_streamBuffer.endsWith('\n');
-    if (hasPartialTail && !events.isEmpty()) {
-        m_streamBuffer = events.last();
-    } else {
-        m_streamBuffer.clear();
+
+    // Some servers terminate the final SSE payload without a trailing blank line.
+    if (reply != nullptr && reply->isFinished() && !m_streamBuffer.endsWith("\n\n") && !m_streamBuffer.endsWith("\r\n\r\n")) {
+        m_streamBuffer.append("\n\n");
     }
 
-    const int completeCount = hasPartialTail ? events.size() - 1 : events.size();
-    for (int i = 0; i < completeCount; ++i) {
-        const QByteArray line = events.at(i).trimmed();
-        if (!line.startsWith("data: ")) {
+    int separatorSize = 0;
+    int separatorIndex = m_streamBuffer.indexOf("\r\n\r\n");
+    if (separatorIndex >= 0) {
+        separatorSize = 4;
+    } else {
+        separatorIndex = m_streamBuffer.indexOf("\n\n");
+        if (separatorIndex >= 0) {
+            separatorSize = 2;
+        }
+    }
+
+    while (separatorIndex >= 0) {
+        QByteArray rawEvent = m_streamBuffer.left(separatorIndex);
+        m_streamBuffer.remove(0, separatorIndex + separatorSize);
+
+        rawEvent.replace("\r", "");
+        const QList<QByteArray> lines = rawEvent.split('\n');
+
+        QByteArray payload;
+        for (const QByteArray &lineRaw : lines) {
+            const QByteArray line = lineRaw.trimmed();
+            if (line.startsWith("data:")) {
+                QByteArray segment = line.mid(5);
+                if (segment.startsWith(' ')) {
+                    segment.remove(0, 1);
+                }
+                if (!payload.isEmpty()) {
+                    payload.append('\n');
+                }
+                payload.append(segment);
+            }
+        }
+
+        if (payload.isEmpty() || payload == "[DONE]") {
+            separatorIndex = m_streamBuffer.indexOf("\n\n");
             continue;
         }
 
-        const QByteArray payload = line.mid(6);
-        if (payload == "[DONE]") {
+        const QJsonDocument document = QJsonDocument::fromJson(payload);
+        if (!document.isObject()) {
+            separatorIndex = m_streamBuffer.indexOf("\n\n");
             continue;
         }
 
-        const auto document = QJsonDocument::fromJson(payload);
-        const auto choices = document.object().value(QStringLiteral("choices")).toArray();
+        const QJsonArray choices = document.object().value(QStringLiteral("choices")).toArray();
         if (choices.isEmpty()) {
+            separatorIndex = m_streamBuffer.indexOf("\n\n");
             continue;
         }
 
-        const auto delta = choices.first().toObject().value(QStringLiteral("delta")).toObject().value(QStringLiteral("content")).toString();
-        if (delta.isEmpty()) {
-            continue;
+        const QJsonObject choice = choices.first().toObject();
+        const QJsonObject deltaObject = choice.value(QStringLiteral("delta")).toObject();
+        const QString delta = deltaObject.value(QStringLiteral("content")).toString();
+        if (!delta.isEmpty()) {
+            m_streamedContent += delta;
+            emit requestDelta(requestId, delta);
         }
 
-        m_streamedContent += delta;
-        emit requestDelta(requestId, delta);
+        separatorIndex = m_streamBuffer.indexOf("\r\n\r\n");
+        if (separatorIndex >= 0) {
+            separatorSize = 4;
+        } else {
+            separatorIndex = m_streamBuffer.indexOf("\n\n");
+            separatorSize = separatorIndex >= 0 ? 2 : 0;
+        }
     }
 }

@@ -11,51 +11,75 @@ QHash<QString, QStringList> defaultResponses()
 {
     return {
         {QStringLiteral("greeting_morning"), {
-             QStringLiteral("Good morning, {user_name}. {assistant_name} is steady and available."),
-             QStringLiteral("Good morning, {user_name}. {assistant_name} is online."),
-             QStringLiteral("Morning, {user_name}. {assistant_name} is ready when you are.")
+             QStringLiteral("Good morning sir, How can I assist Mr {user_name}?"),
+             QStringLiteral("Good morning sir, How Is The Morning Boner {user_name}?"),
+             QStringLiteral("Morning, {user_name}. How may I help?")
          }},
         {QStringLiteral("greeting_evening"), {
-             QStringLiteral("Good evening, {user_name}. All systems remain available."),
-             QStringLiteral("Good evening, {user_name}. {assistant_name} is standing by."),
-             QStringLiteral("Evening, {user_name}. What do you need?")
+             QStringLiteral("Good evening, {user_name}. How can I assist?"),
+             QStringLiteral("Good evening, {user_name}. What do you need?"),
+             QStringLiteral("Evening, {user_name}. How may I help?")
          }},
         {QStringLiteral("small_talk"), {
-             QStringLiteral("I am operating normally, {user_name}."),
-             QStringLiteral("All core systems are stable this {time_of_day}."),
-             QStringLiteral("Running smoothly with a {tone} tone. Let me know what you need.")
+             QStringLiteral("I'm here not there, {user_name}."),
+             QStringLiteral("Ready when you are, {user_name}."),
+             QStringLiteral("How can I help, {user_name}?")
          }},
         {QStringLiteral("wakeword_ready"), {
-             QStringLiteral("Yes, {user_name}."),
-             QStringLiteral("Standing by, {user_name}."),
-             QStringLiteral("How may I assist, {user_name}?")
+             QStringLiteral("Yes All Systems Is Operational And We Ready To Explore Mars , {user_name}."),
+             QStringLiteral("Standing by or Not Yet Maybe Yes, {user_name}."),
+             QStringLiteral("Dishwasher Is Ready, {user_name}?")
          }},
         {QStringLiteral("time_status"), {
              QStringLiteral("It is {current_time}, {user_name}."),
-             QStringLiteral("The current time is {current_time}."),
-             QStringLiteral("It is now {current_time}.")
+             QStringLiteral("The current time is {current_time} based on qantum clock in my back pocket, {user_name}."),
+             QStringLiteral("It is now {current_time}, Sir.")
          }},
         {QStringLiteral("date_status"), {
-             QStringLiteral("Today is {current_date}."),
-             QStringLiteral("The date is {current_date}."),
-             QStringLiteral("It is {current_date} today.")
+             QStringLiteral("Today is {current_date}, Sir."),
+             QStringLiteral("The date is {current_date}, Sir."),
+             QStringLiteral("It is {current_date} today, Sir.")
          }},
         {QStringLiteral("ai_offline"), {
-             QStringLiteral("I'm currently unable to reach the AI core."),
-             QStringLiteral("My processing unit is offline at the moment."),
-             QStringLiteral("The AI core is unavailable right now, but local systems remain active.")
+             QStringLiteral("I'm currently unable to reach the AI core, Sir."),
+             QStringLiteral("My processing unit is offline at the moment, Sir."),
+             QStringLiteral("I can't reach the AI core right now, Sir.")
          }},
         {QStringLiteral("error_timeout"), {
-             QStringLiteral("The AI core did not answer in time."),
-             QStringLiteral("The request exceeded its response window."),
-             QStringLiteral("I hit a timeout while waiting on the AI core.")
+             QStringLiteral("The AI core did not answer in time, Sir."),
+             QStringLiteral("That took too long to complete, Sir."),
+             QStringLiteral("The request timed out, Sir.")
          }},
         {QStringLiteral("acknowledgement"), {
-             QStringLiteral("Understood. Applying that to {target}."),
-             QStringLiteral("Acknowledged. Routing the action to {target}."),
-             QStringLiteral("Confirmed. Handling {target} now.")
+             QStringLiteral("Understood, Sir. Working on {target}."),
+             QStringLiteral("All right, Sir. Handling {target}."),
+             QStringLiteral("Done, Sir. {target} is handled.")
          }}
     };
+}
+
+QString sanitizeLocalResponse(QString text)
+{
+    static const QStringList forbiddenFragments = {
+        QStringLiteral("tone"),
+        QStringLiteral("addressing style"),
+        QStringLiteral("system prompt"),
+        QStringLiteral("internal prompt"),
+        QStringLiteral("primary goals"),
+        QStringLiteral("response contract"),
+        QStringLiteral("local systems remain active"),
+        QStringLiteral("operating normally"),
+        QStringLiteral("running smoothly")
+    };
+
+    const QString lowered = text.toLower();
+    for (const QString &fragment : forbiddenFragments) {
+        if (lowered.contains(fragment)) {
+            return QStringLiteral("How can I assist?");
+        }
+    }
+
+    return text.simplified();
 }
 }
 
@@ -149,7 +173,7 @@ QString LocalResponseEngine::renderTemplate(const QString &variant, const LocalR
     text.replace(QStringLiteral("{current_time}"), context.currentTime);
     text.replace(QStringLiteral("{current_date}"), context.currentDate);
     text.replace(QStringLiteral("{wake_word}"), context.wakeWord);
-    return text;
+    return sanitizeLocalResponse(text);
 }
 
 QString LocalResponseEngine::chooseVariant(const QString &group)

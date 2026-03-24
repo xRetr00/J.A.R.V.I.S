@@ -39,6 +39,10 @@ struct AiRequestOptions {
     ReasoningMode mode = ReasoningMode::Balanced;
     RequestKind kind = RequestKind::Conversation;
     bool stream = true;
+    double temperature = 0.7;
+    std::optional<double> topP;
+    std::optional<int> maxTokens;
+    std::optional<int> seed;
     std::chrono::milliseconds timeout{12000};
 };
 

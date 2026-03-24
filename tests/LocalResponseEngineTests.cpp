@@ -14,6 +14,7 @@ private slots:
     void rendersWakeWordReady();
     void rendersCurrentTime();
     void avoidsImmediateRepetitionWhenVariantsExist();
+    void localResponsesDoNotExposeInternalPromptText();
 };
 
 void LocalResponseEngineTests::classifiesGreeting()
@@ -94,6 +95,25 @@ void LocalResponseEngineTests::avoidsImmediateRepetitionWhenVariantsExist()
     const QString first = engine.respondToError(QStringLiteral("ai_offline"), context);
     const QString second = engine.respondToError(QStringLiteral("ai_offline"), context);
     QVERIFY(first != second);
+}
+
+void LocalResponseEngineTests::localResponsesDoNotExposeInternalPromptText()
+{
+    LocalResponseEngine engine;
+    QVERIFY(engine.initialize());
+
+    const QString text = engine.respondToIntent(LocalIntent::SmallTalk, {
+        .assistantName = QStringLiteral("JARVIS"),
+        .userName = QStringLiteral("Shehreef"),
+        .timeOfDay = QStringLiteral("afternoon"),
+        .systemState = QStringLiteral("IDLE"),
+        .tone = QStringLiteral("concise, confident, minimal verbosity"),
+        .addressingStyle = QStringLiteral("direct")
+    });
+
+    QVERIFY(!text.contains(QStringLiteral("tone"), Qt::CaseInsensitive));
+    QVERIFY(!text.contains(QStringLiteral("addressing style"), Qt::CaseInsensitive));
+    QVERIFY(!text.contains(QStringLiteral("system prompt"), Qt::CaseInsensitive));
 }
 
 QTEST_APPLESS_MAIN(LocalResponseEngineTests)

@@ -18,11 +18,10 @@ Window {
     function syncVoiceFieldsFromBackend() {
         whisperPathField.text = backend.whisperExecutable
         whisperModelPathField.text = backend.whisperModelPath
-        porcupineAccessKeyField.text = backend.porcupineAccessKey
-        porcupineLibraryPathField.text = backend.porcupineLibraryPath
-        porcupineModelPathField.text = backend.porcupineModelPath
-        porcupineKeywordPathField.text = backend.porcupineKeywordPath
-        porcupineSensitivitySlider.value = backend.porcupineSensitivity
+        preciseEnginePathField.text = backend.preciseEngineExecutable
+        preciseModelPathField.text = backend.preciseModelPath
+        preciseThresholdSlider.value = backend.preciseTriggerThreshold
+        preciseCooldownSpin.value = backend.preciseTriggerCooldownMs
         piperPathField.text = backend.piperExecutable
         voicePathField.text = backend.piperVoiceModel
         ffmpegPathField.text = backend.ffmpegExecutable
@@ -196,7 +195,7 @@ Window {
                     text: wizard.stepIndex === 0 ? "Define how the assistant should address you."
                         : wizard.stepIndex === 1 ? "Point JARVIS at LM Studio and choose the active model."
                         : wizard.stepIndex === 2 ? "Connect whisper.cpp, Piper, FFmpeg, and the voice model you want."
-                        : wizard.stepIndex === 3 ? "Configure the dedicated Porcupine wake word engine for always-listening detection."
+                        : wizard.stepIndex === 3 ? "Configure the fully local Mycroft Precise wake model runtime and training path."
                         : "Run final checks, trigger tests, and confirm the real startup behavior."
                     color: "#89a3c4"
                     font.pixelSize: 14
@@ -377,54 +376,67 @@ Window {
                             }
                         }
 
-                        Text { text: "Picovoice AccessKey"; color: "#d0e3f5"; font.pixelSize: 13 }
-                        TextField {
-                            id: porcupineAccessKeyField
-                            Layout.fillWidth: true
-                            text: backend.porcupineAccessKey
-                            echoMode: TextInput.PasswordEchoOnEdit
-                            placeholderText: "Required for always-listening wake word detection"
-                        }
-
-                        Text { text: "Porcupine library"; color: "#d0e3f5"; font.pixelSize: 13 }
-                        RowLayout {
-                            Layout.fillWidth: true
-                            TextField { id: porcupineLibraryPathField; Layout.fillWidth: true; text: backend.porcupineLibraryPath }
-                            Button { text: "Open Dir"; onClicked: backend.openContainingDirectory(porcupineLibraryPathField.text) }
-                        }
-
-                        Text { text: "Porcupine model"; color: "#d0e3f5"; font.pixelSize: 13 }
-                        RowLayout {
-                            Layout.fillWidth: true
-                            TextField { id: porcupineModelPathField; Layout.fillWidth: true; text: backend.porcupineModelPath }
-                            Button { text: "Open Dir"; onClicked: backend.openContainingDirectory(porcupineModelPathField.text) }
-                        }
-
-                        Text { text: "Jarvis keyword file"; color: "#d0e3f5"; font.pixelSize: 13 }
-                        RowLayout {
-                            Layout.fillWidth: true
-                            TextField { id: porcupineKeywordPathField; Layout.fillWidth: true; text: backend.porcupineKeywordPath }
-                            Button { text: "Open Dir"; onClicked: backend.openContainingDirectory(porcupineKeywordPathField.text) }
-                        }
-
-                        Text { text: "Wake sensitivity"; color: "#d0e3f5"; font.pixelSize: 13 }
-                        Slider {
-                            id: porcupineSensitivitySlider
-                            Layout.fillWidth: true
-                            from: 0.3
-                            to: 0.9
-                            value: backend.porcupineSensitivity
+                        Text {
+                            text: "Using Local Wake Model (Mycroft Precise)"
+                            color: "#eef7ff"
+                            font.pixelSize: 18
+                            font.weight: Font.Medium
                         }
 
                         Text {
-                            text: "JARVIS uses Picovoice Porcupine for dedicated wake detection. Whisper is only used after the wake word has been detected."
+                            text: preciseModelPathField.text.length > 0 ? "Model status: Ready" : "Model status: Not trained"
+                            color: preciseModelPathField.text.length > 0 ? "#69d39a" : "#ffb066"
+                            font.pixelSize: 14
+                        }
+
+                        Text { text: "Precise engine"; color: "#d0e3f5"; font.pixelSize: 13 }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            TextField { id: preciseEnginePathField; Layout.fillWidth: true; text: backend.preciseEngineExecutable; placeholderText: backend.preciseRuntimeRoot + "/precise-engine.exe" }
+                            Button { text: "Open Dir"; onClicked: backend.openContainingDirectory(preciseEnginePathField.text) }
+                        }
+
+                        Text { text: "Wake model (.pb)"; color: "#d0e3f5"; font.pixelSize: 13 }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            TextField { id: preciseModelPathField; Layout.fillWidth: true; text: backend.preciseModelPath; placeholderText: backend.preciseRuntimeRoot + "/models/jarvis.pb" }
+                            Button { text: "Open Dir"; onClicked: backend.openContainingDirectory(preciseModelPathField.text) }
+                        }
+
+                        Text { text: "Trigger threshold"; color: "#d0e3f5"; font.pixelSize: 13 }
+                        Slider {
+                            id: preciseThresholdSlider
+                            Layout.fillWidth: true
+                            from: 0.5
+                            to: 0.95
+                            value: backend.preciseTriggerThreshold
+                        }
+
+                        Text {
+                            text: "Trigger cooldown (ms)"
+                            color: "#d0e3f5"
+                            font.pixelSize: 13
+                        }
+
+                        SpinBox {
+                            id: preciseCooldownSpin
+                            Layout.fillWidth: true
+                            from: 1000
+                            to: 2000
+                            value: backend.preciseTriggerCooldownMs
+                        }
+
+                        Text {
+                            text: "JARVIS uses a fully local Mycroft Precise model for wake detection. Whisper only starts after the wake model fires."
                             color: "#9ab0ca"
                             font.pixelSize: 14
                             wrapMode: Text.Wrap
                         }
 
                         Text {
-                            text: "The official Windows Jarvis keyword file can be auto-downloaded here. Enter a Picovoice Console AccessKey to enable always-listening wake detection."
+                            text: preciseModelPathField.text.length > 0
+                                  ? "The wake model is present. You can test the live phrase flow below."
+                                  : "Wake word model not trained yet. Please record your voice saying \"Jarvis\"."
                             color: "#7f97b7"
                             font.pixelSize: 13
                             wrapMode: Text.Wrap
@@ -435,23 +447,17 @@ Window {
 
                             Button {
                                 Layout.fillWidth: true
-                                text: "Auto-detect wake assets"
+                                text: "Start Training Setup"
                                 onClicked: {
-                                    backend.refreshAudioDevices()
-                                    backend.autoDetectVoiceTools()
+                                    backend.startTrainingSetup()
                                     wizard.syncVoiceFieldsFromBackend()
                                 }
                             }
 
                             Button {
                                 Layout.fillWidth: true
-                                text: "Download official assets"
-                                onClicked: {
-                                    backend.setSelectedVoicePresetId(backend.voicePresetIds[voicePresetCombo.currentIndex])
-                                    backend.installAndDetectVoiceTools()
-                                    backend.refreshAudioDevices()
-                                    wizard.syncVoiceFieldsFromBackend()
-                                }
+                                text: "Open Training Folder"
+                                onClicked: backend.openContainingDirectory(backend.preciseTrainingRoot)
                             }
                         }
 
@@ -459,7 +465,7 @@ Window {
                             Layout.fillWidth: true
                             text: backend.toolInstallStatus.length > 0
                                   ? backend.toolInstallStatus
-                                  : "Auto-detection checks the local Porcupine DLL, model, keyword file, and audio devices from this wake-word step only."
+                                  : "Create the training setup, record 20-40 wake samples plus negatives, run train_wake_word.bat, then restart JARVIS."
                             color: "#9ab0ca"
                             font.pixelSize: 12
                             wrapMode: Text.Wrap
@@ -476,26 +482,33 @@ Window {
                         spacing: 14
 
                         Text {
-                            text: "Test phrases"
+                            text: preciseModelPathField.text.length > 0 ? "Test phrases" : "Training steps"
                             color: "#d0e3f5"
                             font.pixelSize: 13
                         }
 
                         Text {
-                            text: "1. Say: \"" + backend.wakeWordPhrase + "\""
-                            color: "#eef7ff"
-                            font.pixelSize: 18
-                        }
-
-                        Text {
-                            text: "2. Say: \"" + backend.wakeWordPhrase + ", what's the time now?\""
+                            text: preciseModelPathField.text.length > 0
+                                  ? "1. Say: \"" + backend.wakeWordPhrase + "\""
+                                  : "1. Record your voice saying \"" + backend.wakeWordPhrase + "\" 20-40 times."
                             color: "#eef7ff"
                             font.pixelSize: 18
                             wrapMode: Text.Wrap
                         }
 
                         Text {
-                            text: "The second test confirms that the assistant uses the real local clock instead of guessing."
+                            text: preciseModelPathField.text.length > 0
+                                  ? "2. Say: \"" + backend.wakeWordPhrase + ", what's the time now?\""
+                                  : "2. Record 20-40 negative samples with noise or other words."
+                            color: "#eef7ff"
+                            font.pixelSize: 18
+                            wrapMode: Text.Wrap
+                        }
+
+                        Text {
+                            text: preciseModelPathField.text.length > 0
+                                  ? "The second test confirms that the assistant uses the real local clock instead of guessing."
+                                  : "3. Run train_wake_word.bat in " + backend.preciseTrainingRoot + "\n4. Restart JARVIS."
                             color: "#9ab0ca"
                             font.pixelSize: 14
                             wrapMode: Text.Wrap
@@ -519,11 +532,10 @@ Window {
                                             modelCombo.currentText,
                                             whisperPathField.text,
                                             whisperModelPathField.text,
-                                            porcupineAccessKeyField.text,
-                                            porcupineLibraryPathField.text,
-                                            porcupineModelPathField.text,
-                                            porcupineKeywordPathField.text,
-                                            porcupineSensitivitySlider.value,
+                                            preciseEnginePathField.text,
+                                            preciseModelPathField.text,
+                                            preciseThresholdSlider.value,
+                                            preciseCooldownSpin.value,
                                             piperPathField.text,
                                             voicePathField.text,
                                             ffmpegPathField.text,
@@ -531,7 +543,7 @@ Window {
                                             outputDeviceCombo.currentIndex >= 0 ? backend.audioOutputDeviceIds[outputDeviceCombo.currentIndex] : "",
                                             clickThroughCheck.checked,
                                             "wakeword_ready")) {
-                                        wizard.stepIndex = 2
+                                        wizard.stepIndex = 3
                                     }
                                 }
                             }
@@ -546,11 +558,10 @@ Window {
                                             modelCombo.currentText,
                                             whisperPathField.text,
                                             whisperModelPathField.text,
-                                            porcupineAccessKeyField.text,
-                                            porcupineLibraryPathField.text,
-                                            porcupineModelPathField.text,
-                                            porcupineKeywordPathField.text,
-                                            porcupineSensitivitySlider.value,
+                                            preciseEnginePathField.text,
+                                            preciseModelPathField.text,
+                                            preciseThresholdSlider.value,
+                                            preciseCooldownSpin.value,
                                             piperPathField.text,
                                             voicePathField.text,
                                             ffmpegPathField.text,
@@ -558,7 +569,7 @@ Window {
                                             outputDeviceCombo.currentIndex >= 0 ? backend.audioOutputDeviceIds[outputDeviceCombo.currentIndex] : "",
                                             clickThroughCheck.checked,
                                             "wakeword_time")) {
-                                        wizard.stepIndex = 2
+                                        wizard.stepIndex = 3
                                     }
                                 }
                             }
@@ -596,11 +607,10 @@ Window {
                                     modelCombo.currentText,
                                     whisperPathField.text,
                                     whisperModelPathField.text,
-                                    porcupineAccessKeyField.text,
-                                    porcupineLibraryPathField.text,
-                                    porcupineModelPathField.text,
-                                    porcupineKeywordPathField.text,
-                                    porcupineSensitivitySlider.value,
+                                    preciseEnginePathField.text,
+                                    preciseModelPathField.text,
+                                    preciseThresholdSlider.value,
+                                    preciseCooldownSpin.value,
                                     piperPathField.text,
                                     voicePathField.text,
                                     ffmpegPathField.text,
@@ -608,7 +618,7 @@ Window {
                                     outputDeviceCombo.currentIndex >= 0 ? backend.audioOutputDeviceIds[outputDeviceCombo.currentIndex] : "",
                                     clickThroughCheck.checked,
                                     "wakeword_ready")) {
-                                wizard.stepIndex = 2
+                                wizard.stepIndex = 3
                             }
                         }
                     }
@@ -628,11 +638,10 @@ Window {
                                     modelCombo.currentText,
                                     whisperPathField.text,
                                     whisperModelPathField.text,
-                                    porcupineAccessKeyField.text,
-                                    porcupineLibraryPathField.text,
-                                    porcupineModelPathField.text,
-                                    porcupineKeywordPathField.text,
-                                    porcupineSensitivitySlider.value,
+                                    preciseEnginePathField.text,
+                                    preciseModelPathField.text,
+                                    preciseThresholdSlider.value,
+                                    preciseCooldownSpin.value,
                                     piperPathField.text,
                                     voicePathField.text,
                                     ffmpegPathField.text,

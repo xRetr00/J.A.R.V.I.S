@@ -31,11 +31,13 @@ class BackendFacade : public QObject
     Q_PROPERTY(QString whisperModelPath READ whisperModelPath NOTIFY settingsChanged)
     Q_PROPERTY(QString piperExecutable READ piperExecutable NOTIFY settingsChanged)
     Q_PROPERTY(QString piperVoiceModel READ piperVoiceModel NOTIFY settingsChanged)
-    Q_PROPERTY(QString porcupineAccessKey READ porcupineAccessKey NOTIFY settingsChanged)
-    Q_PROPERTY(QString porcupineLibraryPath READ porcupineLibraryPath NOTIFY settingsChanged)
-    Q_PROPERTY(QString porcupineModelPath READ porcupineModelPath NOTIFY settingsChanged)
-    Q_PROPERTY(QString porcupineKeywordPath READ porcupineKeywordPath NOTIFY settingsChanged)
-    Q_PROPERTY(double porcupineSensitivity READ porcupineSensitivity NOTIFY settingsChanged)
+    Q_PROPERTY(QString preciseEngineExecutable READ preciseEngineExecutable NOTIFY settingsChanged)
+    Q_PROPERTY(QString preciseModelPath READ preciseModelPath NOTIFY settingsChanged)
+    Q_PROPERTY(double preciseTriggerThreshold READ preciseTriggerThreshold NOTIFY settingsChanged)
+    Q_PROPERTY(int preciseTriggerCooldownMs READ preciseTriggerCooldownMs NOTIFY settingsChanged)
+    Q_PROPERTY(QString preciseRuntimeRoot READ preciseRuntimeRoot CONSTANT)
+    Q_PROPERTY(QString preciseTrainingRoot READ preciseTrainingRoot CONSTANT)
+    Q_PROPERTY(QString preciseTrainScriptPath READ preciseTrainScriptPath CONSTANT)
     Q_PROPERTY(QString ffmpegExecutable READ ffmpegExecutable NOTIFY settingsChanged)
     Q_PROPERTY(double voiceSpeed READ voiceSpeed NOTIFY settingsChanged)
     Q_PROPERTY(double voicePitch READ voicePitch NOTIFY settingsChanged)
@@ -82,11 +84,13 @@ public:
     QString whisperModelPath() const;
     QString piperExecutable() const;
     QString piperVoiceModel() const;
-    QString porcupineAccessKey() const;
-    QString porcupineLibraryPath() const;
-    QString porcupineModelPath() const;
-    QString porcupineKeywordPath() const;
-    double porcupineSensitivity() const;
+    QString preciseEngineExecutable() const;
+    QString preciseModelPath() const;
+    double preciseTriggerThreshold() const;
+    int preciseTriggerCooldownMs() const;
+    QString preciseRuntimeRoot() const;
+    QString preciseTrainingRoot() const;
+    QString preciseTrainScriptPath() const;
     QString ffmpegExecutable() const;
     double voiceSpeed() const;
     double voicePitch() const;
@@ -121,11 +125,10 @@ public:
         int timeoutMs,
         const QString &whisperPath,
         const QString &whisperModelPath,
-        const QString &porcupineAccessKey,
-        const QString &porcupineLibraryPath,
-        const QString &porcupineModelPath,
-        const QString &porcupineKeywordPath,
-        double porcupineSensitivity,
+        const QString &preciseEnginePath,
+        const QString &preciseModelPath,
+        double preciseThreshold,
+        int preciseCooldownMs,
         const QString &piperPath,
         const QString &voicePath,
         const QString &ffmpegPath,
@@ -143,11 +146,10 @@ public:
         const QString &modelId,
         const QString &whisperPath,
         const QString &whisperModelPath,
-        const QString &porcupineAccessKey,
-        const QString &porcupineLibraryPath,
-        const QString &porcupineModelPath,
-        const QString &porcupineKeywordPath,
-        double porcupineSensitivity,
+        const QString &preciseEnginePath,
+        const QString &preciseModelPath,
+        double preciseThreshold,
+        int preciseCooldownMs,
         const QString &piperPath,
         const QString &voicePath,
         const QString &ffmpegPath,
@@ -161,11 +163,10 @@ public:
         const QString &modelId,
         const QString &whisperPath,
         const QString &whisperModelPath,
-        const QString &porcupineAccessKey,
-        const QString &porcupineLibraryPath,
-        const QString &porcupineModelPath,
-        const QString &porcupineKeywordPath,
-        double porcupineSensitivity,
+        const QString &preciseEnginePath,
+        const QString &preciseModelPath,
+        double preciseThreshold,
+        int preciseCooldownMs,
         const QString &piperPath,
         const QString &voicePath,
         const QString &ffmpegPath,
@@ -178,16 +179,14 @@ public:
         const QString &modelId,
         const QString &whisperPath,
         const QString &whisperModelPath,
-        const QString &porcupineAccessKey,
-        const QString &porcupineLibraryPath,
-        const QString &porcupineModelPath,
-        const QString &porcupineKeywordPath,
+        const QString &preciseEnginePath,
+        const QString &preciseModelPath,
         const QString &piperPath,
         const QString &voicePath,
         const QString &ffmpegPath);
     Q_INVOKABLE void openContainingDirectory(const QString &path);
     Q_INVOKABLE bool autoDetectVoiceTools();
-    Q_INVOKABLE bool installAndDetectVoiceTools();
+    Q_INVOKABLE bool startTrainingSetup();
     Q_INVOKABLE void refreshAudioDevices();
 
 signals:

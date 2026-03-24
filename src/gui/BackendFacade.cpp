@@ -4,6 +4,7 @@
 #include <QDirIterator>
 #include <QAudioDevice>
 #include <QDesktopServices>
+#include <QFile>
 #include <QFileInfo>
 #include <QMediaDevices>
 #include <QProcess>
@@ -301,61 +302,69 @@ QString detectWhisperModel(const QString &appDataRoot)
     return {};
 }
 
-QString detectPorcupineLibrary(const QString &appDataRoot)
+QString preciseRuntimeRootPath()
 {
-    const QStringList roots = {
-        appDataRoot + QStringLiteral("/tools/porcupine"),
-        appDataRoot + QStringLiteral("/tools"),
-    };
-
-    for (const QString &rootPath : roots) {
-        const QString match = findFileRecursive(rootPath, QStringLiteral("libpv_porcupine.dll"));
-        if (!match.isEmpty()) {
-            return match;
-        }
-    }
-
-    return {};
+    return QStringLiteral("C:/JarvisRuntime/precise");
 }
 
-QString detectPorcupineModel(const QString &appDataRoot)
+QString preciseTrainingRootPath()
 {
-    const QStringList roots = {
-        appDataRoot + QStringLiteral("/tools/porcupine"),
-        appDataRoot + QStringLiteral("/tools")
-    };
-
-    for (const QString &rootPath : roots) {
-        const QString match = findFileRecursive(rootPath, QStringLiteral("porcupine_params.pv"));
-        if (!match.isEmpty()) {
-            return match;
-        }
-    }
-
-    return {};
+    return preciseRuntimeRootPath() + QStringLiteral("/training");
 }
 
-QString detectPorcupineKeyword(const QString &appDataRoot, const QString &wakeWord)
+QString preciseModelsRootPath()
+{
+    return preciseRuntimeRootPath() + QStringLiteral("/models");
+}
+
+QString preciseTrainScriptPathValue()
+{
+    return preciseTrainingRootPath() + QStringLiteral("/train_wake_word.bat");
+}
+
+QString preciseSetupScriptPathValue()
+{
+    return preciseTrainingRootPath() + QStringLiteral("/setup_training_env.bat");
+}
+
+QString preciseInstructionsPathValue()
+{
+    return preciseTrainingRootPath() + QStringLiteral("/README.txt");
+}
+
+bool writeTextFile(const QString &path, const QString &content)
+{
+    QFileInfo info(path);
+    QDir().mkpath(info.absolutePath());
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
+        return false;
+    }
+    file.write(content.toUtf8());
+    return true;
+}
+
+QString detectPreciseEngine()
+{
+    const QString runtimeRoot = preciseRuntimeRootPath();
+    const QStringList candidates = {
+        runtimeRoot + QStringLiteral("/precise-engine.exe"),
+        runtimeRoot + QStringLiteral("/precise-engine"),
+        runtimeRoot + QStringLiteral("/bin/precise-engine.exe"),
+        runtimeRoot + QStringLiteral("/bin/precise-engine")
+    };
+    return firstValidPath(candidates);
+}
+
+QString detectPreciseModel(const QString &wakeWord)
 {
     const QString normalizedWakeWord = wakeWord.trimmed().isEmpty() ? QStringLiteral("jarvis") : wakeWord.trimmed().toLower();
-    const QString preferredName = normalizedWakeWord + QStringLiteral("_windows.ppn");
-    const QStringList roots = {
-        appDataRoot + QStringLiteral("/tools/porcupine"),
-        appDataRoot + QStringLiteral("/tools")
-    };
-
-    for (const QString &rootPath : roots) {
-        const QString preferred = findFileRecursive(rootPath, preferredName);
-        if (!preferred.isEmpty()) {
-            return preferred;
-        }
-        const QString fallback = findFirstMatchingFileRecursive(rootPath, {QStringLiteral("*_windows.ppn")});
-        if (!fallback.isEmpty()) {
-            return fallback;
-        }
+    const QString modelsRoot = preciseModelsRootPath();
+    const QString preferred = findFileRecursive(modelsRoot, normalizedWakeWord + QStringLiteral(".pb"));
+    if (!preferred.isEmpty()) {
+        return preferred;
     }
-
-    return {};
+    return findFirstMatchingFileRecursive(modelsRoot, {QStringLiteral("*.pb")});
 }
 
 QString resolveExecutableFromDirectory(const QString &directoryPath, const QStringList &candidateNames)
@@ -612,11 +621,13 @@ QString BackendFacade::whisperExecutable() const { return m_settings->whisperExe
 QString BackendFacade::whisperModelPath() const { return m_settings->whisperModelPath(); }
 QString BackendFacade::piperExecutable() const { return m_settings->piperExecutable(); }
 QString BackendFacade::piperVoiceModel() const { return m_settings->piperVoiceModel(); }
-QString BackendFacade::porcupineAccessKey() const { return m_settings->porcupineAccessKey(); }
-QString BackendFacade::porcupineLibraryPath() const { return m_settings->porcupineLibraryPath(); }
-QString BackendFacade::porcupineModelPath() const { return m_settings->porcupineModelPath(); }
-QString BackendFacade::porcupineKeywordPath() const { return m_settings->porcupineKeywordPath(); }
-double BackendFacade::porcupineSensitivity() const { return m_settings->porcupineSensitivity(); }
+QString BackendFacade::preciseEngineExecutable() const { return m_settings->preciseEngineExecutable(); }
+QString BackendFacade::preciseModelPath() const { return m_settings->preciseModelPath(); }
+double BackendFacade::preciseTriggerThreshold() const { return m_settings->preciseTriggerThreshold(); }
+int BackendFacade::preciseTriggerCooldownMs() const { return m_settings->preciseTriggerCooldownMs(); }
+QString BackendFacade::preciseRuntimeRoot() const { return preciseRuntimeRootPath(); }
+QString BackendFacade::preciseTrainingRoot() const { return preciseTrainingRootPath(); }
+QString BackendFacade::preciseTrainScriptPath() const { return preciseTrainScriptPathValue(); }
 QString BackendFacade::ffmpegExecutable() const { return m_settings->ffmpegExecutable(); }
 double BackendFacade::voiceSpeed() const { return m_settings->voiceSpeed(); }
 double BackendFacade::voicePitch() const { return m_settings->voicePitch(); }
@@ -706,11 +717,10 @@ void BackendFacade::saveSettings(
     int timeoutMs,
     const QString &whisperPath,
     const QString &whisperModelPath,
-    const QString &porcupineAccessKey,
-    const QString &porcupineLibraryPath,
-    const QString &porcupineModelPath,
-    const QString &porcupineKeywordPath,
-    double porcupineSensitivity,
+    const QString &preciseEnginePath,
+    const QString &preciseModelPath,
+    double preciseThreshold,
+    int preciseCooldownMs,
     const QString &piperPath,
     const QString &voicePath,
     const QString &ffmpegPath,
@@ -730,11 +740,10 @@ void BackendFacade::saveSettings(
         endpoint, modelId, defaultMode, autoRouting, streaming, timeoutMs,
         whisperPath,
         whisperModelPath,
-        porcupineAccessKey,
-        porcupineLibraryPath,
-        porcupineModelPath,
-        porcupineKeywordPath,
-        porcupineSensitivity,
+        preciseEnginePath,
+        preciseModelPath,
+        preciseThreshold,
+        preciseCooldownMs,
         piperPath,
         voicePath,
         ffmpegPath,
@@ -791,11 +800,10 @@ bool BackendFacade::completeInitialSetup(
     const QString &modelId,
     const QString &whisperPath,
     const QString &whisperModelPath,
-    const QString &porcupineAccessKey,
-    const QString &porcupineLibraryPath,
-    const QString &porcupineModelPath,
-    const QString &porcupineKeywordPath,
-    double porcupineSensitivity,
+    const QString &preciseEnginePath,
+    const QString &preciseModelPath,
+    double preciseThreshold,
+    int preciseCooldownMs,
     const QString &piperPath,
     const QString &voicePath,
     const QString &ffmpegPath,
@@ -833,30 +841,13 @@ bool BackendFacade::completeInitialSetup(
         return false;
     }
 
-    const QString resolvedPorcupineLibrary = resolveExecutableSelection(
-        porcupineLibraryPath,
-        { QStringLiteral("libpv_porcupine.dll") });
-    if (resolvedPorcupineLibrary.isEmpty()) {
-        setToolInstallStatus(QStringLiteral("Porcupine library is invalid. Select libpv_porcupine.dll."));
-        return false;
-    }
-
-    const QString resolvedPorcupineModel = resolveExistingFileSelection(
-        porcupineModelPath,
-        { QStringLiteral("porcupine_params.pv") });
-    if (resolvedPorcupineModel.isEmpty()) {
-        setToolInstallStatus(QStringLiteral("Porcupine model is invalid. Select porcupine_params.pv."));
-        return false;
-    }
-
-    const QString resolvedPorcupineKeyword = resolveExistingFileSelection(
-        porcupineKeywordPath,
+    const QString resolvedPreciseEngine = resolveExecutableSelection(
+        preciseEnginePath,
+        { QStringLiteral("precise-engine.exe"), QStringLiteral("precise-engine") });
+    const QString resolvedPreciseModel = resolveExistingFileSelection(
+        preciseModelPath,
         {},
-        { QStringLiteral("*_windows.ppn") });
-    if (resolvedPorcupineKeyword.isEmpty()) {
-        setToolInstallStatus(QStringLiteral("Porcupine keyword file is invalid. Select a Windows .ppn file."));
-        return false;
-    }
+        { QStringLiteral("*.pb") });
 
     const QString resolvedPiper = resolveExecutableSelection(
         piperPath,
@@ -910,11 +901,10 @@ bool BackendFacade::completeInitialSetup(
         12000,
         resolvedWhisper,
         resolvedWhisperModel,
-        porcupineAccessKey.trimmed(),
-        resolvedPorcupineLibrary,
-        resolvedPorcupineModel,
-        resolvedPorcupineKeyword,
-        porcupineSensitivity,
+        resolvedPreciseEngine,
+        resolvedPreciseModel,
+        preciseThreshold,
+        preciseCooldownMs,
         resolvedPiper,
         resolvedVoiceModel,
         resolvedFfmpeg,
@@ -928,8 +918,8 @@ bool BackendFacade::completeInitialSetup(
     m_overlayController->setClickThrough(clickThrough);
     m_settings->setInitialSetupCompleted(true);
     m_settings->save();
-    setToolInstallStatus(porcupineAccessKey.trimmed().isEmpty()
-            ? QStringLiteral("Setup saved. Enter a Picovoice AccessKey to enable always-listening wake word detection.")
+    setToolInstallStatus(resolvedPreciseModel.isEmpty()
+            ? QStringLiteral("Setup saved. Wake word model not trained yet. Record samples, run train_wake_word.bat, then restart JARVIS.")
             : QStringLiteral("Setup validation passed. Configuration saved."));
     emit profileChanged();
     emit settingsChanged();
@@ -944,11 +934,10 @@ bool BackendFacade::runSetupScenario(
     const QString &modelId,
     const QString &whisperPath,
     const QString &whisperModelPath,
-    const QString &porcupineAccessKey,
-    const QString &porcupineLibraryPath,
-    const QString &porcupineModelPath,
-    const QString &porcupineKeywordPath,
-    double porcupineSensitivity,
+    const QString &preciseEnginePath,
+    const QString &preciseModelPath,
+    double preciseThreshold,
+    int preciseCooldownMs,
     const QString &piperPath,
     const QString &voicePath,
     const QString &ffmpegPath,
@@ -987,28 +976,20 @@ bool BackendFacade::runSetupScenario(
         return false;
     }
 
-    const QString resolvedPorcupineLibrary = resolveExecutableSelection(
-        porcupineLibraryPath,
-        { QStringLiteral("libpv_porcupine.dll") });
-    if (resolvedPorcupineLibrary.isEmpty()) {
-        setToolInstallStatus(QStringLiteral("Porcupine library is invalid. Select libpv_porcupine.dll."));
+    const QString resolvedPreciseEngine = resolveExecutableSelection(
+        preciseEnginePath,
+        { QStringLiteral("precise-engine.exe"), QStringLiteral("precise-engine") });
+    if (resolvedPreciseEngine.isEmpty()) {
+        setToolInstallStatus(QStringLiteral("Precise engine is invalid. Select precise-engine.exe or precise-engine."));
         return false;
     }
 
-    const QString resolvedPorcupineModel = resolveExistingFileSelection(
-        porcupineModelPath,
-        { QStringLiteral("porcupine_params.pv") });
-    if (resolvedPorcupineModel.isEmpty()) {
-        setToolInstallStatus(QStringLiteral("Porcupine model is invalid. Select porcupine_params.pv."));
-        return false;
-    }
-
-    const QString resolvedPorcupineKeyword = resolveExistingFileSelection(
-        porcupineKeywordPath,
+    const QString resolvedPreciseModel = resolveExistingFileSelection(
+        preciseModelPath,
         {},
-        { QStringLiteral("*_windows.ppn") });
-    if (resolvedPorcupineKeyword.isEmpty()) {
-        setToolInstallStatus(QStringLiteral("Porcupine keyword file is invalid. Select a Windows .ppn file."));
+        { QStringLiteral("*.pb") });
+    if (resolvedPreciseModel.isEmpty()) {
+        setToolInstallStatus(QStringLiteral("Wake word model is not trained yet. Record samples and run train_wake_word.bat first."));
         return false;
     }
 
@@ -1064,11 +1045,10 @@ bool BackendFacade::runSetupScenario(
         12000,
         resolvedWhisper,
         resolvedWhisperModel,
-        porcupineAccessKey.trimmed(),
-        resolvedPorcupineLibrary,
-        resolvedPorcupineModel,
-        resolvedPorcupineKeyword,
-        porcupineSensitivity,
+        resolvedPreciseEngine,
+        resolvedPreciseModel,
+        preciseThreshold,
+        preciseCooldownMs,
         resolvedPiper,
         resolvedVoiceModel,
         resolvedFfmpeg,
@@ -1100,10 +1080,8 @@ QVariantMap BackendFacade::evaluateSetupRequirements(
     const QString &modelId,
     const QString &whisperPath,
     const QString &whisperModelPath,
-    const QString &porcupineAccessKey,
-    const QString &porcupineLibraryPath,
-    const QString &porcupineModelPath,
-    const QString &porcupineKeywordPath,
+    const QString &preciseEnginePath,
+    const QString &preciseModelPath,
     const QString &piperPath,
     const QString &voicePath,
     const QString &ffmpegPath)
@@ -1121,16 +1099,13 @@ QVariantMap BackendFacade::evaluateSetupRequirements(
             QStringLiteral("whisper.exe")
         });
     const QString resolvedWhisperModel = resolveWhisperModelSelection(whisperModelPath);
-    const QString resolvedPorcupineLibrary = resolveExecutableSelection(
-        porcupineLibraryPath,
-        { QStringLiteral("libpv_porcupine.dll") });
-    const QString resolvedPorcupineModel = resolveExistingFileSelection(
-        porcupineModelPath,
-        { QStringLiteral("porcupine_params.pv") });
-    const QString resolvedPorcupineKeyword = resolveExistingFileSelection(
-        porcupineKeywordPath,
+    const QString resolvedPreciseEngine = resolveExecutableSelection(
+        preciseEnginePath,
+        { QStringLiteral("precise-engine.exe"), QStringLiteral("precise-engine") });
+    const QString resolvedPreciseModel = resolveExistingFileSelection(
+        preciseModelPath,
         {},
-        { QStringLiteral("*_windows.ppn") });
+        { QStringLiteral("*.pb") });
     const QString resolvedPiper = resolveExecutableSelection(
         piperPath,
         {
@@ -1145,10 +1120,8 @@ QVariantMap BackendFacade::evaluateSetupRequirements(
 
     const bool whisperOk = !resolvedWhisper.isEmpty();
     const bool whisperModelOk = !resolvedWhisperModel.isEmpty();
-    const bool porcupineAccessKeyOk = !porcupineAccessKey.trimmed().isEmpty();
-    const bool porcupineLibraryOk = !resolvedPorcupineLibrary.isEmpty();
-    const bool porcupineModelOk = !resolvedPorcupineModel.isEmpty();
-    const bool porcupineKeywordOk = !resolvedPorcupineKeyword.isEmpty();
+    const bool preciseEngineOk = !resolvedPreciseEngine.isEmpty();
+    const bool preciseModelOk = !resolvedPreciseModel.isEmpty();
     const bool piperOk = !resolvedPiper.isEmpty();
     const bool ffmpegOk = !resolvedFfmpeg.isEmpty();
     const bool voiceOk = !resolvedVoice.isEmpty();
@@ -1165,19 +1138,17 @@ QVariantMap BackendFacade::evaluateSetupRequirements(
     result.insert(QStringLiteral("modelOk"), modelOk);
     result.insert(QStringLiteral("whisperOk"), whisperOk);
     result.insert(QStringLiteral("whisperModelOk"), whisperModelOk);
-    result.insert(QStringLiteral("porcupineAccessKeyOk"), porcupineAccessKeyOk);
-    result.insert(QStringLiteral("porcupineLibraryOk"), porcupineLibraryOk);
-    result.insert(QStringLiteral("porcupineModelOk"), porcupineModelOk);
-    result.insert(QStringLiteral("porcupineKeywordOk"), porcupineKeywordOk);
+    result.insert(QStringLiteral("preciseEngineOk"), preciseEngineOk);
+    result.insert(QStringLiteral("preciseModelOk"), preciseModelOk);
+    result.insert(QStringLiteral("preciseReady"), preciseEngineOk && preciseModelOk);
     result.insert(QStringLiteral("piperOk"), piperOk);
     result.insert(QStringLiteral("voiceOk"), voiceOk);
     result.insert(QStringLiteral("ffmpegOk"), ffmpegOk);
 
     result.insert(QStringLiteral("whisperPathResolved"), resolvedWhisper);
     result.insert(QStringLiteral("whisperModelPathResolved"), resolvedWhisperModel);
-    result.insert(QStringLiteral("porcupineLibraryPathResolved"), resolvedPorcupineLibrary);
-    result.insert(QStringLiteral("porcupineModelPathResolved"), resolvedPorcupineModel);
-    result.insert(QStringLiteral("porcupineKeywordPathResolved"), resolvedPorcupineKeyword);
+    result.insert(QStringLiteral("preciseEnginePathResolved"), resolvedPreciseEngine);
+    result.insert(QStringLiteral("preciseModelPathResolved"), resolvedPreciseModel);
     result.insert(QStringLiteral("piperPathResolved"), resolvedPiper);
     result.insert(QStringLiteral("voicePathResolved"), resolvedVoice);
     result.insert(QStringLiteral("ffmpegPathResolved"), resolvedFfmpeg);
@@ -1196,9 +1167,6 @@ QVariantMap BackendFacade::evaluateSetupRequirements(
         && modelOk
         && whisperOk
         && whisperModelOk
-        && porcupineLibraryOk
-        && porcupineModelOk
-        && porcupineKeywordOk
         && piperOk
         && voiceOk
         && ffmpegOk;
@@ -1265,21 +1233,6 @@ bool BackendFacade::autoDetectVoiceTools()
         whisperModel = detectWhisperModel(appDataRoot);
     }
 
-    QString porcupineLibrary = m_settings->porcupineLibraryPath();
-    if (porcupineLibrary.isEmpty() || !QFileInfo::exists(porcupineLibrary)) {
-        porcupineLibrary = detectPorcupineLibrary(appDataRoot);
-    }
-
-    QString porcupineModel = m_settings->porcupineModelPath();
-    if (porcupineModel.isEmpty() || !QFileInfo::exists(porcupineModel)) {
-        porcupineModel = detectPorcupineModel(appDataRoot);
-    }
-
-    QString porcupineKeyword = m_settings->porcupineKeywordPath();
-    if (porcupineKeyword.isEmpty() || !QFileInfo::exists(porcupineKeyword)) {
-        porcupineKeyword = detectPorcupineKeyword(appDataRoot, m_settings->wakeWordPhrase());
-    }
-
     QString piper = resolveExecutable(
         {QStringLiteral("piper")},
         {
@@ -1316,15 +1269,6 @@ bool BackendFacade::autoDetectVoiceTools()
     if (!piper.isEmpty()) {
         m_settings->setPiperExecutable(piper);
     }
-    if (!porcupineLibrary.isEmpty()) {
-        m_settings->setPorcupineLibraryPath(porcupineLibrary);
-    }
-    if (!porcupineModel.isEmpty()) {
-        m_settings->setPorcupineModelPath(porcupineModel);
-    }
-    if (!porcupineKeyword.isEmpty()) {
-        m_settings->setPorcupineKeywordPath(porcupineKeyword);
-    }
     if (!ffmpeg.isEmpty()) {
         m_settings->setFfmpegExecutable(ffmpeg);
     }
@@ -1338,143 +1282,108 @@ bool BackendFacade::autoDetectVoiceTools()
 
     const bool complete = !m_settings->whisperExecutable().isEmpty()
         && !m_settings->whisperModelPath().isEmpty()
-        && !m_settings->porcupineLibraryPath().isEmpty()
-        && !m_settings->porcupineModelPath().isEmpty()
-        && !m_settings->porcupineKeywordPath().isEmpty()
         && !m_settings->piperExecutable().isEmpty()
         && !m_settings->ffmpegExecutable().isEmpty()
         && !m_settings->piperVoiceModel().isEmpty();
 
     setToolInstallStatus(complete
-            ? QStringLiteral("Voice and wake tools detected and fields populated.")
-            : QStringLiteral("Some tools are still missing. Use Install Missing Tools."));
+            ? QStringLiteral("Voice tools detected and fields populated.")
+            : QStringLiteral("Some voice tools are still missing."));
 
     m_settings->save();
     emit settingsChanged();
     return complete;
 }
 
-bool BackendFacade::installAndDetectVoiceTools()
+bool BackendFacade::startTrainingSetup()
 {
-    if (autoDetectVoiceTools()) {
-        return true;
+    QDir().mkpath(preciseTrainingRootPath() + QStringLiteral("/wake-word"));
+    QDir().mkpath(preciseTrainingRootPath() + QStringLiteral("/not-wake-word"));
+    QDir().mkpath(preciseTrainingRootPath() + QStringLiteral("/test/wake-word"));
+    QDir().mkpath(preciseTrainingRootPath() + QStringLiteral("/test/not-wake-word"));
+    QDir().mkpath(preciseModelsRootPath());
+    QDir().mkpath(preciseRuntimeRootPath());
+
+    const QString setupScript = QStringLiteral(R"BAT(@echo off
+setlocal
+echo Setting up Mycroft Precise training environment...
+echo Recommended: create and activate a dedicated Python environment first.
+echo Example:
+echo   py -3.8 -m venv venv
+echo   call venv\Scripts\activate
+echo   python -m pip install --upgrade pip
+echo   pip install mycroft-precise precise-runner tensorflow==1.13.1 keras==2.1.5
+echo.
+echo After installation, place precise-engine.exe in:
+echo   %~dp0..
+echo Then record your samples and run train_wake_word.bat.
+pause
+)BAT");
+
+    const QString trainScript = QStringLiteral(R"BAT(@echo off
+setlocal
+set RUNTIME_ROOT=%~dp0..
+set TRAINING_ROOT=%~dp0
+set MODEL_ROOT=%RUNTIME_ROOT%\models
+set MODEL_NAME=jarvis
+
+if not exist "%TRAINING_ROOT%wake-word" (
+  echo Missing wake-word samples folder.
+  exit /b 1
+)
+
+if not exist "%TRAINING_ROOT%not-wake-word" (
+  echo Missing not-wake-word samples folder.
+  exit /b 1
+)
+
+echo Training wake word model...
+precise-train "%MODEL_ROOT%\%MODEL_NAME%.net" "%TRAINING_ROOT%"
+if errorlevel 1 exit /b 1
+
+echo Converting model...
+precise-convert "%MODEL_ROOT%\%MODEL_NAME%.net" -o "%MODEL_ROOT%\%MODEL_NAME%.pb"
+if errorlevel 1 exit /b 1
+
+echo Training complete.
+echo Model: %MODEL_ROOT%\%MODEL_NAME%.pb
+echo Params: %MODEL_ROOT%\%MODEL_NAME%.pb.params
+pause
+)BAT");
+
+    const QString instructions = QStringLiteral(
+        "Wake word model not trained yet.\n\n"
+        "1. Record your voice saying \"Jarvis\" 20-40 times into training/wake-word/\n"
+        "2. Record 20-40 negative samples with noise or other words into training/not-wake-word/\n"
+        "3. Optional: place extra validation clips into training/test/wake-word/ and training/test/not-wake-word/\n"
+        "4. Run train_wake_word.bat\n"
+        "5. Restart JARVIS\n\n"
+        "Runtime root:\n%1\n\n"
+        "Expected runtime files:\n"
+        "- precise-engine.exe (or compiled precise-engine binary)\n"
+        "- models/jarvis.pb\n"
+        "- models/jarvis.pb.params\n").arg(preciseRuntimeRootPath());
+
+    const bool ok = writeTextFile(preciseSetupScriptPathValue(), setupScript)
+        && writeTextFile(preciseTrainScriptPathValue(), trainScript)
+        && writeTextFile(preciseInstructionsPathValue(), instructions);
+
+    if (!ok) {
+        setToolInstallStatus(QStringLiteral("Failed to create the Precise training setup files."));
+        return false;
     }
 
-#ifdef Q_OS_WIN
-    const QString appDataRoot = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-    const QString toolsRoot = QDir::toNativeSeparators(appDataRoot + QStringLiteral("/tools"));
-    const PiperVoicePreset *preset = findVoicePreset(m_settings->selectedVoicePresetId());
-    const PiperVoicePreset &voicePreset = preset != nullptr ? *preset : voicePresets().first();
-    setToolInstallStatus(QStringLiteral("Installing missing voice tools. This can take a few minutes..."));
-
-    const QString script = QStringLiteral(R"POWERSHELL(
-$ErrorActionPreference = 'Stop'
-$ProgressPreference = 'SilentlyContinue'
-
-$toolsRoot = '%1'
-New-Item -ItemType Directory -Force -Path $toolsRoot | Out-Null
-
-function Install-LatestZip {
-    param(
-        [string]$Repo,
-        [string[]]$NamePatterns,
-        [string]$Destination
-    )
-
-    $release = Invoke-RestMethod -Uri ("https://api.github.com/repos/{0}/releases/latest" -f $Repo)
-    $asset = $null
-    foreach ($pattern in $NamePatterns) {
-        $asset = $release.assets | Where-Object { $_.name -like $pattern } | Select-Object -First 1
-        if ($asset) { break }
+    const QString detectedEngine = detectPreciseEngine();
+    const QString detectedModel = detectPreciseModel(m_settings->wakeWordPhrase());
+    if (!detectedEngine.isEmpty()) {
+        m_settings->setPreciseEngineExecutable(detectedEngine);
     }
-    if (-not $asset) {
-        throw "Unable to find a matching release asset for $Repo"
+    if (!detectedModel.isEmpty()) {
+        m_settings->setPreciseModelPath(detectedModel);
     }
+    m_settings->save();
+    emit settingsChanged();
 
-    $zipPath = Join-Path $toolsRoot (($Repo -replace '/', '_') + '.zip')
-    Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zipPath
-    if (Test-Path $Destination) { Remove-Item -Recurse -Force $Destination }
-    Expand-Archive -Path $zipPath -DestinationPath $Destination -Force
-}
-
-if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
-    winget install --id Gyan.FFmpeg.Essentials --exact --accept-source-agreements --accept-package-agreements --silent
-}
-
-if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
-    $ffmpegDir = Join-Path $toolsRoot 'ffmpeg_build'
-    Install-LatestZip -Repo 'BtbN/FFmpeg-Builds' -NamePatterns @('*win64-lgpl-shared*.zip', '*win64-gpl-shared*.zip') -Destination $ffmpegDir
-}
-
-$whisperDir = Join-Path $toolsRoot 'whisper'
-if (-not (Test-Path (Join-Path $whisperDir 'whisper-cli.exe')) -and -not (Test-Path (Join-Path $whisperDir 'main.exe'))) {
-    Install-LatestZip -Repo 'ggerganov/whisper.cpp' -NamePatterns @('*bin*x64*.zip', '*windows*x64*.zip') -Destination $whisperDir
-}
-
-$whisperModelDir = Join-Path $whisperDir 'models'
-New-Item -ItemType Directory -Force -Path $whisperModelDir | Out-Null
-$whisperModel = Join-Path $whisperModelDir 'ggml-base.en.bin'
-if (-not (Test-Path $whisperModel)) {
-    Invoke-WebRequest -Uri 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin?download=true' -OutFile $whisperModel
-}
-
-$piperDir = Join-Path $toolsRoot 'piper'
-if (-not (Test-Path (Join-Path $piperDir 'piper.exe'))) {
-    Install-LatestZip -Repo 'rhasspy/piper' -NamePatterns @('*windows*amd64*.zip', '*win*amd64*.zip') -Destination $piperDir
-}
-
-$voiceDir = Join-Path $toolsRoot 'piper-voices'
-New-Item -ItemType Directory -Force -Path $voiceDir | Out-Null
-$voiceModel = Join-Path $voiceDir '%2.onnx'
-$voiceJson = Join-Path $voiceDir '%2.onnx.json'
-
-if (-not (Test-Path $voiceModel)) {
-    Invoke-WebRequest -Uri '%3' -OutFile $voiceModel
-}
-if (-not (Test-Path $voiceJson)) {
-    Invoke-WebRequest -Uri '%4' -OutFile $voiceJson
-}
-
-$porcupineDir = Join-Path $toolsRoot 'porcupine'
-New-Item -ItemType Directory -Force -Path $porcupineDir | Out-Null
-$porcupineDll = Join-Path $porcupineDir 'libpv_porcupine.dll'
-$porcupineModel = Join-Path $porcupineDir 'porcupine_params.pv'
-$porcupineKeyword = Join-Path $porcupineDir 'jarvis_windows.ppn'
-
-if (-not (Test-Path $porcupineDll)) {
-    Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/Picovoice/porcupine/master/lib/windows/amd64/libpv_porcupine.dll' -OutFile $porcupineDll
-}
-if (-not (Test-Path $porcupineModel)) {
-    Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/Picovoice/porcupine/master/lib/common/porcupine_params.pv' -OutFile $porcupineModel
-}
-if (-not (Test-Path $porcupineKeyword)) {
-    Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/Picovoice/porcupine/master/resources/keyword_files/windows/jarvis_windows.ppn' -OutFile $porcupineKeyword
-}
-)POWERSHELL").arg(toolsRoot, voicePreset.id, voicePreset.modelUrl, voicePreset.configUrl);
-
-    QProcess installer;
-    installer.start(
-        QStringLiteral("powershell"),
-        {
-            QStringLiteral("-NoProfile"),
-            QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
-            QStringLiteral("-Command"),
-            script
-        });
-
-    installer.waitForFinished(15 * 60 * 1000);
-    if (installer.exitStatus() != QProcess::NormalExit || installer.exitCode() != 0) {
-        setToolInstallStatus(QStringLiteral("Automatic install failed. Please run as Administrator and try again."));
-        return autoDetectVoiceTools();
-    }
-
-    const bool complete = autoDetectVoiceTools();
-    setToolInstallStatus(complete
-            ? QStringLiteral("Voice and wake tools installed and configured.")
-            : QStringLiteral("Install finished, but some paths still need manual review."));
-    return complete;
-#else
-    setToolInstallStatus(QStringLiteral("Automatic install is currently implemented for Windows only."));
-    return autoDetectVoiceTools();
-#endif
+    setToolInstallStatus(QStringLiteral("Training setup created in C:/JarvisRuntime/precise/training. Record samples next, then run train_wake_word.bat."));
+    return true;
 }

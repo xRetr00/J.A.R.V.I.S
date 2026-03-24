@@ -19,7 +19,7 @@ class ReasoningRouter;
 class IdentityProfileService;
 class StreamAssembler;
 class WhisperSttEngine;
-class PorcupineWakeWordEngine;
+class WakeWordEnginePrecise;
 
 class AssistantController : public QObject
 {
@@ -66,11 +66,10 @@ public slots:
         int timeoutMs,
         const QString &whisperPath,
         const QString &whisperModelPath,
-        const QString &porcupineAccessKey,
-        const QString &porcupineLibraryPath,
-        const QString &porcupineModelPath,
-        const QString &porcupineKeywordPath,
-        double porcupineSensitivity,
+        const QString &preciseEnginePath,
+        const QString &preciseModelPath,
+        double preciseThreshold,
+        int preciseCooldownMs,
         const QString &piperPath,
         const QString &voicePath,
         const QString &ffmpegPath,
@@ -130,7 +129,7 @@ private:
     LocalResponseEngine *m_localResponseEngine = nullptr;
     AudioInputService *m_audioInputService = nullptr;
     WhisperSttEngine *m_whisperSttEngine = nullptr;
-    PorcupineWakeWordEngine *m_porcupineWakeWordEngine = nullptr;
+    WakeWordEnginePrecise *m_wakeWordEnginePrecise = nullptr;
     PiperTtsEngine *m_piperTtsEngine = nullptr;
     AssistantState m_currentState = AssistantState::Idle;
     QString m_transcript;

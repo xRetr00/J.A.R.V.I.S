@@ -26,7 +26,7 @@
 #include "settings/IdentityProfileService.h"
 #include "stt/WhisperSttEngine.h"
 #include "tts/PiperTtsEngine.h"
-#include "wakeword/PorcupineWakeWordEngine.h"
+#include "wakeword/WakeWordEnginePrecise.h"
 
 namespace {
 QString stateToString(AssistantState state)
@@ -204,7 +204,7 @@ AssistantController::AssistantController(
     m_localResponseEngine = new LocalResponseEngine(this);
     m_audioInputService = new AudioInputService(this);
     m_whisperSttEngine = new WhisperSttEngine(m_settings, m_loggingService, this);
-    m_porcupineWakeWordEngine = new PorcupineWakeWordEngine(m_loggingService, this);
+    m_wakeWordEnginePrecise = new WakeWordEnginePrecise(m_loggingService, this);
     m_piperTtsEngine = new PiperTtsEngine(m_settings, this);
 }
 
@@ -257,7 +257,7 @@ void AssistantController::initialize()
     });
     connect(m_audioInputService, &AudioInputService::speechEnded, this, &AssistantController::stopListening);
 
-    connect(m_porcupineWakeWordEngine, &PorcupineWakeWordEngine::wakeWordDetected, this, [this]() {
+    connect(m_wakeWordEnginePrecise, &WakeWordEnginePrecise::wakeWordDetected, this, [this]() {
         const bool interruptingActiveOutput = m_piperTtsEngine->isSpeaking() || m_currentState == AssistantState::Processing;
         stopWakeMonitor();
         m_lmStudioClient->cancelActiveRequest();
@@ -277,9 +277,9 @@ void AssistantController::initialize()
             QStringLiteral("Wake word detected"),
             true);
     });
-    connect(m_porcupineWakeWordEngine, &PorcupineWakeWordEngine::errorOccurred, this, [this](const QString &message) {
+    connect(m_wakeWordEnginePrecise, &WakeWordEnginePrecise::errorOccurred, this, [this](const QString &message) {
         if (m_loggingService) {
-            m_loggingService->error(QStringLiteral("Porcupine wake engine error: %1").arg(message));
+            m_loggingService->error(QStringLiteral("Precise wake engine error: %1").arg(message));
         }
         setStatus(message);
     });
@@ -510,12 +510,11 @@ void AssistantController::startWakeMonitor()
         return;
     }
 
-    if (!m_porcupineWakeWordEngine->start(
-            m_settings->porcupineAccessKey(),
-            m_settings->porcupineLibraryPath(),
-            m_settings->porcupineModelPath(),
-            m_settings->porcupineKeywordPath(),
-            static_cast<float>(m_settings->porcupineSensitivity()),
+    if (!m_wakeWordEnginePrecise->start(
+            m_settings->preciseEngineExecutable(),
+            m_settings->preciseModelPath(),
+            static_cast<float>(m_settings->preciseTriggerThreshold()),
+            m_settings->preciseTriggerCooldownMs(),
             m_settings->selectedAudioInputDeviceId())) {
         if (m_loggingService) {
             m_loggingService->warn(QStringLiteral("Wake monitor could not start."));
@@ -526,8 +525,8 @@ void AssistantController::startWakeMonitor()
 void AssistantController::stopWakeMonitor()
 {
     m_wakeMonitorEnabled = false;
-    if (m_porcupineWakeWordEngine->isActive()) {
-        m_porcupineWakeWordEngine->stop();
+    if (m_wakeWordEnginePrecise->isActive()) {
+        m_wakeWordEnginePrecise->stop();
     }
     if (m_loggingService) {
         m_loggingService->info(QStringLiteral("Wake monitor stopped."));
@@ -583,11 +582,10 @@ void AssistantController::saveSettings(
     int timeoutMs,
     const QString &whisperPath,
     const QString &whisperModelPath,
-    const QString &porcupineAccessKey,
-    const QString &porcupineLibraryPath,
-    const QString &porcupineModelPath,
-    const QString &porcupineKeywordPath,
-    double porcupineSensitivity,
+    const QString &preciseEnginePath,
+    const QString &preciseModelPath,
+    double preciseThreshold,
+    int preciseCooldownMs,
     const QString &piperPath,
     const QString &voicePath,
     const QString &ffmpegPath,
@@ -606,11 +604,10 @@ void AssistantController::saveSettings(
     m_settings->setRequestTimeoutMs(timeoutMs);
     m_settings->setWhisperExecutable(whisperPath);
     m_settings->setWhisperModelPath(whisperModelPath);
-    m_settings->setPorcupineAccessKey(porcupineAccessKey);
-    m_settings->setPorcupineLibraryPath(porcupineLibraryPath);
-    m_settings->setPorcupineModelPath(porcupineModelPath);
-    m_settings->setPorcupineKeywordPath(porcupineKeywordPath);
-    m_settings->setPorcupineSensitivity(porcupineSensitivity);
+    m_settings->setPreciseEngineExecutable(preciseEnginePath);
+    m_settings->setPreciseModelPath(preciseModelPath);
+    m_settings->setPreciseTriggerThreshold(preciseThreshold);
+    m_settings->setPreciseTriggerCooldownMs(preciseCooldownMs);
     m_settings->setPiperExecutable(piperPath);
     m_settings->setPiperVoiceModel(voicePath);
     m_settings->setFfmpegExecutable(ffmpegPath);
@@ -685,11 +682,9 @@ bool AssistantController::canStartWakeMonitor() const
     return m_wakeMonitorEnabled
         && m_currentState != AssistantState::Listening
         && !m_audioInputService->isActive()
-        && !m_porcupineWakeWordEngine->isActive()
-        && !m_settings->porcupineAccessKey().isEmpty()
-        && !m_settings->porcupineLibraryPath().isEmpty()
-        && !m_settings->porcupineModelPath().isEmpty()
-        && !m_settings->porcupineKeywordPath().isEmpty();
+        && !m_wakeWordEnginePrecise->isActive()
+        && !m_settings->preciseEngineExecutable().isEmpty()
+        && !m_settings->preciseModelPath().isEmpty();
 }
 
 bool AssistantController::startAudioCapture(AudioCaptureMode mode, bool announceListening)

@@ -33,6 +33,7 @@ signals:
 private:
     void finishWithFailure(quint64 requestId, const QString &errorText);
     QNetworkRequest buildJsonRequest(const QString &path) const;
+    QString parseErrorMessage(QNetworkReply *reply) const;
     void handleStreamingReply(quint64 requestId, QNetworkReply *reply);
 
     QNetworkAccessManager m_networkAccessManager;
