@@ -15,6 +15,8 @@ set(CMAKE_AUTOUIC ON)
 
 option(JARVIS_BUILD_TESTS "Build JARVIS tests" ON)
 set(JARVIS_ONNXRUNTIME_ROOT "" CACHE PATH "Path to a local ONNX Runtime package root")
+set(JARVIS_SHERPA_ROOT "" CACHE PATH "Path to a local sherpa-onnx package root")
+set(JARVIS_SENTENCEPIECE_ROOT "${CMAKE_SOURCE_DIR}/third_party/sentencepiece" CACHE PATH "Path to a local sentencepiece source tree")
 
 find_package(Qt6 6.6 REQUIRED COMPONENTS
     Concurrent
@@ -106,6 +108,7 @@ set(JARVIS_SOURCES
     src/tools/ToolManager.cpp
     src/tts/PiperTtsEngine.cpp
     src/tts/WorkerTtsEngine.cpp
+    src/wakeword/SherpaWakeWordEngine.cpp
     src/wakeword/WakeWordEnginePrecise.cpp
     src/workers/AiBackendWorker.cpp
     src/workers/SpeechInputWorker.cpp
@@ -147,6 +150,7 @@ set(JARVIS_HEADERS
     src/tts/TtsEngine.h
     src/tts/PiperTtsEngine.h
     src/tts/WorkerTtsEngine.h
+    src/wakeword/SherpaWakeWordEngine.h
     src/wakeword/WakeWordEngine.h
     src/wakeword/WakeWordEnginePrecise.h
     src/workers/AiBackendWorker.h
@@ -179,6 +183,7 @@ target_include_directories(jarvis_lib
 )
 target_compile_definitions(jarvis_lib PUBLIC JARVIS_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 target_compile_definitions(jarvis_lib PUBLIC JARVIS_HAS_ONNXRUNTIME=0)
+target_compile_definitions(jarvis_lib PUBLIC JARVIS_HAS_SHERPA_ONNX=0)
 
 if(NOT JARVIS_ONNXRUNTIME_ROOT)
     file(GLOB JARVIS_ONNXRUNTIME_CANDIDATES RELATIVE "${CMAKE_SOURCE_DIR}"
@@ -203,6 +208,55 @@ if(JARVIS_ONNXRUNTIME_ROOT
     target_compile_definitions(jarvis_lib PUBLIC JARVIS_HAS_ONNXRUNTIME=1)
 endif()
 
+if(NOT JARVIS_SHERPA_ROOT)
+    file(GLOB JARVIS_SHERPA_CANDIDATES RELATIVE "${CMAKE_SOURCE_DIR}"
+        "${CMAKE_SOURCE_DIR}/third_party/sherpa-onnx/sherpa-onnx-v*-win-x64-shared-MD-Release-no-tts")
+    list(LENGTH JARVIS_SHERPA_CANDIDATES JARVIS_SHERPA_CANDIDATE_COUNT)
+    if(JARVIS_SHERPA_CANDIDATE_COUNT GREATER 0)
+        list(GET JARVIS_SHERPA_CANDIDATES 0 JARVIS_SHERPA_ROOT)
+        set(JARVIS_SHERPA_ROOT "${CMAKE_SOURCE_DIR}/${JARVIS_SHERPA_ROOT}")
+    endif()
+endif()
+
+if(EXISTS "${JARVIS_SENTENCEPIECE_ROOT}/CMakeLists.txt")
+    set(SPM_BUILD_TEST OFF CACHE BOOL "" FORCE)
+    set(SPM_ENABLE_SHARED OFF CACHE BOOL "" FORCE)
+    set(SPM_ENABLE_TCMALLOC OFF CACHE BOOL "" FORCE)
+    set(SPM_ENABLE_MSVC_MT_BUILD OFF CACHE BOOL "" FORCE)
+    add_subdirectory("${JARVIS_SENTENCEPIECE_ROOT}" "${CMAKE_BINARY_DIR}/third_party/sentencepiece" EXCLUDE_FROM_ALL)
+    target_include_directories(sentencepiece-static INTERFACE
+        "${JARVIS_SENTENCEPIECE_ROOT}"
+        "${JARVIS_SENTENCEPIECE_ROOT}/src"
+        "${JARVIS_SENTENCEPIECE_ROOT}/third_party"
+        "${CMAKE_BINARY_DIR}/third_party/sentencepiece"
+        "${CMAKE_BINARY_DIR}/third_party/sentencepiece/src"
+    )
+endif()
+
+if(JARVIS_SHERPA_ROOT
+    AND EXISTS "${JARVIS_SHERPA_ROOT}/include/sherpa-onnx/c-api/cxx-api.h"
+    AND EXISTS "${JARVIS_SHERPA_ROOT}/lib/sherpa-onnx-cxx-api.lib"
+    AND EXISTS "${JARVIS_SHERPA_ROOT}/lib/sherpa-onnx-c-api.lib"
+    AND TARGET sentencepiece-static)
+    add_library(jarvis_sherpa_onnx_c_api SHARED IMPORTED)
+    set_target_properties(jarvis_sherpa_onnx_c_api PROPERTIES
+        IMPORTED_IMPLIB "${JARVIS_SHERPA_ROOT}/lib/sherpa-onnx-c-api.lib"
+        IMPORTED_LOCATION "${JARVIS_SHERPA_ROOT}/lib/sherpa-onnx-c-api.dll"
+    )
+    add_library(jarvis_sherpa_onnx_cxx_api SHARED IMPORTED)
+    set_target_properties(jarvis_sherpa_onnx_cxx_api PROPERTIES
+        IMPORTED_IMPLIB "${JARVIS_SHERPA_ROOT}/lib/sherpa-onnx-cxx-api.lib"
+        IMPORTED_LOCATION "${JARVIS_SHERPA_ROOT}/lib/sherpa-onnx-cxx-api.dll"
+    )
+    target_include_directories(jarvis_lib PRIVATE "${JARVIS_SHERPA_ROOT}/include")
+    target_link_libraries(jarvis_lib PUBLIC
+        jarvis_sherpa_onnx_c_api
+        jarvis_sherpa_onnx_cxx_api
+        sentencepiece-static
+    )
+    target_compile_definitions(jarvis_lib PUBLIC JARVIS_HAS_SHERPA_ONNX=1)
+endif()
+
 target_link_libraries(jarvis_lib
     PUBLIC
         Qt6::Core
@@ -218,6 +272,34 @@ target_link_libraries(jarvis_lib
         spdlog::spdlog
         fvad
 )
+
+function(jarvis_copy_optional_runtime_dlls target_name)
+    if(TARGET onnxruntime)
+        add_custom_command(TARGET ${target_name} POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${JARVIS_ONNXRUNTIME_ROOT}/lib/onnxruntime.dll"
+                "$<TARGET_FILE_DIR:${target_name}>/onnxruntime.dll"
+        )
+    endif()
+
+    if(TARGET jarvis_sherpa_onnx_cxx_api)
+        add_custom_command(TARGET ${target_name} POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${JARVIS_SHERPA_ROOT}/lib/sherpa-onnx-c-api.dll"
+                "$<TARGET_FILE_DIR:${target_name}>/sherpa-onnx-c-api.dll"
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${JARVIS_SHERPA_ROOT}/lib/sherpa-onnx-cxx-api.dll"
+                "$<TARGET_FILE_DIR:${target_name}>/sherpa-onnx-cxx-api.dll"
+        )
+        if(EXISTS "${JARVIS_SHERPA_ROOT}/lib/onnxruntime_providers_shared.dll")
+            add_custom_command(TARGET ${target_name} POST_BUILD
+                COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                    "${JARVIS_SHERPA_ROOT}/lib/onnxruntime_providers_shared.dll"
+                    "$<TARGET_FILE_DIR:${target_name}>/onnxruntime_providers_shared.dll"
+            )
+        endif()
+    endif()
+endfunction()
 
 qt_add_executable(jarvis
     src/app/main.cpp
@@ -256,14 +338,7 @@ if(WIN32)
             "$<TARGET_FILE:jarvis>"
         COMMENT "Deploying Qt runtime for jarvis.exe"
     )
-    if(TARGET onnxruntime)
-        add_custom_command(TARGET jarvis POST_BUILD
-            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-                "${JARVIS_ONNXRUNTIME_ROOT}/lib/onnxruntime.dll"
-                "$<TARGET_FILE_DIR:jarvis>/onnxruntime.dll"
-            COMMENT "Copying ONNX Runtime DLL"
-        )
-    endif()
+    jarvis_copy_optional_runtime_dlls(jarvis)
 endif()
 
 if(JARVIS_BUILD_TESTS)
@@ -281,12 +356,7 @@ if(JARVIS_BUILD_TESTS)
 
     add_test(NAME jarvis_reasoning_tests COMMAND jarvis_reasoning_tests)
     set_tests_properties(jarvis_reasoning_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR};$ENV{PATH}")
-    if(TARGET onnxruntime)
-        add_custom_command(TARGET jarvis_reasoning_tests POST_BUILD
-            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-                "${JARVIS_ONNXRUNTIME_ROOT}/lib/onnxruntime.dll"
-                "$<TARGET_FILE_DIR:jarvis_reasoning_tests>/onnxruntime.dll")
-    endif()
+    jarvis_copy_optional_runtime_dlls(jarvis_reasoning_tests)
 
     qt_add_executable(jarvis_ai_services_tests
         tests/AiServicesTests.cpp
@@ -300,12 +370,7 @@ if(JARVIS_BUILD_TESTS)
 
     add_test(NAME jarvis_ai_services_tests COMMAND jarvis_ai_services_tests)
     set_tests_properties(jarvis_ai_services_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR};$ENV{PATH}")
-    if(TARGET onnxruntime)
-        add_custom_command(TARGET jarvis_ai_services_tests POST_BUILD
-            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-                "${JARVIS_ONNXRUNTIME_ROOT}/lib/onnxruntime.dll"
-                "$<TARGET_FILE_DIR:jarvis_ai_services_tests>/onnxruntime.dll")
-    endif()
+    jarvis_copy_optional_runtime_dlls(jarvis_ai_services_tests)
 
     qt_add_executable(jarvis_local_response_tests
         tests/LocalResponseEngineTests.cpp
@@ -319,12 +384,7 @@ if(JARVIS_BUILD_TESTS)
 
     add_test(NAME jarvis_local_response_tests COMMAND jarvis_local_response_tests)
     set_tests_properties(jarvis_local_response_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR};$ENV{PATH}")
-    if(TARGET onnxruntime)
-        add_custom_command(TARGET jarvis_local_response_tests POST_BUILD
-            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-                "${JARVIS_ONNXRUNTIME_ROOT}/lib/onnxruntime.dll"
-                "$<TARGET_FILE_DIR:jarvis_local_response_tests>/onnxruntime.dll")
-    endif()
+    jarvis_copy_optional_runtime_dlls(jarvis_local_response_tests)
 
     qt_add_executable(jarvis_identity_tests
         tests/IdentityProfileTests.cpp
@@ -338,10 +398,5 @@ if(JARVIS_BUILD_TESTS)
 
     add_test(NAME jarvis_identity_tests COMMAND jarvis_identity_tests)
     set_tests_properties(jarvis_identity_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR};$ENV{PATH}")
-    if(TARGET onnxruntime)
-        add_custom_command(TARGET jarvis_identity_tests POST_BUILD
-            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-                "${JARVIS_ONNXRUNTIME_ROOT}/lib/onnxruntime.dll"
-                "$<TARGET_FILE_DIR:jarvis_identity_tests>/onnxruntime.dll")
-    endif()
+    jarvis_copy_optional_runtime_dlls(jarvis_identity_tests)
 endif()
