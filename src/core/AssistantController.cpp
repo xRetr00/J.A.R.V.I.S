@@ -235,6 +235,11 @@ QString firstExistingPath(const QStringList &candidates)
 
     return {};
 }
+
+bool allowExperimentalInProcessSherpaWake()
+{
+    return qEnvironmentVariableIntValue("JARVIS_ENABLE_INPROCESS_SHERPA_WAKE") == 1;
+}
 }
 
 AssistantController::AssistantController(
@@ -432,7 +437,13 @@ void AssistantController::initialize()
         if (m_followUpListeningAfterWakeAck) {
             QTimer::singleShot(followUpListeningDelayMs(), this, [this]() {
                 m_followUpListeningAfterWakeAck = false;
+                if (!m_ttsEngine->isSpeaking()) {
+                    // Keep wake detection suppressed via the existing ignore-wake window,
+                    // but reopen direct listening for the post-wake follow-up turn.
+                    setDuplexState(DuplexState::Open);
+                }
                 if (!m_ttsEngine->isSpeaking() && !startAudioCapture(AudioCaptureMode::Direct, true)) {
+                    enterPostSpeechCooldown();
                     resumeWakeMonitor(shortWakeResumeDelayMs());
                     emit idleRequested();
                 }
@@ -623,6 +634,15 @@ void AssistantController::startListening()
 
 void AssistantController::startWakeMonitor()
 {
+    if (m_settings->wakeEngineKind() == QStringLiteral("sherpa-onnx") && !allowExperimentalInProcessSherpaWake()) {
+        m_wakeMonitorEnabled = false;
+        if (m_loggingService) {
+            m_loggingService->warn(QStringLiteral("Wake monitor disabled: in-process sherpa wake is unstable in this build. Set JARVIS_ENABLE_INPROCESS_SHERPA_WAKE=1 to override."));
+        }
+        setStatus(QStringLiteral("Wake monitor disabled. Use manual listening until sherpa wake is isolated."));
+        return;
+    }
+
     m_wakeMonitorEnabled = true;
     if (m_wakeWordEngine->isActive()) {
         if (m_wakeWordEngine->isPaused() && canStartWakeMonitor()) {

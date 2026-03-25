@@ -26,10 +26,10 @@ private:
     QString parseErrorMessage(QNetworkReply *reply) const;
     void handleStreamingReply(quint64 requestId, QNetworkReply *reply);
 
-    QNetworkAccessManager m_networkAccessManager;
+    QNetworkAccessManager *m_networkAccessManager = nullptr;
     QString m_endpoint = QStringLiteral("http://localhost:1234");
     QPointer<QNetworkReply> m_activeReply;
-    QTimer m_timeoutTimer;
+    QTimer *m_timeoutTimer = nullptr;
     quint64 m_requestCounter = 0;
     quint64 m_activeRequestId = 0;
     QByteArray m_streamBuffer;

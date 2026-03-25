@@ -33,8 +33,10 @@ QString normalizeEndpoint(QString endpoint)
 LmStudioClient::LmStudioClient(QObject *parent)
     : QObject(parent)
 {
-    m_timeoutTimer.setSingleShot(true);
-    connect(&m_timeoutTimer, &QTimer::timeout, this, [this]() {
+    m_networkAccessManager = new QNetworkAccessManager(this);
+    m_timeoutTimer = new QTimer(this);
+    m_timeoutTimer->setSingleShot(true);
+    connect(m_timeoutTimer, &QTimer::timeout, this, [this]() {
         if (m_activeReply) {
             m_activeReply->abort();
         }
@@ -54,7 +56,7 @@ QString LmStudioClient::endpoint() const
 
 void LmStudioClient::fetchModels()
 {
-    auto *reply = m_networkAccessManager.get(buildJsonRequest(QStringLiteral("/v1/models")));
+    auto *reply = m_networkAccessManager->get(buildJsonRequest(QStringLiteral("/v1/models")));
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         const auto cleanup = qScopeGuard([reply]() { reply->deleteLater(); });
 
@@ -113,11 +115,11 @@ quint64 LmStudioClient::sendChatRequest(const QList<AiMessage> &messages, const 
     m_streamedContent.clear();
 
     QNetworkRequest request = buildJsonRequest(QStringLiteral("/v1/chat/completions"));
-    m_activeReply = m_networkAccessManager.post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    m_activeReply = m_networkAccessManager->post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
     const quint64 requestId = m_activeRequestId;
     QPointer<QNetworkReply> reply = m_activeReply;
     emit requestStarted(requestId);
-    m_timeoutTimer.start(static_cast<int>(options.timeout.count()));
+    m_timeoutTimer->start(static_cast<int>(options.timeout.count()));
 
     if (options.stream) {
         connect(reply, &QIODevice::readyRead, this, [this, requestId, reply]() {
@@ -139,7 +141,7 @@ quint64 LmStudioClient::sendChatRequest(const QList<AiMessage> &messages, const 
             return;
         }
 
-        m_timeoutTimer.stop();
+        m_timeoutTimer->stop();
         const auto cleanup = qScopeGuard([this, reply]() {
             reply->deleteLater();
             m_activeReply = nullptr;
@@ -169,7 +171,7 @@ quint64 LmStudioClient::sendChatRequest(const QList<AiMessage> &messages, const 
 
 void LmStudioClient::cancelActiveRequest()
 {
-    m_timeoutTimer.stop();
+    m_timeoutTimer->stop();
     if (m_activeReply) {
         m_activeReply->abort();
         m_activeReply->deleteLater();

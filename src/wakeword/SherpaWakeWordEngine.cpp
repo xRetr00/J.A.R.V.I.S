@@ -193,12 +193,29 @@ void SherpaWakeWordEngine::processAudioFrame(const AudioFrame &frame)
         return;
     }
 
-    m_stream->AcceptWaveform(kSampleRate, frame.samples.data(), frame.sampleCount);
-    while (m_keywordSpotter->IsReady(m_stream.get())) {
-        m_keywordSpotter->Decode(m_stream.get());
+    sherpa_onnx::cxx::KeywordResult result;
+    try {
+        m_stream->AcceptWaveform(kSampleRate, frame.samples.data(), frame.sampleCount);
+        while (m_keywordSpotter->IsReady(m_stream.get())) {
+            m_keywordSpotter->Decode(m_stream.get());
+        }
+        result = m_keywordSpotter->GetResult(m_stream.get());
+    } catch (const std::exception &ex) {
+        if (m_loggingService) {
+            m_loggingService->error(QStringLiteral("sherpa-onnx processing failed: %1").arg(QString::fromUtf8(ex.what())));
+        }
+        emit errorOccurred(QStringLiteral("sherpa-onnx processing failed: %1").arg(QString::fromUtf8(ex.what())));
+        stop();
+        return;
+    } catch (...) {
+        if (m_loggingService) {
+            m_loggingService->error(QStringLiteral("sherpa-onnx processing failed with an unknown error"));
+        }
+        emit errorOccurred(QStringLiteral("sherpa-onnx processing failed with an unknown error"));
+        stop();
+        return;
     }
 
-    const sherpa_onnx::cxx::KeywordResult result = m_keywordSpotter->GetResult(m_stream.get());
     if (result.keyword.empty()) {
         return;
     }
@@ -268,23 +285,34 @@ bool SherpaWakeWordEngine::prepareKeywordSpotter(const QString &runtimePath, con
     config.model_config.tokens = tokens.toStdString();
     config.model_config.provider = "cpu";
     config.model_config.num_threads = 1;
-    config.model_config.model_type = "zipformer";
+    config.model_config.model_type = "";
     config.keywords_file = keywordsFile.toStdString();
     config.keywords_threshold = threshold;
     config.keywords_score = 1.0f;
     config.max_active_paths = 4;
     config.num_trailing_blanks = 1;
 
-    auto keywordSpotter = std::make_unique<sherpa_onnx::cxx::KeywordSpotter>(
-        sherpa_onnx::cxx::KeywordSpotter::Create(config));
-    if (!keywordSpotter || keywordSpotter->Get() == nullptr) {
-        emit errorOccurred(QStringLiteral("Failed to initialize sherpa-onnx keyword spotter"));
-        return false;
-    }
+    std::unique_ptr<sherpa_onnx::cxx::KeywordSpotter> keywordSpotter;
+    std::unique_ptr<sherpa_onnx::cxx::OnlineStream> stream;
+    try {
+        keywordSpotter = std::make_unique<sherpa_onnx::cxx::KeywordSpotter>(
+            sherpa_onnx::cxx::KeywordSpotter::Create(config));
+        if (!keywordSpotter || keywordSpotter->Get() == nullptr) {
+            emit errorOccurred(QStringLiteral("Failed to initialize sherpa-onnx keyword spotter"));
+            return false;
+        }
 
-    auto stream = std::make_unique<sherpa_onnx::cxx::OnlineStream>(keywordSpotter->CreateStream());
-    if (!stream || stream->Get() == nullptr) {
-        emit errorOccurred(QStringLiteral("Failed to create sherpa-onnx keyword stream"));
+        stream = std::make_unique<sherpa_onnx::cxx::OnlineStream>(keywordSpotter->CreateStream());
+        if (!stream || stream->Get() == nullptr) {
+            emit errorOccurred(QStringLiteral("Failed to create sherpa-onnx keyword stream"));
+            return false;
+        }
+    } catch (const std::exception &ex) {
+        emit errorOccurred(QStringLiteral("Failed to initialize sherpa-onnx keyword spotter: %1")
+            .arg(QString::fromUtf8(ex.what())));
+        return false;
+    } catch (...) {
+        emit errorOccurred(QStringLiteral("Failed to initialize sherpa-onnx keyword spotter: unknown error"));
         return false;
     }
 
@@ -373,9 +401,21 @@ void SherpaWakeWordEngine::resetDetectorState()
 {
 #if JARVIS_HAS_SHERPA_ONNX
     if (m_keywordSpotter && m_keywordSpotter->Get()) {
-        auto stream = std::make_unique<sherpa_onnx::cxx::OnlineStream>(m_keywordSpotter->CreateStream());
-        if (stream && stream->Get() != nullptr) {
-            m_stream = std::move(stream);
+        try {
+            auto stream = std::make_unique<sherpa_onnx::cxx::OnlineStream>(m_keywordSpotter->CreateStream());
+            if (stream && stream->Get() != nullptr) {
+                m_stream = std::move(stream);
+            }
+        } catch (const std::exception &ex) {
+            if (m_loggingService) {
+                m_loggingService->error(QStringLiteral("sherpa-onnx stream reset failed: %1").arg(QString::fromUtf8(ex.what())));
+            }
+            stop();
+        } catch (...) {
+            if (m_loggingService) {
+                m_loggingService->error(QStringLiteral("sherpa-onnx stream reset failed with an unknown error"));
+            }
+            stop();
         }
     }
 #endif

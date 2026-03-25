@@ -10,7 +10,7 @@ ModelCatalogService::ModelCatalogService(AppSettings *settings, AiBackendClient 
 {
     connect(m_client, &AiBackendClient::modelsReady, this, [this](const QList<ModelInfo> &models) {
         m_models = models;
-        if (m_settings->chatBackendModel().isEmpty() && !m_models.isEmpty()) {
+        if (!m_models.isEmpty() && !selectedModelValid()) {
             m_settings->setChatBackendModel(m_models.first().id);
             m_settings->save();
         }
@@ -26,7 +26,7 @@ ModelCatalogService::ModelCatalogService(AppSettings *settings, AiBackendClient 
     connect(m_client, &AiBackendClient::availabilityChanged, this, [this](const AiAvailability &availability) {
         m_availability = availability;
         m_availability.modelAvailable = selectedModelValid();
-        if (m_availability.online && !m_availability.modelAvailable) {
+        if (m_availability.online && !m_models.isEmpty() && !m_availability.modelAvailable) {
             m_availability.status = QStringLiteral("Selected model unavailable");
         }
         emit availabilityChanged();
