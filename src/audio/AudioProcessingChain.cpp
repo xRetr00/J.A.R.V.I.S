@@ -3,6 +3,11 @@
 #include <algorithm>
 #include <cmath>
 
+#include <QDir>
+#include <QFileInfo>
+
+#include "audio/SileroVadSession.h"
+
 extern "C" {
 #include <fvad.h>
 }
@@ -10,9 +15,28 @@ extern "C" {
 namespace {
 constexpr int kSileroWindowSamples = 320;
 constexpr float kMinAecMix = 0.08f;
+
+QString resolveSileroModelPath()
+{
+    const QStringList candidates = {
+        QStringLiteral(JARVIS_SOURCE_DIR) + QStringLiteral("/third_party/models/silero_vad.onnx"),
+        QDir::currentPath() + QStringLiteral("/third_party/models/silero_vad.onnx")
+    };
+
+    for (const QString &candidate : candidates) {
+        if (QFileInfo::exists(candidate)) {
+            return QFileInfo(candidate).absoluteFilePath();
+        }
+    }
+
+    return {};
+}
 }
 
-AudioProcessingChain::AudioProcessingChain() = default;
+AudioProcessingChain::AudioProcessingChain()
+    : m_sileroVad(std::make_unique<SileroVadSession>())
+{
+}
 
 AudioProcessingChain::~AudioProcessingChain()
 {
@@ -34,6 +58,7 @@ void AudioProcessingChain::initialize(const AudioProcessingConfig &config)
         fvad_set_mode(m_vad, 2);
         fvad_set_sample_rate(m_vad, 16000);
     }
+    initializeSileroVad();
     m_farEndSamples.fill(0.0f);
     m_farEndSampleCount = 0;
 }
@@ -105,6 +130,17 @@ void AudioProcessingChain::setFarEnd(const AudioFrame &ttsFrame)
 
 bool AudioProcessingChain::detectVoiceActivity(const AudioFrame &frame)
 {
+    if (m_sileroVad && m_sileroVad->isReady()) {
+        const float probability = m_sileroVad->inferProbability(
+            frame.samples.data(),
+            frame.sampleCount,
+            frame.sampleRate);
+        const float threshold = std::clamp(0.35f + ((1.0f - m_config.vadSensitivity) * 0.35f), 0.30f, 0.75f);
+        if (probability >= threshold) {
+            return true;
+        }
+    }
+
     if (frame.sampleCount < kSileroWindowSamples || m_vad == nullptr) {
         return computeRms(frame) >= std::max(0.012f, m_config.vadSensitivity * 0.05f);
     }
@@ -136,4 +172,24 @@ float AudioProcessingChain::computeRms(const AudioFrame &frame) const
         sumSquares += sample * sample;
     }
     return std::sqrt(sumSquares / static_cast<float>(frame.sampleCount));
+}
+
+bool AudioProcessingChain::initializeSileroVad()
+{
+    if (!m_sileroVad) {
+        return false;
+    }
+
+    const QString modelPath = resolveSileroModelPath();
+    if (modelPath.isEmpty()) {
+        m_sileroVad->reset();
+        return false;
+    }
+
+    if (!m_sileroVad->initialize(modelPath)) {
+        m_sileroVad->reset();
+        return false;
+    }
+
+    return true;
 }

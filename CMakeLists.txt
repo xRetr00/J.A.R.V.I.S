@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.27)
 
-project(JARVIS VERSION 0.1.0 LANGUAGES C CXX)
+project(JARVIS VERSION 1.0.0 LANGUAGES C CXX)
 
 include(FetchContent)
 enable_language(RC)
@@ -14,6 +14,7 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 option(JARVIS_BUILD_TESTS "Build JARVIS tests" ON)
+set(JARVIS_ONNXRUNTIME_ROOT "" CACHE PATH "Path to a local ONNX Runtime package root")
 
 find_package(Qt6 6.6 REQUIRED COMPONENTS
     Concurrent
@@ -88,6 +89,7 @@ set(JARVIS_SOURCES
     src/ai/StreamAssembler.cpp
     src/audio/AudioInputService.cpp
     src/audio/AudioProcessingChain.cpp
+    src/audio/SileroVadSession.cpp
     src/core/AssistantController.cpp
     src/core/IntentRouter.cpp
     src/core/LocalResponseEngine.cpp
@@ -124,6 +126,7 @@ set(JARVIS_HEADERS
     src/audio/AudioInputService.h
     src/audio/AudioProcessingChain.h
     src/audio/AudioProcessingTypes.h
+    src/audio/SileroVadSession.h
     src/core/AssistantController.h
     src/core/AssistantTypes.h
     src/core/IntentRouter.h
@@ -175,6 +178,30 @@ target_include_directories(jarvis_lib
         ${libfvad_SOURCE_DIR}/include
 )
 target_compile_definitions(jarvis_lib PUBLIC JARVIS_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+target_compile_definitions(jarvis_lib PUBLIC JARVIS_HAS_ONNXRUNTIME=0)
+
+if(NOT JARVIS_ONNXRUNTIME_ROOT)
+    file(GLOB JARVIS_ONNXRUNTIME_CANDIDATES RELATIVE "${CMAKE_SOURCE_DIR}"
+        "${CMAKE_SOURCE_DIR}/third_party/onnxruntime/onnxruntime-win-x64-*")
+    list(LENGTH JARVIS_ONNXRUNTIME_CANDIDATES JARVIS_ONNXRUNTIME_CANDIDATE_COUNT)
+    if(JARVIS_ONNXRUNTIME_CANDIDATE_COUNT GREATER 0)
+        list(GET JARVIS_ONNXRUNTIME_CANDIDATES 0 JARVIS_ONNXRUNTIME_ROOT)
+        set(JARVIS_ONNXRUNTIME_ROOT "${CMAKE_SOURCE_DIR}/${JARVIS_ONNXRUNTIME_ROOT}")
+    endif()
+endif()
+
+if(JARVIS_ONNXRUNTIME_ROOT
+    AND EXISTS "${JARVIS_ONNXRUNTIME_ROOT}/include/onnxruntime_cxx_api.h"
+    AND EXISTS "${JARVIS_ONNXRUNTIME_ROOT}/lib/onnxruntime.lib")
+    add_library(onnxruntime SHARED IMPORTED)
+    set_target_properties(onnxruntime PROPERTIES
+        IMPORTED_IMPLIB "${JARVIS_ONNXRUNTIME_ROOT}/lib/onnxruntime.lib"
+        IMPORTED_LOCATION "${JARVIS_ONNXRUNTIME_ROOT}/lib/onnxruntime.dll"
+    )
+    target_include_directories(jarvis_lib PRIVATE "${JARVIS_ONNXRUNTIME_ROOT}/include")
+    target_link_libraries(jarvis_lib PUBLIC onnxruntime)
+    target_compile_definitions(jarvis_lib PUBLIC JARVIS_HAS_ONNXRUNTIME=1)
+endif()
 
 target_link_libraries(jarvis_lib
     PUBLIC
@@ -229,6 +256,14 @@ if(WIN32)
             "$<TARGET_FILE:jarvis>"
         COMMENT "Deploying Qt runtime for jarvis.exe"
     )
+    if(TARGET onnxruntime)
+        add_custom_command(TARGET jarvis POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${JARVIS_ONNXRUNTIME_ROOT}/lib/onnxruntime.dll"
+                "$<TARGET_FILE_DIR:jarvis>/onnxruntime.dll"
+            COMMENT "Copying ONNX Runtime DLL"
+        )
+    endif()
 endif()
 
 if(JARVIS_BUILD_TESTS)
@@ -246,6 +281,12 @@ if(JARVIS_BUILD_TESTS)
 
     add_test(NAME jarvis_reasoning_tests COMMAND jarvis_reasoning_tests)
     set_tests_properties(jarvis_reasoning_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR};$ENV{PATH}")
+    if(TARGET onnxruntime)
+        add_custom_command(TARGET jarvis_reasoning_tests POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${JARVIS_ONNXRUNTIME_ROOT}/lib/onnxruntime.dll"
+                "$<TARGET_FILE_DIR:jarvis_reasoning_tests>/onnxruntime.dll")
+    endif()
 
     qt_add_executable(jarvis_ai_services_tests
         tests/AiServicesTests.cpp
@@ -259,6 +300,12 @@ if(JARVIS_BUILD_TESTS)
 
     add_test(NAME jarvis_ai_services_tests COMMAND jarvis_ai_services_tests)
     set_tests_properties(jarvis_ai_services_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR};$ENV{PATH}")
+    if(TARGET onnxruntime)
+        add_custom_command(TARGET jarvis_ai_services_tests POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${JARVIS_ONNXRUNTIME_ROOT}/lib/onnxruntime.dll"
+                "$<TARGET_FILE_DIR:jarvis_ai_services_tests>/onnxruntime.dll")
+    endif()
 
     qt_add_executable(jarvis_local_response_tests
         tests/LocalResponseEngineTests.cpp
@@ -272,6 +319,12 @@ if(JARVIS_BUILD_TESTS)
 
     add_test(NAME jarvis_local_response_tests COMMAND jarvis_local_response_tests)
     set_tests_properties(jarvis_local_response_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR};$ENV{PATH}")
+    if(TARGET onnxruntime)
+        add_custom_command(TARGET jarvis_local_response_tests POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${JARVIS_ONNXRUNTIME_ROOT}/lib/onnxruntime.dll"
+                "$<TARGET_FILE_DIR:jarvis_local_response_tests>/onnxruntime.dll")
+    endif()
 
     qt_add_executable(jarvis_identity_tests
         tests/IdentityProfileTests.cpp
@@ -285,4 +338,10 @@ if(JARVIS_BUILD_TESTS)
 
     add_test(NAME jarvis_identity_tests COMMAND jarvis_identity_tests)
     set_tests_properties(jarvis_identity_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR};$ENV{PATH}")
+    if(TARGET onnxruntime)
+        add_custom_command(TARGET jarvis_identity_tests POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${JARVIS_ONNXRUNTIME_ROOT}/lib/onnxruntime.dll"
+                "$<TARGET_FILE_DIR:jarvis_identity_tests>/onnxruntime.dll")
+    endif()
 endif()
