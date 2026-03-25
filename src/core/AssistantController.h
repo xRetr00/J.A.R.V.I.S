@@ -44,6 +44,9 @@ public:
     QString responseText() const;
     QString statusText() const;
     float audioLevel() const;
+    bool startupReady() const;
+    bool startupBlocked() const;
+    QString startupBlockingIssue() const;
     QList<ModelInfo> availableModels() const;
     QStringList availableModelIds() const;
     QString selectedModel() const;
@@ -92,6 +95,7 @@ signals:
     void statusTextChanged();
     void audioLevelChanged();
     void modelsChanged();
+    void startupStateChanged();
     void listeningRequested();
     void processingRequested();
     void speakingRequested();
@@ -145,6 +149,8 @@ private:
     void handleCommandFinished(const QString &text);
     void logPromptResponsePair(const QString &response, const QString &source, const QString &status = QString());
     CommandEnvelope parseCommand(const QString &payload) const;
+    void updateStartupState();
+    QString resolveStartupBlockingIssue(bool *blocked = nullptr) const;
     QString resolveWakeEngineRuntimePath() const;
     QString resolveWakeEngineModelPath() const;
     QString wakeEngineDisplayName() const;
@@ -182,4 +188,11 @@ private:
     bool m_followUpListeningAfterWakeAck = false;
     quint64 m_wakeResumeSequence = 0;
     qint64 m_ignoreWakeUntilMs = 0;
+    bool m_startupReady = false;
+    bool m_startupBlocked = false;
+    bool m_modelCatalogResolved = false;
+    bool m_wakeEngineReady = false;
+    bool m_wakeStartRequested = false;
+    QString m_lastWakeError;
+    QString m_startupBlockingIssue = QStringLiteral("Loading services...");
 };

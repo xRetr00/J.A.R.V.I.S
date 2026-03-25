@@ -236,10 +236,6 @@ QString firstExistingPath(const QStringList &candidates)
     return {};
 }
 
-bool allowExperimentalInProcessSherpaWake()
-{
-    return qEnvironmentVariableIntValue("JARVIS_ENABLE_INPROCESS_SHERPA_WAKE") == 1;
-}
 }
 
 AssistantController::AssistantController(
@@ -269,6 +265,7 @@ AssistantController::AssistantController(
 
 void AssistantController::initialize()
 {
+    m_statusText = QStringLiteral("Loading services...");
     m_voicePipelineRuntime->start();
     m_aiBackendClient->setEndpoint(m_settings->chatBackendEndpoint());
     m_deviceManager->registerDefaults();
@@ -277,8 +274,16 @@ void AssistantController::initialize()
     refreshModels();
 
     connect(m_modelCatalogService, &ModelCatalogService::modelsChanged, this, &AssistantController::modelsChanged);
+    connect(m_modelCatalogService, &ModelCatalogService::modelsChanged, this, [this]() {
+        m_modelCatalogResolved = true;
+        updateStartupState();
+    });
     connect(m_modelCatalogService, &ModelCatalogService::availabilityChanged, this, [this]() {
+        if (!m_modelCatalogService->availability().online) {
+            m_modelCatalogResolved = true;
+        }
         setStatus(m_modelCatalogService->availability().status);
+        updateStartupState();
     });
 
     m_voicePipelineRuntime->configureAudioProcessing({
@@ -511,6 +516,7 @@ void AssistantController::initialize()
     if (m_settings->initialSetupCompleted()) {
         startWakeMonitor();
     }
+    updateStartupState();
 }
 
 QString AssistantController::stateName() const { return stateToString(m_currentState); }
@@ -518,6 +524,9 @@ QString AssistantController::transcript() const { return m_transcript; }
 QString AssistantController::responseText() const { return m_responseText; }
 QString AssistantController::statusText() const { return m_statusText; }
 float AssistantController::audioLevel() const { return m_audioLevel; }
+bool AssistantController::startupReady() const { return m_startupReady; }
+bool AssistantController::startupBlocked() const { return m_startupBlocked; }
+QString AssistantController::startupBlockingIssue() const { return m_startupBlockingIssue; }
 QList<ModelInfo> AssistantController::availableModels() const { return m_modelCatalogService->models(); }
 QStringList AssistantController::availableModelIds() const
 {
@@ -531,6 +540,8 @@ QString AssistantController::selectedModel() const { return m_settings->chatBack
 
 void AssistantController::refreshModels()
 {
+    m_modelCatalogResolved = false;
+    updateStartupState();
     m_aiBackendClient->setEndpoint(m_settings->chatBackendEndpoint());
     m_modelCatalogService->refresh();
 }
@@ -634,16 +645,11 @@ void AssistantController::startListening()
 
 void AssistantController::startWakeMonitor()
 {
-    if (m_settings->wakeEngineKind() == QStringLiteral("sherpa-onnx") && !allowExperimentalInProcessSherpaWake()) {
-        m_wakeMonitorEnabled = false;
-        if (m_loggingService) {
-            m_loggingService->warn(QStringLiteral("Wake monitor disabled: in-process sherpa wake is unstable in this build. Set JARVIS_ENABLE_INPROCESS_SHERPA_WAKE=1 to override."));
-        }
-        setStatus(QStringLiteral("Wake monitor disabled. Use manual listening until sherpa wake is isolated."));
-        return;
-    }
-
     m_wakeMonitorEnabled = true;
+    m_wakeStartRequested = true;
+    m_wakeEngineReady = false;
+    m_lastWakeError.clear();
+    updateStartupState();
     if (m_wakeWordEngine->isActive()) {
         if (m_wakeWordEngine->isPaused() && canStartWakeMonitor()) {
             if (m_wakeWordEngine->usesExternalAudioInput()) {
@@ -666,9 +672,11 @@ void AssistantController::startWakeMonitor()
             static_cast<float>(m_settings->preciseTriggerThreshold()),
             m_settings->preciseTriggerCooldownMs(),
             m_settings->selectedAudioInputDeviceId())) {
+        m_wakeEngineReady = false;
         if (m_loggingService) {
             m_loggingService->warn(QStringLiteral("Wake monitor could not start."));
         }
+        updateStartupState();
         return;
     }
 
@@ -677,11 +685,15 @@ void AssistantController::startWakeMonitor()
         m_audioCaptureMode = AudioCaptureMode::WakeMonitor;
         m_voicePipelineRuntime->startWakeCapture(m_activeInputCaptureId, m_settings->selectedAudioInputDeviceId());
     }
+    updateStartupState();
 }
 
 void AssistantController::stopWakeMonitor()
 {
     m_wakeMonitorEnabled = false;
+    m_wakeStartRequested = false;
+    m_wakeEngineReady = false;
+    m_lastWakeError.clear();
     if (m_audioCaptureMode == AudioCaptureMode::WakeMonitor) {
         m_voicePipelineRuntime->stopWakeCapture();
         m_audioCaptureMode = AudioCaptureMode::None;
@@ -692,6 +704,7 @@ void AssistantController::stopWakeMonitor()
     if (m_loggingService) {
         m_loggingService->info(QStringLiteral("Wake monitor stopped."));
     }
+    updateStartupState();
 }
 
 void AssistantController::stopListening()
@@ -795,6 +808,7 @@ void AssistantController::saveSettings(
     if (m_wakeMonitorEnabled) {
         startWakeMonitor();
     }
+    updateStartupState();
 }
 
 void AssistantController::setupStateMachine()
@@ -817,6 +831,9 @@ void AssistantController::setupStateMachine()
 
 void AssistantController::createWakeWordEngine()
 {
+    m_wakeEngineReady = false;
+    m_wakeStartRequested = false;
+    m_lastWakeError.clear();
     if (m_wakeWordEngine) {
         m_wakeWordEngine->stop();
         delete m_wakeWordEngine;
@@ -832,6 +849,11 @@ void AssistantController::createWakeWordEngine()
 
 void AssistantController::bindWakeWordEngineSignals()
 {
+    connect(m_wakeWordEngine, &WakeWordEngine::engineReady, this, [this]() {
+        m_wakeEngineReady = true;
+        m_lastWakeError.clear();
+        updateStartupState();
+    });
     connect(m_wakeWordEngine, &WakeWordEngine::wakeWordDetected, this, [this]() {
         const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
         if (isMicrophoneBlocked() || nowMs < m_ignoreWakeUntilMs) {
@@ -866,6 +888,9 @@ void AssistantController::bindWakeWordEngineSignals()
             true);
     });
     connect(m_wakeWordEngine, &WakeWordEngine::errorOccurred, this, [this](const QString &message) {
+        m_wakeEngineReady = false;
+        m_lastWakeError = message;
+        updateStartupState();
         if (m_loggingService) {
             m_loggingService->error(QStringLiteral("%1 wake engine error: %2").arg(wakeEngineDisplayName(), message));
         }
@@ -881,6 +906,106 @@ void AssistantController::transitionToState(AssistantState state)
 
     m_currentState = state;
     emit stateChanged();
+}
+
+void AssistantController::updateStartupState()
+{
+    bool blocked = false;
+    const QString issue = resolveStartupBlockingIssue(&blocked);
+    const bool ready = issue.isEmpty();
+
+    if (m_startupReady == ready && m_startupBlocked == blocked && m_startupBlockingIssue == issue) {
+        return;
+    }
+
+    m_startupReady = ready;
+    m_startupBlocked = blocked;
+    m_startupBlockingIssue = issue;
+    emit startupStateChanged();
+}
+
+QString AssistantController::resolveStartupBlockingIssue(bool *blocked) const
+{
+    auto setBlocked = [blocked](bool value) {
+        if (blocked) {
+            *blocked = value;
+        }
+    };
+
+    if (!m_settings->initialSetupCompleted()) {
+        setBlocked(true);
+        return QStringLiteral("Initial setup is incomplete.");
+    }
+    if (m_settings->chatBackendEndpoint().trimmed().isEmpty()) {
+        setBlocked(true);
+        return QStringLiteral("Local AI backend endpoint is missing.");
+    }
+    if (m_settings->whisperExecutable().trimmed().isEmpty() || !QFileInfo::exists(m_settings->whisperExecutable())) {
+        setBlocked(true);
+        return QStringLiteral("Whisper executable is missing.");
+    }
+    if (m_settings->whisperModelPath().trimmed().isEmpty() || !QFileInfo::exists(m_settings->whisperModelPath())) {
+        setBlocked(true);
+        return QStringLiteral("Whisper model is missing.");
+    }
+    if (m_settings->piperExecutable().trimmed().isEmpty() || !QFileInfo::exists(m_settings->piperExecutable())) {
+        setBlocked(true);
+        return QStringLiteral("Piper executable is missing.");
+    }
+    if (m_settings->piperVoiceModel().trimmed().isEmpty() || !QFileInfo::exists(m_settings->piperVoiceModel())) {
+        setBlocked(true);
+        return QStringLiteral("Piper voice model is missing.");
+    }
+    if (m_settings->ffmpegExecutable().trimmed().isEmpty() || !QFileInfo::exists(m_settings->ffmpegExecutable())) {
+        setBlocked(true);
+        return QStringLiteral("FFmpeg executable is missing.");
+    }
+
+    const QString wakeRuntime = resolveWakeEngineRuntimePath();
+    if (wakeRuntime.isEmpty()) {
+        setBlocked(true);
+        return QStringLiteral("Wake runtime is missing.");
+    }
+    const QString wakeModel = resolveWakeEngineModelPath();
+    if (wakeModel.isEmpty()) {
+        setBlocked(true);
+        return QStringLiteral("Wake model is missing.");
+    }
+
+    if (!m_modelCatalogResolved) {
+        setBlocked(false);
+        return QStringLiteral("Loading local AI backend...");
+    }
+
+    const AiAvailability availability = m_modelCatalogService->availability();
+    if (!availability.online) {
+        setBlocked(true);
+        return availability.status.trimmed().isEmpty()
+            ? QStringLiteral("Local AI backend is offline.")
+            : availability.status;
+    }
+    if (!availability.modelAvailable) {
+        setBlocked(true);
+        return availability.status.trimmed().isEmpty()
+            ? QStringLiteral("Selected model is unavailable.")
+            : availability.status;
+    }
+
+    if (!m_wakeStartRequested) {
+        setBlocked(false);
+        return QStringLiteral("Starting wake engine...");
+    }
+    if (!m_lastWakeError.trimmed().isEmpty()) {
+        setBlocked(true);
+        return m_lastWakeError;
+    }
+    if (!m_wakeEngineReady) {
+        setBlocked(false);
+        return QStringLiteral("Starting wake engine...");
+    }
+
+    setBlocked(false);
+    return {};
 }
 
 void AssistantController::setStatus(const QString &status)

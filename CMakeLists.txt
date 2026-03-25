@@ -353,12 +353,36 @@ function(jarvis_copy_optional_runtime_dlls target_name)
     endif()
 endfunction()
 
+qt_add_executable(jarvis_sherpa_wake_helper
+    src/wakeword/SherpaWakeHelperMain.cpp
+)
+
+target_link_libraries(jarvis_sherpa_wake_helper
+    PRIVATE
+        Qt6::Core
+        Qt6::Multimedia
+)
+
+target_compile_definitions(jarvis_sherpa_wake_helper PRIVATE JARVIS_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+target_compile_definitions(jarvis_sherpa_wake_helper PRIVATE JARVIS_HAS_SHERPA_ONNX=0)
+
+if(TARGET jarvis_sherpa_onnx_cxx_api)
+    target_include_directories(jarvis_sherpa_wake_helper PRIVATE "${JARVIS_SHERPA_ROOT}/include")
+    target_link_libraries(jarvis_sherpa_wake_helper
+        PRIVATE
+            jarvis_sherpa_onnx_c_api
+            jarvis_sherpa_onnx_cxx_api
+    )
+    target_compile_definitions(jarvis_sherpa_wake_helper PRIVATE JARVIS_HAS_SHERPA_ONNX=1)
+endif()
+
 qt_add_executable(jarvis
     src/app/main.cpp
     src/app/jarvis.rc
 )
 
 target_link_libraries(jarvis PRIVATE jarvis_lib)
+add_dependencies(jarvis jarvis_sherpa_wake_helper)
 set_target_properties(jarvis PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin"
 )
@@ -388,6 +412,9 @@ if(WIN32)
             --no-translations
             --qmldir "${CMAKE_SOURCE_DIR}/src/gui/qml"
             "$<TARGET_FILE:jarvis>"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "$<TARGET_FILE:jarvis_sherpa_wake_helper>"
+            "$<TARGET_FILE_DIR:jarvis>/jarvis_sherpa_wake_helper.exe"
         COMMENT "Deploying Qt runtime for jarvis.exe"
     )
     jarvis_copy_optional_runtime_dlls(jarvis)

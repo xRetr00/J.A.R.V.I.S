@@ -81,6 +81,6 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    bootstrapLog(QStringLiteral("Initialization complete. App is running."));
+    bootstrapLog(QStringLiteral("Initialization complete. Waiting for service readiness."));
     return app.exec();
 }

@@ -2,6 +2,7 @@
 
 #include <QAbstractNativeEventFilter>
 #include <QApplication>
+#include <QSharedPointer>
 #include <QDebug>
 #include <QCoreApplication>
 #include <QMenu>
@@ -205,6 +206,56 @@ bool JarvisApplication::initialize()
         m_overlayController->setAssistantState(m_assistantController->stateName());
     });
 
+    auto startupAnnouncementSent = QSharedPointer<bool>::create(false);
+    auto lastStartupIssue = QSharedPointer<QString>::create(QString());
+    const auto updateStartupPresentation = [this, startupAnnouncementSent, lastStartupIssue]() {
+        if (!m_settings->initialSetupCompleted()) {
+            return;
+        }
+
+        const QString issue = m_assistantController->startupBlockingIssue().trimmed();
+        if (m_assistantController->startupReady()) {
+            if (!*startupAnnouncementSent) {
+                qInfo() << "Startup complete. App is running in the tray. Use Ctrl+Alt+J or tray icon.";
+                m_trayIcon->showMessage(
+                    QStringLiteral("J.A.R.V.I.S"),
+                    QStringLiteral("Running in tray. Use Ctrl+Alt+J or the tray icon."),
+                    QSystemTrayIcon::Information,
+                    5000);
+                *startupAnnouncementSent = true;
+                *lastStartupIssue = QString();
+            }
+            if (m_setupWindow && m_setupWindow->isVisible()) {
+                m_setupWindow->hide();
+            }
+            return;
+        }
+
+        if (m_assistantController->startupBlocked()) {
+            if (*lastStartupIssue != issue) {
+                qWarning() << "Startup blocked:" << issue;
+                m_trayIcon->showMessage(
+                    QStringLiteral("J.A.R.V.I.S"),
+                    issue.isEmpty() ? QStringLiteral("Startup is blocked. Open setup to fix the missing components.") : issue,
+                    QSystemTrayIcon::Warning,
+                    7000);
+                *lastStartupIssue = issue;
+            }
+            if (m_setupWindow) {
+                m_setupWindow->show();
+                m_setupWindow->raise();
+                m_setupWindow->requestActivate();
+            }
+            return;
+        }
+
+        if (*lastStartupIssue != issue) {
+            qInfo() << "Startup pending:" << issue;
+            *lastStartupIssue = issue;
+        }
+    };
+    connect(m_assistantController.get(), &AssistantController::startupStateChanged, this, updateStartupPresentation);
+
     m_assistantController->initialize();
     m_overlayController->setAssistantState(m_assistantController->stateName());
     if (!m_settings->initialSetupCompleted() && m_setupWindow) {
@@ -213,12 +264,8 @@ bool JarvisApplication::initialize()
         m_setupWindow->raise();
         m_setupWindow->requestActivate();
     } else {
-        qInfo() << "Startup complete. App is running in the tray. Use Ctrl+Alt+J or tray icon.";
-        m_trayIcon->showMessage(
-            QStringLiteral("J.A.R.V.I.S"),
-            QStringLiteral("Running in tray. Use Ctrl+Alt+J or the tray icon."),
-            QSystemTrayIcon::Information,
-            5000);
+        qInfo() << "Startup checks running. Waiting for wake and AI backend readiness.";
+        updateStartupPresentation();
     }
 
     connect(m_backendFacade.get(), &BackendFacade::initialSetupFinished, this, [this]() {
@@ -227,7 +274,7 @@ bool JarvisApplication::initialize()
         }
         m_overlayController->showOverlay();
         m_assistantController->startWakeMonitor();
-        qInfo() << "Initial setup completed";
+        qInfo() << "Initial setup completed. Waiting for services readiness.";
     });
     return true;
 }

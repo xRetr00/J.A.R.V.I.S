@@ -31,6 +31,7 @@ public:
     virtual void processAudioFrame(const AudioFrame &frame) { Q_UNUSED(frame); }
 
 signals:
+    void engineReady();
     void probabilityUpdated(float probability);
     void wakeWordDetected();
     void errorOccurred(const QString &message);

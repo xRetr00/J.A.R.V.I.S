@@ -1,8 +1,6 @@
 #include "wakeword/SherpaWakeWordEngine.h"
 
-#include <algorithm>
-#include <vector>
-
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -15,11 +13,9 @@
 
 #if JARVIS_HAS_SHERPA_ONNX
 #include <sentencepiece_processor.h>
-#include <sherpa-onnx/c-api/cxx-api.h>
 #endif
 
 namespace {
-constexpr int kSampleRate = 16000;
 constexpr int kMinCooldownMs = 700;
 constexpr int kMaxCooldownMs = 1600;
 
@@ -90,39 +86,52 @@ bool SherpaWakeWordEngine::start(
     emit errorOccurred(QStringLiteral("sherpa-onnx support is not compiled into this build"));
     return false;
 #else
-    if (!QFileInfo(enginePath).exists()) {
+    if (!QFileInfo::exists(enginePath)) {
         emit errorOccurred(QStringLiteral("sherpa-onnx runtime package is missing"));
         return false;
     }
-    if (!QFileInfo(modelPath).exists()) {
+    if (!QFileInfo::exists(modelPath)) {
         emit errorOccurred(QStringLiteral("sherpa-onnx keyword spotting model is missing"));
         return false;
     }
 
     m_threshold = std::clamp(threshold, 0.10f, 0.85f);
     m_cooldownMs = std::clamp(cooldownMs, kMinCooldownMs, kMaxCooldownMs);
-    m_lastActivationMs = 0;
     m_preferredDeviceId = preferredDeviceId;
-    m_ignoreDetectionsUntilMs = 0;
-    m_paused = false;
+    m_runtimeRoot = QFileInfo(enginePath).absoluteFilePath();
+    m_modelRoot = QFileInfo(modelPath).absoluteFilePath();
+    m_helperPath = resolveHelperExecutablePath();
+    m_encoderPath = resolveModelFile(m_modelRoot, {
+        QStringLiteral("encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx"),
+        QStringLiteral("encoder-epoch-12-avg-2-chunk-16-left-64.onnx")
+    });
+    m_decoderPath = resolveModelFile(m_modelRoot, {
+        QStringLiteral("decoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx"),
+        QStringLiteral("decoder-epoch-12-avg-2-chunk-16-left-64.onnx")
+    });
+    m_joinerPath = resolveModelFile(m_modelRoot, {
+        QStringLiteral("joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx"),
+        QStringLiteral("joiner-epoch-12-avg-2-chunk-16-left-64.onnx")
+    });
+    m_tokensPath = QDir(m_modelRoot).filePath(QStringLiteral("tokens.txt"));
 
-    if (!prepareKeywordSpotter(enginePath, modelPath, m_threshold)) {
-        stop();
+    if (m_helperPath.isEmpty()) {
+        emit errorOccurred(QStringLiteral("Wake helper executable is missing"));
+        return false;
+    }
+    if (m_encoderPath.isEmpty() || m_decoderPath.isEmpty() || m_joinerPath.isEmpty() || !QFileInfo::exists(m_tokensPath)) {
+        emit errorOccurred(QStringLiteral("sherpa-onnx keyword model files are incomplete"));
         return false;
     }
 
-    resetDetectorState();
-    m_ignoreDetectionsUntilMs = QDateTime::currentMSecsSinceEpoch() + m_activationWarmupMs;
-
-    if (m_loggingService) {
-        m_loggingService->info(QStringLiteral("sherpa-onnx wake engine started. runtime=\"%1\" model=\"%2\" threshold=%3 cooldownMs=%4 wakeWord=\"%5\"")
-            .arg(enginePath, modelPath)
-            .arg(m_threshold, 0, 'f', 2)
-            .arg(m_cooldownMs)
-            .arg(m_settings ? m_settings->wakeWordPhrase() : QStringLiteral("Jarvis")));
+    QString errorText;
+    if (!writeKeywordsFile(m_modelRoot, &m_keywordsFilePath, &errorText)) {
+        emit errorOccurred(errorText);
+        return false;
     }
 
-    return true;
+    m_paused = false;
+    return startHelperProcess();
 #endif
 }
 
@@ -133,7 +142,11 @@ void SherpaWakeWordEngine::pause()
     }
 
     m_paused = true;
-    resetDetectorState();
+    m_ready = false;
+    m_stopRequested = true;
+    if (m_helperProcess) {
+        m_helperProcess->kill();
+    }
     if (m_loggingService) {
         m_loggingService->info(QStringLiteral("sherpa-onnx wake detection paused."));
     }
@@ -141,38 +154,45 @@ void SherpaWakeWordEngine::pause()
 
 void SherpaWakeWordEngine::resume()
 {
-    if (!isActive() || !m_paused) {
+    if (!m_paused || m_runtimeRoot.isEmpty() || m_modelRoot.isEmpty()) {
         return;
     }
 
     m_paused = false;
-    resetDetectorState();
-    m_ignoreDetectionsUntilMs = QDateTime::currentMSecsSinceEpoch() + m_activationWarmupMs;
-    if (m_loggingService) {
-        m_loggingService->info(QStringLiteral("sherpa-onnx wake detection resumed. warmupMs=%1").arg(m_activationWarmupMs));
-    }
+    startHelperProcess();
 }
 
 void SherpaWakeWordEngine::stop()
 {
-    m_ignoreDetectionsUntilMs = 0;
+    m_stopRequested = true;
     m_paused = false;
+    m_ready = false;
 
-#if JARVIS_HAS_SHERPA_ONNX
-    m_stream.reset();
-    m_keywordSpotter.reset();
+    if (m_helperProcess) {
+        m_helperProcess->kill();
+        m_helperProcess->deleteLater();
+        m_helperProcess = nullptr;
+    }
+
+    m_stdoutBuffer.clear();
+    m_stderrBuffer.clear();
     m_runtimeRoot.clear();
     m_modelRoot.clear();
-#endif
+    m_keywordsFilePath.clear();
+    m_encoderPath.clear();
+    m_decoderPath.clear();
+    m_joinerPath.clear();
+    m_tokensPath.clear();
+    m_helperPath.clear();
 }
 
 bool SherpaWakeWordEngine::isActive() const
 {
-#if JARVIS_HAS_SHERPA_ONNX
-    return m_keywordSpotter && m_keywordSpotter->Get() != nullptr;
-#else
-    return false;
-#endif
+    if (m_paused && !m_runtimeRoot.isEmpty() && !m_modelRoot.isEmpty()) {
+        return true;
+    }
+
+    return m_helperProcess != nullptr && m_helperProcess->state() != QProcess::NotRunning;
 }
 
 bool SherpaWakeWordEngine::isPaused() const
@@ -180,146 +200,182 @@ bool SherpaWakeWordEngine::isPaused() const
     return m_paused;
 }
 
-void SherpaWakeWordEngine::processAudioFrame(const AudioFrame &frame)
+bool SherpaWakeWordEngine::startHelperProcess()
 {
-#if !JARVIS_HAS_SHERPA_ONNX
-    Q_UNUSED(frame);
-#else
-    if (m_paused || !m_keywordSpotter || !m_stream) {
-        return;
+    if (m_helperPath.isEmpty()) {
+        emit errorOccurred(QStringLiteral("Wake helper executable is missing"));
+        return false;
     }
 
-    if (frame.sampleRate != kSampleRate || frame.sampleCount <= 0) {
-        return;
+    if (m_helperProcess) {
+        m_stopRequested = true;
+        m_helperProcess->kill();
+        m_helperProcess->deleteLater();
+        m_helperProcess = nullptr;
     }
 
-    sherpa_onnx::cxx::KeywordResult result;
-    try {
-        m_stream->AcceptWaveform(kSampleRate, frame.samples.data(), frame.sampleCount);
-        while (m_keywordSpotter->IsReady(m_stream.get())) {
-            m_keywordSpotter->Decode(m_stream.get());
+    m_ready = false;
+    m_stopRequested = false;
+    m_stdoutBuffer.clear();
+    m_stderrBuffer.clear();
+
+    m_helperProcess = new QProcess(this);
+    connect(m_helperProcess, &QProcess::readyReadStandardOutput, this, &SherpaWakeWordEngine::consumeHelperStdout);
+    connect(m_helperProcess, &QProcess::readyReadStandardError, this, &SherpaWakeWordEngine::consumeHelperStderr);
+    connect(m_helperProcess, &QProcess::finished, this, &SherpaWakeWordEngine::handleHelperFinished);
+    connect(m_helperProcess, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
+        Q_UNUSED(error);
+        if (!m_helperProcess) {
+            return;
         }
-        result = m_keywordSpotter->GetResult(m_stream.get());
-    } catch (const std::exception &ex) {
-        if (m_loggingService) {
-            m_loggingService->error(QStringLiteral("sherpa-onnx processing failed: %1").arg(QString::fromUtf8(ex.what())));
-        }
-        emit errorOccurred(QStringLiteral("sherpa-onnx processing failed: %1").arg(QString::fromUtf8(ex.what())));
-        stop();
-        return;
-    } catch (...) {
-        if (m_loggingService) {
-            m_loggingService->error(QStringLiteral("sherpa-onnx processing failed with an unknown error"));
-        }
-        emit errorOccurred(QStringLiteral("sherpa-onnx processing failed with an unknown error"));
-        stop();
-        return;
+
+        const QString message = m_helperProcess->errorString().trimmed().isEmpty()
+            ? QStringLiteral("Wake helper failed to start")
+            : m_helperProcess->errorString().trimmed();
+        m_ready = false;
+        emit errorOccurred(message);
+    });
+
+    QStringList args{
+        QStringLiteral("--encoder"), m_encoderPath,
+        QStringLiteral("--decoder"), m_decoderPath,
+        QStringLiteral("--joiner"), m_joinerPath,
+        QStringLiteral("--tokens"), m_tokensPath,
+        QStringLiteral("--keywords-file"), m_keywordsFilePath,
+        QStringLiteral("--threshold"), QString::number(m_threshold, 'f', 2),
+        QStringLiteral("--cooldown-ms"), QString::number(m_cooldownMs),
+        QStringLiteral("--warmup-ms"), QString::number(m_activationWarmupMs)
+    };
+    if (!m_preferredDeviceId.trimmed().isEmpty()) {
+        args << QStringLiteral("--device-id") << m_preferredDeviceId.trimmed();
     }
 
-    if (result.keyword.empty()) {
-        return;
+    m_helperProcess->setProgram(m_helperPath);
+    m_helperProcess->setArguments(args);
+    m_helperProcess->setWorkingDirectory(QFileInfo(m_helperPath).absolutePath());
+    m_helperProcess->start();
+    if (!m_helperProcess->waitForStarted(3000)) {
+        const QString message = m_helperProcess->errorString().trimmed().isEmpty()
+            ? QStringLiteral("Failed to start the sherpa wake helper")
+            : m_helperProcess->errorString().trimmed();
+        emit errorOccurred(message);
+        m_helperProcess->deleteLater();
+        m_helperProcess = nullptr;
+        return false;
     }
 
-    emit probabilityUpdated(1.0f);
-    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-    if (nowMs < m_ignoreDetectionsUntilMs || (nowMs - m_lastActivationMs) < m_cooldownMs) {
-        m_keywordSpotter->Reset(m_stream.get());
-        return;
-    }
-
-    m_lastActivationMs = nowMs;
     if (m_loggingService) {
-        m_loggingService->info(QStringLiteral("sherpa-onnx wake word detected. keyword=\"%1\" threshold=%2 cooldownMs=%3")
-            .arg(QString::fromStdString(result.keyword))
+        m_loggingService->info(QStringLiteral("Starting sherpa-onnx wake helper. helper=\"%1\" model=\"%2\" threshold=%3 cooldownMs=%4 wakeWord=\"%5\"")
+            .arg(m_helperPath, m_modelRoot)
             .arg(m_threshold, 0, 'f', 2)
-            .arg(m_cooldownMs));
+            .arg(m_cooldownMs)
+            .arg(m_settings ? m_settings->wakeWordPhrase() : QStringLiteral("Jarvis")));
     }
-    m_keywordSpotter->Reset(m_stream.get());
-    emit wakeWordDetected();
-#endif
+    return true;
 }
 
-bool SherpaWakeWordEngine::prepareKeywordSpotter(const QString &runtimePath, const QString &modelPath, float threshold)
+void SherpaWakeWordEngine::consumeHelperStdout()
 {
-#if !JARVIS_HAS_SHERPA_ONNX
-    Q_UNUSED(runtimePath);
-    Q_UNUSED(modelPath);
-    Q_UNUSED(threshold);
-    return false;
-#else
-    m_runtimeRoot = QFileInfo(runtimePath).absoluteFilePath();
-    m_modelRoot = QFileInfo(modelPath).absoluteFilePath();
-
-    const QString encoder = firstExisting({
-        QDir(m_modelRoot).filePath(QStringLiteral("encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx")),
-        QDir(m_modelRoot).filePath(QStringLiteral("encoder-epoch-12-avg-2-chunk-16-left-64.onnx"))
-    });
-    const QString decoder = firstExisting({
-        QDir(m_modelRoot).filePath(QStringLiteral("decoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx")),
-        QDir(m_modelRoot).filePath(QStringLiteral("decoder-epoch-12-avg-2-chunk-16-left-64.onnx"))
-    });
-    const QString joiner = firstExisting({
-        QDir(m_modelRoot).filePath(QStringLiteral("joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx")),
-        QDir(m_modelRoot).filePath(QStringLiteral("joiner-epoch-12-avg-2-chunk-16-left-64.onnx"))
-    });
-    const QString tokens = QDir(m_modelRoot).filePath(QStringLiteral("tokens.txt"));
-
-    QString keywordsFile;
-    QString errorText;
-    if (encoder.isEmpty() || decoder.isEmpty() || joiner.isEmpty() || !QFileInfo::exists(tokens)) {
-        emit errorOccurred(QStringLiteral("sherpa-onnx keyword model files are incomplete"));
-        return false;
+    if (!m_helperProcess) {
+        return;
     }
 
-    if (!writeKeywordsFile(m_modelRoot, &keywordsFile, &errorText)) {
-        emit errorOccurred(errorText);
-        return false;
-    }
+    m_stdoutBuffer.append(m_helperProcess->readAllStandardOutput());
+    qsizetype newlineIndex = m_stdoutBuffer.indexOf('\n');
+    while (newlineIndex >= 0) {
+        QByteArray line = m_stdoutBuffer.left(newlineIndex).trimmed();
+        m_stdoutBuffer.remove(0, newlineIndex + 1);
 
-    sherpa_onnx::cxx::KeywordSpotterConfig config;
-    config.feat_config.sample_rate = kSampleRate;
-    config.feat_config.feature_dim = 80;
-    config.model_config.transducer.encoder = encoder.toStdString();
-    config.model_config.transducer.decoder = decoder.toStdString();
-    config.model_config.transducer.joiner = joiner.toStdString();
-    config.model_config.tokens = tokens.toStdString();
-    config.model_config.provider = "cpu";
-    config.model_config.num_threads = 1;
-    config.model_config.model_type = "";
-    config.keywords_file = keywordsFile.toStdString();
-    config.keywords_threshold = threshold;
-    config.keywords_score = 1.0f;
-    config.max_active_paths = 4;
-    config.num_trailing_blanks = 1;
-
-    std::unique_ptr<sherpa_onnx::cxx::KeywordSpotter> keywordSpotter;
-    std::unique_ptr<sherpa_onnx::cxx::OnlineStream> stream;
-    try {
-        keywordSpotter = std::make_unique<sherpa_onnx::cxx::KeywordSpotter>(
-            sherpa_onnx::cxx::KeywordSpotter::Create(config));
-        if (!keywordSpotter || keywordSpotter->Get() == nullptr) {
-            emit errorOccurred(QStringLiteral("Failed to initialize sherpa-onnx keyword spotter"));
-            return false;
+        const QString text = QString::fromUtf8(line);
+        if (text == QStringLiteral("READY")) {
+            m_ready = true;
+            if (m_loggingService) {
+                m_loggingService->info(QStringLiteral("sherpa-onnx wake engine started. runtime=\"%1\" model=\"%2\" threshold=%3 cooldownMs=%4 wakeWord=\"%5\"")
+                    .arg(m_runtimeRoot, m_modelRoot)
+                    .arg(m_threshold, 0, 'f', 2)
+                    .arg(m_cooldownMs)
+                    .arg(m_settings ? m_settings->wakeWordPhrase() : QStringLiteral("Jarvis")));
+            }
+            emit engineReady();
+        } else if (text.startsWith(QStringLiteral("DETECTED:"), Qt::CaseInsensitive)) {
+            if (!m_paused && m_ready) {
+                emit probabilityUpdated(1.0f);
+                emit wakeWordDetected();
+            }
+        } else if (text.startsWith(QStringLiteral("ERROR:"), Qt::CaseInsensitive)) {
+            const QString message = text.mid(QStringLiteral("ERROR:").size()).trimmed();
+            if (!message.isEmpty()) {
+                emit errorOccurred(message);
+            }
+        } else if (!text.isEmpty() && m_loggingService) {
+            m_loggingService->info(QStringLiteral("sherpa wake helper: %1").arg(text));
         }
 
-        stream = std::make_unique<sherpa_onnx::cxx::OnlineStream>(keywordSpotter->CreateStream());
-        if (!stream || stream->Get() == nullptr) {
-            emit errorOccurred(QStringLiteral("Failed to create sherpa-onnx keyword stream"));
-            return false;
-        }
-    } catch (const std::exception &ex) {
-        emit errorOccurred(QStringLiteral("Failed to initialize sherpa-onnx keyword spotter: %1")
-            .arg(QString::fromUtf8(ex.what())));
-        return false;
-    } catch (...) {
-        emit errorOccurred(QStringLiteral("Failed to initialize sherpa-onnx keyword spotter: unknown error"));
-        return false;
+        newlineIndex = m_stdoutBuffer.indexOf('\n');
+    }
+}
+
+void SherpaWakeWordEngine::consumeHelperStderr()
+{
+    if (!m_helperProcess) {
+        return;
     }
 
-    m_keywordSpotter = std::move(keywordSpotter);
-    m_stream = std::move(stream);
-    return true;
-#endif
+    m_stderrBuffer.append(m_helperProcess->readAllStandardError());
+    qsizetype newlineIndex = m_stderrBuffer.indexOf('\n');
+    while (newlineIndex >= 0) {
+        QByteArray line = m_stderrBuffer.left(newlineIndex).trimmed();
+        m_stderrBuffer.remove(0, newlineIndex + 1);
+        const QString text = QString::fromUtf8(line);
+        if (!text.isEmpty() && m_loggingService) {
+            m_loggingService->warn(QStringLiteral("sherpa wake helper stderr: %1").arg(text));
+        }
+        newlineIndex = m_stderrBuffer.indexOf('\n');
+    }
+}
+
+void SherpaWakeWordEngine::handleHelperFinished(int exitCode, QProcess::ExitStatus exitStatus)
+{
+    const bool unexpected = !m_stopRequested && !m_paused;
+    m_ready = false;
+
+    if (unexpected) {
+        QString message = QStringLiteral("Wake helper exited unexpectedly");
+        if (!m_stderrBuffer.trimmed().isEmpty()) {
+            message = QString::fromUtf8(m_stderrBuffer).trimmed();
+        } else if (m_helperProcess && !m_helperProcess->errorString().trimmed().isEmpty()) {
+            message = m_helperProcess->errorString().trimmed();
+        } else {
+            message += QStringLiteral(" (exitCode=%1, status=%2)")
+                .arg(exitCode)
+                .arg(exitStatus == QProcess::NormalExit ? QStringLiteral("normal") : QStringLiteral("crash"));
+        }
+        emit errorOccurred(message);
+    }
+
+    if (m_helperProcess) {
+        m_helperProcess->deleteLater();
+        m_helperProcess = nullptr;
+    }
+    m_stopRequested = false;
+}
+
+QString SherpaWakeWordEngine::resolveHelperExecutablePath() const
+{
+    return firstExisting({
+        QCoreApplication::applicationDirPath() + QStringLiteral("/jarvis_sherpa_wake_helper.exe"),
+        QStringLiteral(JARVIS_SOURCE_DIR) + QStringLiteral("/bin/jarvis_sherpa_wake_helper.exe"),
+        QStringLiteral(JARVIS_SOURCE_DIR) + QStringLiteral("/build-release/jarvis_sherpa_wake_helper.exe")
+    });
+}
+
+QString SherpaWakeWordEngine::resolveModelFile(const QString &rootPath, const QStringList &fileNames) const
+{
+    QStringList candidates;
+    for (const QString &fileName : fileNames) {
+        candidates.push_back(QDir(rootPath).filePath(fileName));
+    }
+    return firstExisting(candidates);
 }
 
 bool SherpaWakeWordEngine::writeKeywordsFile(const QString &modelPath, QString *keywordsPath, QString *errorText) const
@@ -394,29 +450,5 @@ bool SherpaWakeWordEngine::writeKeywordsFile(const QString &modelPath, QString *
     }
 
     return true;
-#endif
-}
-
-void SherpaWakeWordEngine::resetDetectorState()
-{
-#if JARVIS_HAS_SHERPA_ONNX
-    if (m_keywordSpotter && m_keywordSpotter->Get()) {
-        try {
-            auto stream = std::make_unique<sherpa_onnx::cxx::OnlineStream>(m_keywordSpotter->CreateStream());
-            if (stream && stream->Get() != nullptr) {
-                m_stream = std::move(stream);
-            }
-        } catch (const std::exception &ex) {
-            if (m_loggingService) {
-                m_loggingService->error(QStringLiteral("sherpa-onnx stream reset failed: %1").arg(QString::fromUtf8(ex.what())));
-            }
-            stop();
-        } catch (...) {
-            if (m_loggingService) {
-                m_loggingService->error(QStringLiteral("sherpa-onnx stream reset failed with an unknown error"));
-            }
-            stop();
-        }
-    }
 #endif
 }

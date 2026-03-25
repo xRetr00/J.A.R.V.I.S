@@ -1,19 +1,12 @@
 #pragma once
 
 #include <QDateTime>
-#include <memory>
+#include <QProcess>
 
 #include "wakeword/WakeWordEngine.h"
 
 class AppSettings;
 class LoggingService;
-
-#if JARVIS_HAS_SHERPA_ONNX
-namespace sherpa_onnx::cxx {
-class KeywordSpotter;
-class OnlineStream;
-}
-#endif
 
 class SherpaWakeWordEngine : public WakeWordEngine
 {
@@ -34,28 +27,35 @@ public:
     void stop() override;
     bool isActive() const override;
     bool isPaused() const override;
-    bool usesExternalAudioInput() const override { return true; }
-    void processAudioFrame(const AudioFrame &frame) override;
+    bool usesExternalAudioInput() const override { return false; }
 
 private:
-    bool prepareKeywordSpotter(const QString &runtimePath, const QString &modelPath, float threshold);
+    bool startHelperProcess();
+    void consumeHelperStdout();
+    void consumeHelperStderr();
+    void handleHelperFinished(int exitCode, QProcess::ExitStatus exitStatus);
+    QString resolveHelperExecutablePath() const;
+    QString resolveModelFile(const QString &rootPath, const QStringList &fileNames) const;
     bool writeKeywordsFile(const QString &modelPath, QString *keywordsPath, QString *errorText) const;
-    void resetDetectorState();
 
     AppSettings *m_settings = nullptr;
     LoggingService *m_loggingService = nullptr;
-    qint64 m_lastActivationMs = 0;
     float m_threshold = 0.25f;
     int m_cooldownMs = 900;
     QString m_preferredDeviceId;
-    qint64 m_ignoreDetectionsUntilMs = 0;
-    int m_activationWarmupMs = 1500;
     bool m_paused = false;
-
-#if JARVIS_HAS_SHERPA_ONNX
-    std::unique_ptr<sherpa_onnx::cxx::KeywordSpotter> m_keywordSpotter;
-    std::unique_ptr<sherpa_onnx::cxx::OnlineStream> m_stream;
+    bool m_ready = false;
+    bool m_stopRequested = false;
+    int m_activationWarmupMs = 1500;
     QString m_runtimeRoot;
     QString m_modelRoot;
-#endif
+    QString m_keywordsFilePath;
+    QString m_encoderPath;
+    QString m_decoderPath;
+    QString m_joinerPath;
+    QString m_tokensPath;
+    QString m_helperPath;
+    QByteArray m_stdoutBuffer;
+    QByteArray m_stderrBuffer;
+    QProcess *m_helperProcess = nullptr;
 };

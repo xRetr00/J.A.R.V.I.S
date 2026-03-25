@@ -92,6 +92,7 @@ bool WakeWordEnginePrecise::start(
             .arg(m_movingAverageWindowFrames)
             .arg(m_consistentFramesRequired));
     }
+    emit engineReady();
     return true;
 }
 
