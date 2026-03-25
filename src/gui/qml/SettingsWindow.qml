@@ -226,12 +226,14 @@ Window {
 
             Rectangle {
                 width: parent.width
+                implicitHeight: aiCoreColumn.implicitHeight + 44
                 radius: 30
                 color: "#9208111d"
                 border.width: 1
                 border.color: "#1d2f4d"
 
                 ColumnLayout {
+                    id: aiCoreColumn
                     anchors.fill: parent
                     anchors.margins: 22
                     spacing: 14
@@ -313,12 +315,14 @@ Window {
 
             Rectangle {
                 width: parent.width
+                implicitHeight: agentRuntimeColumn.implicitHeight + 44
                 radius: 30
                 color: "#9208111d"
                 border.width: 1
                 border.color: "#1d2f4d"
 
                 ColumnLayout {
+                    id: agentRuntimeColumn
                     anchors.fill: parent
                     anchors.margins: 22
                     spacing: 14
@@ -411,12 +415,14 @@ Window {
 
             Rectangle {
                 width: parent.width
+                implicitHeight: voicePipelineColumn.implicitHeight + 44
                 radius: 30
                 color: "#9208111d"
                 border.width: 1
                 border.color: "#1d2f4d"
 
                 ColumnLayout {
+                    id: voicePipelineColumn
                     anchors.fill: parent
                     anchors.margins: 22
                     spacing: 14
@@ -581,12 +587,14 @@ Window {
 
             Rectangle {
                 width: parent.width
+                implicitHeight: presenceColumn.implicitHeight + 44
                 radius: 30
                 color: "#9208111d"
                 border.width: 1
                 border.color: "#1d2f4d"
 
                 ColumnLayout {
+                    id: presenceColumn
                     anchors.fill: parent
                     anchors.margins: 22
                     spacing: 14
@@ -790,12 +798,14 @@ Window {
 
             Rectangle {
                 width: parent.width
+                implicitHeight: toolsStatusColumn.implicitHeight + 44
                 radius: 30
                 color: "#9208111d"
                 border.width: 1
                 border.color: "#1d2f4d"
 
                 ColumnLayout {
+                    id: toolsStatusColumn
                     anchors.fill: parent
                     anchors.margins: 22
                     spacing: 14
@@ -880,6 +890,7 @@ Window {
 
             Rectangle {
                 width: parent.width
+                implicitHeight: agentTraceColumn.implicitHeight + 44
                 radius: 30
                 color: "#9208111d"
                 border.width: 1
@@ -887,6 +898,7 @@ Window {
                 visible: backend.tracePanelEnabled
 
                 ColumnLayout {
+                    id: agentTraceColumn
                     anchors.fill: parent
                     anchors.margins: 22
                     spacing: 14

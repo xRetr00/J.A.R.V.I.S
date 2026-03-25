@@ -218,9 +218,17 @@ Window {
                     StackLayout {
                         id: stepStack
                         width: stepScroll.availableWidth
+                        implicitHeight: wizard.stepIndex === 0 ? profileStep.implicitHeight
+                            : wizard.stepIndex === 1 ? aiCoreStep.implicitHeight
+                            : wizard.stepIndex === 2 ? voiceStep.implicitHeight
+                            : wizard.stepIndex === 3 ? wakeStep.implicitHeight
+                            : finalStep.implicitHeight
+                        height: implicitHeight
                         currentIndex: wizard.stepIndex
 
                         ColumnLayout {
+                        id: profileStep
+                        width: stepStack.width
                         spacing: 14
 
                         Text { text: "Display name"; color: "#d0e3f5"; font.pixelSize: 13 }
@@ -241,6 +249,8 @@ Window {
                         }
 
                         ColumnLayout {
+                        id: aiCoreStep
+                        width: stepStack.width
                         spacing: 14
 
                         Text { text: "Local AI backend endpoint"; color: "#d0e3f5"; font.pixelSize: 13 }
@@ -274,6 +284,8 @@ Window {
                         }
 
                         ColumnLayout {
+                        id: voiceStep
+                        width: stepStack.width
                         spacing: 14
 
                         Text { text: "TTS engine"; color: "#d0e3f5"; font.pixelSize: 13 }
@@ -417,6 +429,8 @@ Window {
                         }
 
                         ColumnLayout {
+                        id: wakeStep
+                        width: stepStack.width
                         spacing: 14
 
                         Text { text: "Wake phrase"; color: "#d0e3f5"; font.pixelSize: 13 }
@@ -484,6 +498,8 @@ Window {
                         }
 
                         ColumnLayout {
+                        id: finalStep
+                        width: stepStack.width
                         spacing: 14
 
                         Text {
