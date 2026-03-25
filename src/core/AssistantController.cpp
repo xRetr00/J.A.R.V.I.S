@@ -946,8 +946,8 @@ void AssistantController::submitText(const QString &text)
         m_followUpListeningAfterWakeAck = true;
         deliverLocalResponse(
             m_localResponseEngine->wakeWordReady(buildLocalResponseContext()),
-            QStringLiteral("Wake phrase detected"),
-            true);
+            QStringLiteral("Listening"),
+            false);
         return;
     }
 
@@ -1386,8 +1386,8 @@ void AssistantController::bindWakeWordEngineSignals()
         m_lastPromptForAiLog = m_settings->wakeWordPhrase();
         deliverLocalResponse(
             m_localResponseEngine->wakeWordReady(buildLocalResponseContext()),
-            QStringLiteral("Wake word detected"),
-            true);
+            QStringLiteral("Listening"),
+            false);
     });
     connect(m_wakeWordEngine, &WakeWordEngine::errorOccurred, this, [this](const QString &message) {
         m_wakeEngineReady = false;
@@ -1708,7 +1708,7 @@ int AssistantController::postSpeechWakeResumeDelayMs() const
 
 int AssistantController::followUpListeningDelayMs() const
 {
-    return 200;
+    return 60;
 }
 
 int AssistantController::conversationSessionTimeoutMs() const
@@ -1718,12 +1718,12 @@ int AssistantController::conversationSessionTimeoutMs() const
 
 int AssistantController::conversationSessionRestartDelayMs() const
 {
-    return 140;
+    return 180;
 }
 
 int AssistantController::maxConversationSessionMisses() const
 {
-    return 2;
+    return 3;
 }
 
 QString AssistantController::buildSttPrompt() const
@@ -1963,7 +1963,10 @@ void AssistantController::deliverLocalResponse(const QString &text, const QStrin
     } else {
         setDuplexState(DuplexState::Open);
         if (conversationSessionShouldContinue()) {
-            if (!scheduleConversationSessionListening(conversationSessionRestartDelayMs())) {
+            const int restartDelayMs = m_followUpListeningAfterWakeAck
+                ? followUpListeningDelayMs()
+                : conversationSessionRestartDelayMs();
+            if (!scheduleConversationSessionListening(restartDelayMs)) {
                 endConversationSession();
                 scheduleWakeMonitorRestart();
             }

@@ -65,7 +65,9 @@ void LocalResponseEngineTests::rendersWakeWordReady()
         .wakeWord = QStringLiteral("Jarvis")
     });
 
-    QVERIFY(text.contains(QStringLiteral("Alex")) || text.contains(QStringLiteral("JARVIS")));
+    QVERIFY(!text.trimmed().isEmpty());
+    QVERIFY(text.length() <= 24);
+    QVERIFY(!text.contains(QStringLiteral("dusty"), Qt::CaseInsensitive));
 }
 
 void LocalResponseEngineTests::rendersCurrentTime()

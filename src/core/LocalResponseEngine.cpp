@@ -26,9 +26,9 @@ QHash<QString, QStringList> defaultResponses()
              QStringLiteral("How can I help, {user_name}?")
          }},
         {QStringLiteral("wakeword_ready"), {
-             QStringLiteral("Yes All Systems Is Operational And We Ready To Explore Mars , {user_name}."),
-             QStringLiteral("Standing by or Not Yet Maybe Yes, {user_name}."),
-             QStringLiteral("Dishwasher Is Ready, {user_name}?")
+             QStringLiteral("Yes?"),
+             QStringLiteral("Go ahead."),
+             QStringLiteral("Listening.")
          }},
         {QStringLiteral("time_status"), {
              QStringLiteral("It is {current_time}, {user_name}."),

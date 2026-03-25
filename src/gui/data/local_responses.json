@@ -15,9 +15,9 @@
     "How can I help, {user_name}?"
   ],
   "wakeword_ready": [
-    "Yes Sir, What's in Your Mind, {user_name}?",
-    "sigh I Need Some Air This Computer Is So Dusty, What's UP {user_name}.",
-    "Welcome Back Sir How Was Your Day, Would You like To Do Some Brainstorming {user_name}?"
+    "Yes?",
+    "Go ahead.",
+    "Listening."
   ],
   "time_status": [
     "It is {current_time} based on quantum sand in my dusty brain sir.",

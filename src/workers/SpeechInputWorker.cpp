@@ -10,9 +10,9 @@ constexpr int kSampleRate = 16000;
 constexpr int kFrameMs = 30;
 constexpr int kFrameSamples = 480;
 constexpr int kFrameBytes = kFrameSamples * static_cast<int>(sizeof(qint16));
-constexpr int kMinSpeechMs = 300;
-constexpr int kSilenceHoldMs = 800;
-constexpr int kIdleCaptureWindowMs = 2500;
+constexpr int kMinSpeechMs = 180;
+constexpr int kSilenceHoldMs = 700;
+constexpr int kIdleCaptureWindowMs = 3500;
 constexpr int kMaxSpeechCaptureWindowMs = 9000;
 }
 
