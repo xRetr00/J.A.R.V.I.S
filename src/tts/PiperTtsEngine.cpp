@@ -31,10 +31,12 @@ QString collapseWhitespace(const QString &text)
 QString stripHiddenReasoning(const QString &text)
 {
     QString cleaned = text;
-    cleaned.replace(QRegularExpression(QStringLiteral("(?is)<think>.*?</think>")), QStringLiteral(" "));
+    cleaned.replace(QRegularExpression(QStringLiteral("(?is)<think>.*?(?=\\b(?:assistant|final)\\s*:|</think>|$)")), QStringLiteral(" "));
+    cleaned.replace(QRegularExpression(QStringLiteral("(?is)</?think>")), QStringLiteral(" "));
     cleaned.replace(QRegularExpression(QStringLiteral("(?im)^\\s*(reasoning|analysis|thought process)\\s*:\\s*.*$")), QStringLiteral(" "));
     cleaned.replace(QRegularExpression(QStringLiteral("(?im)^\\s*```(?:json|text|markdown)?\\s*$")), QStringLiteral(" "));
     cleaned.replace(QRegularExpression(QStringLiteral("(?im)^\\s*```\\s*$")), QStringLiteral(" "));
+    cleaned.replace(QRegularExpression(QStringLiteral("(?im)^\\s*(assistant|system|developer)\\s*:\\s*")), QStringLiteral(" "));
     cleaned.replace(QStringLiteral("/no_think"), QStringLiteral(" "));
     return cleaned;
 }

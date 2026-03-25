@@ -724,7 +724,7 @@ void AssistantController::initialize()
     });
 
     connect(m_streamAssembler, &StreamAssembler::partialTextUpdated, this, [this](const QString &text) {
-        m_responseText = text;
+        m_responseText = sanitizeDisplayText(text);
         emit responseTextChanged();
     });
 
@@ -1732,8 +1732,7 @@ QString AssistantController::buildSttPrompt() const
         ? QStringLiteral("Jarvis")
         : m_settings->wakeWordPhrase().trimmed();
     return QStringLiteral(
-        "%1. What time is it? What is the date today? What is your name? How are you? "
-        "Turn on the light. Turn off the light. Open settings. Close overlay.")
+        "%1. Everyday English speech. Common topics include time, date, settings, files, logs, web search, memory, timers, and general conversation. Transcribe literally.")
         .arg(wakeWord);
 }
 

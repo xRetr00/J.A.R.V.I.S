@@ -15,6 +15,7 @@ private slots:
     void promptAdapterInjectsRuntimeContext();
     void spokenReplyParsesStructuredPayload();
     void spokenReplyFallsBackToSanitizedPlainText();
+    void spokenReplyStripsUnclosedThinkBlocks();
     void streamAssemblerEmitsSentences();
 };
 
@@ -99,6 +100,15 @@ void AiServicesTests::spokenReplyFallsBackToSanitizedPlainText()
 
     QCOMPARE(reply.displayText, QStringLiteral("Hello"));
     QCOMPARE(reply.spokenText, QStringLiteral("Hello."));
+    QVERIFY(reply.shouldSpeak);
+}
+
+void AiServicesTests::spokenReplyStripsUnclosedThinkBlocks()
+{
+    const SpokenReply reply = parseSpokenReply(QStringLiteral("<think>draft reasoning assistant: Final answer"));
+
+    QCOMPARE(reply.displayText, QStringLiteral("Final answer"));
+    QCOMPARE(reply.spokenText, QStringLiteral("Final answer."));
     QVERIFY(reply.shouldSpeak);
 }
 
