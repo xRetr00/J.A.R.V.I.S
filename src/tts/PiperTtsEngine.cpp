@@ -217,6 +217,7 @@ PiperTtsEngine::PiperTtsEngine(AppSettings *settings, QObject *parent)
     : TtsEngine(parent)
     , m_settings(settings)
 {
+    m_farEndTimer = new QTimer(this);
     connect(&m_synthesisWatcher, &QFutureWatcher<TtsSynthesisResult>::finished, this, [this]() {
         const TtsSynthesisResult result = m_synthesisWatcher.result();
         if (result.generation != m_activeGeneration || !m_processing) {
@@ -233,8 +234,8 @@ PiperTtsEngine::PiperTtsEngine(AppSettings *settings, QObject *parent)
         playFile(result.outputFile);
     });
 
-    m_farEndTimer.setInterval(10);
-    connect(&m_farEndTimer, &QTimer::timeout, this, [this]() {
+    m_farEndTimer->setInterval(10);
+    connect(m_farEndTimer, &QTimer::timeout, this, [this]() {
         if (m_playbackBuffer == nullptr || m_playbackPcm.isEmpty()) {
             return;
         }
@@ -429,7 +430,11 @@ void PiperTtsEngine::playFile(const QString &path)
     m_playbackBuffer->open(QIODevice::ReadOnly);
     m_lastFarEndOffset = 0;
 
-    connect(m_audioSink, &QAudioSink::stateChanged, this, [this](QAudio::State state) {
+    QPointer<QAudioSink> audioSink = m_audioSink;
+    m_audioSinkStateConnection = connect(m_audioSink, &QAudioSink::stateChanged, this, [this, audioSink](QAudio::State state) {
+        if (!audioSink || audioSink != m_audioSink) {
+            return;
+        }
         if (state == QAudio::IdleState) {
             stopPlayback();
             processNext();
@@ -441,7 +446,7 @@ void PiperTtsEngine::playFile(const QString &path)
     });
 
     m_audioSink->start(m_playbackBuffer);
-    m_farEndTimer.start();
+    m_farEndTimer->start();
 }
 
 void PiperTtsEngine::applySelectedOutputDevice()
@@ -450,18 +455,34 @@ void PiperTtsEngine::applySelectedOutputDevice()
 
 void PiperTtsEngine::stopPlayback()
 {
-    m_farEndTimer.stop();
+    if (m_farEndTimer) {
+        m_farEndTimer->stop();
+    }
     m_lastFarEndOffset = 0;
     m_playbackFormat = QAudioFormat();
-    if (m_audioSink != nullptr) {
-        m_audioSink->stop();
-        m_audioSink->deleteLater();
-        m_audioSink = nullptr;
+    QAudioSink *audioSink = m_audioSink;
+    QBuffer *playbackBuffer = m_playbackBuffer;
+    m_audioSink = nullptr;
+    m_playbackBuffer = nullptr;
+    if (m_audioSinkStateConnection) {
+        disconnect(m_audioSinkStateConnection);
+        m_audioSinkStateConnection = {};
     }
-    if (m_playbackBuffer != nullptr) {
-        m_playbackBuffer->close();
-        m_playbackBuffer->deleteLater();
-        m_playbackBuffer = nullptr;
+    if (audioSink != nullptr) {
+        audioSink->stop();
+    }
+    if (playbackBuffer != nullptr) {
+        QObject *bufferOwner = audioSink != nullptr
+            ? static_cast<QObject *>(audioSink)
+            : static_cast<QObject *>(this);
+        playbackBuffer->setParent(bufferOwner);
+        QTimer::singleShot(0, playbackBuffer, [playbackBuffer]() {
+            playbackBuffer->close();
+            playbackBuffer->deleteLater();
+        });
+    }
+    if (audioSink != nullptr) {
+        audioSink->deleteLater();
     }
     m_playbackPcm.clear();
 }

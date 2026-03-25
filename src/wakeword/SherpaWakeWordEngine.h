@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QDateTime>
+#include <QPointer>
 #include <QProcess>
 
 #include "wakeword/WakeWordEngine.h"
@@ -57,5 +58,5 @@ private:
     QString m_helperPath;
     QByteArray m_stdoutBuffer;
     QByteArray m_stderrBuffer;
-    QProcess *m_helperProcess = nullptr;
+    QPointer<QProcess> m_helperProcess;
 };

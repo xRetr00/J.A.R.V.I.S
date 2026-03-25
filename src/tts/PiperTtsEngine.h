@@ -3,9 +3,10 @@
 #include <QBuffer>
 #include <QAudioFormat>
 #include <QFutureWatcher>
+#include <QMetaObject>
+#include <QPointer>
 #include <QQueue>
 #include <QString>
-#include <QTimer>
 
 #include "tts/TtsEngine.h"
 
@@ -44,7 +45,8 @@ private:
     QBuffer *m_playbackBuffer = nullptr;
     QByteArray m_playbackPcm;
     QAudioFormat m_playbackFormat;
-    QTimer m_farEndTimer;
+    QTimer *m_farEndTimer = nullptr;
+    QMetaObject::Connection m_audioSinkStateConnection;
     qint64 m_lastFarEndOffset = 0;
     quint64 m_generationCounter = 0;
     quint64 m_activeGeneration = 0;

@@ -145,7 +145,10 @@ void SherpaWakeWordEngine::pause()
     m_ready = false;
     m_stopRequested = true;
     if (m_helperProcess) {
-        m_helperProcess->kill();
+        m_helperProcess->terminate();
+        if (!m_helperProcess->waitForFinished(500)) {
+            m_helperProcess->kill();
+        }
     }
     if (m_loggingService) {
         m_loggingService->info(QStringLiteral("sherpa-onnx wake detection paused."));
@@ -169,9 +172,12 @@ void SherpaWakeWordEngine::stop()
     m_ready = false;
 
     if (m_helperProcess) {
-        m_helperProcess->kill();
+        m_helperProcess->terminate();
+        if (!m_helperProcess->waitForFinished(500)) {
+            m_helperProcess->kill();
+            m_helperProcess->waitForFinished(500);
+        }
         m_helperProcess->deleteLater();
-        m_helperProcess = nullptr;
     }
 
     m_stdoutBuffer.clear();
@@ -184,6 +190,8 @@ void SherpaWakeWordEngine::stop()
     m_joinerPath.clear();
     m_tokensPath.clear();
     m_helperPath.clear();
+    m_helperProcess = nullptr;
+    m_stopRequested = false;
 }
 
 bool SherpaWakeWordEngine::isActive() const
@@ -224,8 +232,14 @@ bool SherpaWakeWordEngine::startHelperProcess()
     connect(m_helperProcess, &QProcess::readyReadStandardError, this, &SherpaWakeWordEngine::consumeHelperStderr);
     connect(m_helperProcess, &QProcess::finished, this, &SherpaWakeWordEngine::handleHelperFinished);
     connect(m_helperProcess, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
-        Q_UNUSED(error);
         if (!m_helperProcess) {
+            return;
+        }
+        if (m_stopRequested || m_paused) {
+            return;
+        }
+        if (error == QProcess::Crashed && !m_ready) {
+            // Let finished() report the startup failure once with captured stderr.
             return;
         }
 
@@ -336,6 +350,7 @@ void SherpaWakeWordEngine::consumeHelperStderr()
 
 void SherpaWakeWordEngine::handleHelperFinished(int exitCode, QProcess::ExitStatus exitStatus)
 {
+    const bool intentionalStop = m_stopRequested || m_paused;
     const bool unexpected = !m_stopRequested && !m_paused;
     m_ready = false;
 
@@ -355,7 +370,10 @@ void SherpaWakeWordEngine::handleHelperFinished(int exitCode, QProcess::ExitStat
 
     if (m_helperProcess) {
         m_helperProcess->deleteLater();
-        m_helperProcess = nullptr;
+    }
+    m_helperProcess = nullptr;
+    if (intentionalStop) {
+        m_stderrBuffer.clear();
     }
     m_stopRequested = false;
 }
