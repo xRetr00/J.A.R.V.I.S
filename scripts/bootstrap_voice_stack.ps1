@@ -83,6 +83,7 @@ $sherpaKwsUrl = "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-mod
 
 $sentencepieceArchive = Join-Path $downloadsRoot "sentencepiece-v0.2.1.zip"
 $sentencepieceExtractRoot = Join-Path $thirdPartyRoot "sentencepiece"
+$sentencepieceStageRoot = Join-Path $downloadsRoot "sentencepiece-stage"
 $sentencepieceUrl = "https://github.com/google/sentencepiece/archive/refs/tags/v0.2.1.zip"
 
 $rnnoiseArchive = Join-Path $downloadsRoot "rnnoise-main.zip"
@@ -111,11 +112,12 @@ Expand-TarBz2 $sherpaKwsArchive $sherpaKwsExtractRoot
 if (-not (Test-Path $sentencepieceArchive)) {
     Download-File $sentencepieceUrl $sentencepieceArchive
 }
-Expand-Zip $sentencepieceArchive $thirdPartyRoot
+Expand-Zip $sentencepieceArchive $sentencepieceStageRoot
 if (Test-Path (Join-Path $thirdPartyRoot "sentencepiece")) {
     Remove-Item -Recurse -Force (Join-Path $thirdPartyRoot "sentencepiece")
 }
-Rename-Item (Join-Path $thirdPartyRoot "sentencepiece-0.2.1") $sentencepieceExtractRoot
+Move-Item (Join-Path $sentencepieceStageRoot "sentencepiece-0.2.1") $sentencepieceExtractRoot
+Remove-Item -Recurse -Force $sentencepieceStageRoot
 
 if (-not (Test-Path $rnnoiseArchive)) {
     Download-File $rnnoiseUrl $rnnoiseArchive
