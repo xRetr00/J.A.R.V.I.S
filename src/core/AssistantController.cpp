@@ -905,7 +905,7 @@ void AssistantController::submitText(const QString &text)
                && effectiveIntent.confidence > 0.4f
                && effectiveIntent.confidence <= 0.8f
                && m_settings->agentEnabled()) {
-        startAgentConversationRequest(routedInput);
+        startAgentConversationRequest(routedInput, effectiveIntent.type);
     } else {
         startConversationRequest(routedInput);
     }
@@ -1860,7 +1860,7 @@ void AssistantController::startConversationRequest(const QString &input)
     });
 }
 
-void AssistantController::startAgentConversationRequest(const QString &input)
+void AssistantController::startAgentConversationRequest(const QString &input, IntentType expectedIntent)
 {
     const ReasoningMode mode = m_reasoningRouter->chooseMode(input, m_settings->autoRoutingEnabled(), m_settings->defaultReasoningMode());
     const QString modelId = m_settings->chatBackendModel().isEmpty() && !availableModelIds().isEmpty() ? availableModelIds().first() : m_settings->chatBackendModel();
@@ -1872,6 +1872,7 @@ void AssistantController::startAgentConversationRequest(const QString &input)
 
     m_activeRequestKind = RequestKind::AgentConversation;
     m_lastAgentInput = input;
+    m_lastAgentIntent = expectedIntent;
     m_activeAgentIteration = 0;
     m_agentTrace.clear();
     emit agentTraceChanged();
@@ -1882,12 +1883,17 @@ void AssistantController::startAgentConversationRequest(const QString &input)
             .arg(modelId, input.left(240)));
     }
 
+    const QList<AgentToolSpec> relevantTools = m_promptAdapter->getRelevantTools(
+        expectedIntent,
+        m_agentToolbox->builtInTools());
     const auto messages = m_promptAdapter->buildHybridAgentMessages(
         input,
         m_memoryStore->relevantMemory(input),
         m_identityProfileService->identity(),
         m_identityProfileService->userProfile(),
         QDir::currentPath(),
+        expectedIntent,
+        relevantTools,
         mode);
 
     m_activeRequestId = m_aiBackendClient->sendChatRequest(messages, modelId, {
@@ -1910,17 +1916,26 @@ void AssistantController::continueAgentConversation(const QList<AgentToolResult>
     }
 
     ++m_activeAgentIteration;
+    QList<AgentToolSpec> relevantTools = m_promptAdapter->getRelevantTools(
+        m_lastAgentIntent,
+        m_agentToolbox->builtInTools());
+    if (relevantTools.isEmpty()) {
+        relevantTools = m_agentToolbox->builtInTools();
+    }
     const AgentRequest request{
         .model = selectedModel(),
         .instructions = m_promptAdapter->buildAgentInstructions(
             m_memoryStore->relevantMemory(m_lastAgentInput),
             m_skillStore->listSkills(),
+            relevantTools,
             m_identityProfileService->identity(),
             m_identityProfileService->userProfile(),
+            QDir::currentPath(),
+            m_lastAgentIntent,
             m_settings->memoryAutoWrite()),
         .inputText = {},
         .previousResponseId = m_previousAgentResponseId,
-        .tools = m_agentToolbox->builtInTools(),
+        .tools = relevantTools,
         .toolResults = results,
         .sampling = samplingProfile(),
         .mode = m_settings->defaultReasoningMode(),
@@ -1994,12 +2009,47 @@ void AssistantController::handleHybridAgentFinished(const QString &payload)
     const QString jsonPayload = extractJsonObjectPayload(payload);
     const auto json = nlohmann::json::parse(jsonPayload.toStdString(), nullptr, false);
     if (json.is_discarded() || !json.is_object()) {
+        appendAgentTrace(QStringLiteral("validation"), QStringLiteral("Hybrid payload rejected"), QStringLiteral("The model returned invalid JSON."), false);
         handleConversationFinished(payload);
         return;
     }
 
+    const IntentType returnedIntent = intentTypeFromString(QString::fromStdString(json.value("intent", std::string{})));
     const QString message = QString::fromStdString(json.value("message", std::string{})).trimmed();
-    QList<AgentTask> tasks = parseBackgroundTasks(json);
+    const QList<AgentToolSpec> relevantTools = m_promptAdapter->getRelevantTools(
+        m_lastAgentIntent,
+        m_agentToolbox->builtInTools());
+    const QStringList allowedTaskTypes = [&relevantTools]() {
+        QStringList names;
+        for (const auto &tool : relevantTools) {
+            names.push_back(tool.name);
+        }
+        return names;
+    }();
+
+    QList<AgentTask> tasks;
+    for (const AgentTask &task : parseBackgroundTasks(json)) {
+        if (!allowedTaskTypes.isEmpty() && !allowedTaskTypes.contains(task.type)) {
+            appendAgentTrace(QStringLiteral("validation"),
+                             QStringLiteral("Rejected background task"),
+                             QStringLiteral("Task type %1 is not allowed for this intent.").arg(task.type),
+                             false);
+            continue;
+        }
+        tasks.push_back(task);
+    }
+
+    if (intentRequiresTool(returnedIntent) && tasks.isEmpty()) {
+        appendAgentTrace(QStringLiteral("validation"),
+                         QStringLiteral("Hybrid payload rejected"),
+                         QStringLiteral("A tool-backed intent was returned without a valid task."),
+                         false);
+        handleConversationFinished(message.isEmpty()
+                                       ? QStringLiteral("I need to use a tool for that, but I didn't get a valid task back. Please try again with the path or target.")
+                                       : message);
+        return;
+    }
+
     dispatchBackgroundTasks(tasks);
 
     const QString effectiveMessage = message.isEmpty()

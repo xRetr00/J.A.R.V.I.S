@@ -561,13 +561,13 @@ QString PromptAdapter::buildFewShotExamples(IntentType intent) const
     static const QString examples =
         QStringLiteral("<examples>\n"
                        "User: list files in the project\n"
-                       "Assistant: {\"intent\":\"LIST_FILES\",\"message\":\"All right, I’m listing the files now. The result will appear in the panel.\",\"background_tasks\":[{\"type\":\"dir_list\",\"args\":{\"path\":\"D:/J.A.R.V.I.S\"},\"priority\":90}]}\n"
+                       "Assistant: {\"intent\":\"LIST_FILES\",\"message\":\"All right, I'm listing the files now. The result will appear in the panel.\",\"background_tasks\":[{\"type\":\"dir_list\",\"args\":{\"path\":\"D:/J.A.R.V.I.S\"},\"priority\":90}]}\n"
                        "User: open config.json\n"
-                       "Assistant: {\"intent\":\"READ_FILE\",\"message\":\"Okay, I’m opening that file now. You’ll see the content in the panel.\",\"background_tasks\":[{\"type\":\"file_read\",\"args\":{\"path\":\"D:/J.A.R.V.I.S/config/config.json\"},\"priority\":95}]}\n"
+                       "Assistant: {\"intent\":\"READ_FILE\",\"message\":\"Okay, I'm opening that file now. You'll see the content in the panel.\",\"background_tasks\":[{\"type\":\"file_read\",\"args\":{\"path\":\"D:/J.A.R.V.I.S/config/config.json\"},\"priority\":95}]}\n"
                        "User: remember that I like short answers\n"
-                       "Assistant: {\"intent\":\"MEMORY_WRITE\",\"message\":\"Okay, I’ll save that preference and show the result in the panel.\",\"background_tasks\":[{\"type\":\"memory_write\",\"args\":{\"kind\":\"preference\",\"title\":\"response_style\",\"key\":\"response_style\",\"content\":\"likes short answers\",\"value\":\"likes short answers\"},\"priority\":70}]}\n"
+                       "Assistant: {\"intent\":\"MEMORY_WRITE\",\"message\":\"Okay, I'll save that preference and show the result in the panel.\",\"background_tasks\":[{\"type\":\"memory_write\",\"args\":{\"kind\":\"preference\",\"title\":\"response_style\",\"key\":\"response_style\",\"content\":\"likes short answers\",\"value\":\"likes short answers\"},\"priority\":70}]}\n"
                        "User: how are you\n"
-                       "Assistant: {\"intent\":\"GENERAL_CHAT\",\"message\":\"I’m ready. What do you want me to check?\",\"background_tasks\":[]}\n"
+                       "Assistant: {\"intent\":\"GENERAL_CHAT\",\"message\":\"I'm ready. What do you want me to check?\",\"background_tasks\":[]}\n"
                        "</examples>");
     return examples;
 }
