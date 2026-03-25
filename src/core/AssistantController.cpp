@@ -212,6 +212,11 @@ bool isLikelyNonSpeechTranscript(const QString &input)
         || normalized == QStringLiteral("backgroundnoise")
         || normalized == QStringLiteral("inaudible");
 }
+
+QStringList transcriptWords(const QString &input)
+{
+    return input.toLower().split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
+}
 }
 
 AssistantController::AssistantController(
@@ -338,6 +343,13 @@ void AssistantController::initialize()
             setStatus(QStringLiteral("No speech detected"));
             resumeWakeMonitor(shortWakeResumeDelayMs());
             emit idleRequested();
+            return;
+        }
+        if (shouldIgnoreAmbiguousTranscript(transcript)) {
+            if (m_loggingService) {
+                m_loggingService->info(QStringLiteral("Ignoring ambiguous transcription. text=\"%1\"").arg(transcript.left(120)));
+            }
+            deliverLocalResponse(QStringLiteral("I didn't catch that."), QStringLiteral("Please repeat"), true);
             return;
         }
 
@@ -613,7 +625,7 @@ void AssistantController::stopListening()
         emit idleRequested();
         return;
     }
-    m_whisperSttEngine->transcribePcm(pcm);
+    m_whisperSttEngine->transcribePcm(pcm, buildSttPrompt(), true);
 }
 
 void AssistantController::cancelActiveRequest()
@@ -781,6 +793,61 @@ int AssistantController::shortWakeResumeDelayMs() const
 int AssistantController::postSpeechWakeResumeDelayMs() const
 {
     return std::max(1200, m_settings->preciseTriggerCooldownMs());
+}
+
+QString AssistantController::buildSttPrompt() const
+{
+    const QString wakeWord = m_settings->wakeWordPhrase().trimmed().isEmpty()
+        ? QStringLiteral("Jarvis")
+        : m_settings->wakeWordPhrase().trimmed();
+    return QStringLiteral(
+        "%1. What time is it? What is the date today? What is your name? How are you? "
+        "Turn on the light. Turn off the light. Open settings. Close overlay.")
+        .arg(wakeWord);
+}
+
+bool AssistantController::shouldIgnoreAmbiguousTranscript(const QString &transcript) const
+{
+    const QStringList words = transcriptWords(transcript);
+    if (words.isEmpty()) {
+        return true;
+    }
+
+    const QString joined = words.join(QStringLiteral(" "));
+    static const QStringList ambiguousPhrases = {
+        QStringLiteral("you"),
+        QStringLiteral("yeah"),
+        QStringLiteral("yep"),
+        QStringLiteral("uh"),
+        QStringLiteral("um"),
+        QStringLiteral("hmm"),
+        QStringLiteral("hm"),
+        QStringLiteral("ah"),
+        QStringLiteral("oh"),
+        QStringLiteral("i am now"),
+        QStringLiteral("its a time"),
+        QStringLiteral("it's a time")
+    };
+    if (ambiguousPhrases.contains(joined)) {
+        return true;
+    }
+
+    if (words.size() == 1) {
+        const QString token = words.first();
+        static const QStringList allowSingleWordCommands = {
+            QStringLiteral("stop"),
+            QStringLiteral("mute"),
+            QStringLiteral("unmute"),
+            QStringLiteral("open"),
+            QStringLiteral("close"),
+            QStringLiteral("start")
+        };
+        if (!allowSingleWordCommands.contains(token) && token.size() <= 3) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 void AssistantController::scheduleWakeMonitorRestart(int delayMs)

@@ -133,7 +133,15 @@ void WhisperSttEngine::transcribePcm(const QByteArray &pcmData, const QString &i
                     .arg(waveFile)
                     .arg(text.size()));
             if (!stderrText.isEmpty()) {
-                m_loggingService->warn(QStringLiteral("whisper.cpp stderr: %1").arg(stderrText));
+                const QString lowered = stderrText.toLower();
+                const bool looksLikeFailure = lowered.contains(QStringLiteral("error"))
+                    || lowered.contains(QStringLiteral("failed"))
+                    || lowered.contains(QStringLiteral("exception"));
+                if (looksLikeFailure) {
+                    m_loggingService->warn(QStringLiteral("whisper.cpp stderr: %1").arg(stderrText));
+                } else {
+                    m_loggingService->info(QStringLiteral("whisper.cpp stderr: %1").arg(stderrText));
+                }
             }
         }
         emit transcriptionReady({text, text.isEmpty() ? 0.0f : 0.85f});

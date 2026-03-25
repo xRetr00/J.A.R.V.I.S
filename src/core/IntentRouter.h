@@ -15,6 +15,9 @@ public:
     LocalIntent classify(const QString &input) const;
 
 private:
+    bool containsKeyword(const QString &input, const QString &keyword) const;
+    bool startsWithKeyword(const QString &input, const QString &keyword) const;
+
     QStringList m_greetingKeywords;
     QStringList m_smallTalkKeywords;
     QStringList m_commandKeywords;

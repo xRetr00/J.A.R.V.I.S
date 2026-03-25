@@ -1,5 +1,7 @@
 #include "core/IntentRouter.h"
 
+#include <QRegularExpression>
+
 IntentRouter::IntentRouter(QObject *parent)
     : QObject(parent)
     , m_greetingKeywords({
@@ -48,6 +50,22 @@ IntentRouter::IntentRouter(QObject *parent)
 {
 }
 
+bool IntentRouter::containsKeyword(const QString &input, const QString &keyword) const
+{
+    QString pattern = QRegularExpression::escape(keyword);
+    pattern.replace(QStringLiteral("\\ "), QStringLiteral("\\s+"));
+    const QRegularExpression regex(QStringLiteral("(^|\\b)%1(\\b|$)").arg(pattern));
+    return regex.match(input).hasMatch();
+}
+
+bool IntentRouter::startsWithKeyword(const QString &input, const QString &keyword) const
+{
+    QString pattern = QRegularExpression::escape(keyword);
+    pattern.replace(QStringLiteral("\\ "), QStringLiteral("\\s+"));
+    const QRegularExpression regex(QStringLiteral("^\\s*%1(\\b|[,.!?]|\\s|$)").arg(pattern));
+    return regex.match(input).hasMatch();
+}
+
 LocalIntent IntentRouter::classify(const QString &input) const
 {
     const QString lowered = input.trimmed().toLower();
@@ -56,25 +74,25 @@ LocalIntent IntentRouter::classify(const QString &input) const
     }
 
     for (const auto &keyword : m_greetingKeywords) {
-        if (lowered == keyword || lowered.startsWith(keyword) || lowered.contains(keyword)) {
+        if (lowered == keyword || startsWithKeyword(lowered, keyword)) {
             return LocalIntent::Greeting;
         }
     }
 
     for (const auto &keyword : m_smallTalkKeywords) {
-        if (lowered.contains(keyword)) {
+        if (containsKeyword(lowered, keyword)) {
             return LocalIntent::SmallTalk;
         }
     }
 
     for (const auto &keyword : m_commandKeywords) {
-        if (lowered.startsWith(keyword) || lowered.contains(keyword)) {
+        if (startsWithKeyword(lowered, keyword) || containsKeyword(lowered, keyword)) {
             return LocalIntent::Command;
         }
     }
 
     for (const auto &keyword : m_complexKeywords) {
-        if (lowered.contains(keyword)) {
+        if (containsKeyword(lowered, keyword)) {
             return LocalIntent::ComplexQuery;
         }
     }

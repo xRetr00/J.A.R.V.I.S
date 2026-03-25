@@ -65,5 +65,7 @@ private:
     float m_probabilitySum = 0.0f;
     QQueue<float> m_recentProbabilities;
     QString m_preferredDeviceId;
+    qint64 m_ignoreDetectionsUntilMs = 0;
+    int m_activationWarmupMs = 1500;
     bool m_paused = false;
 };

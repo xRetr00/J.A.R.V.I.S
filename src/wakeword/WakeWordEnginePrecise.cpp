@@ -66,6 +66,7 @@ bool WakeWordEnginePrecise::start(
     m_consecutiveAboveThreshold = 0;
     m_probabilityLogCounter = 0;
     m_preferredDeviceId = preferredDeviceId;
+    m_ignoreDetectionsUntilMs = 0;
     m_paused = false;
 
     m_format.setSampleRate(kSampleRate);
@@ -121,8 +122,9 @@ void WakeWordEnginePrecise::resume()
 
     m_paused = false;
     resetDetectionState();
+    m_ignoreDetectionsUntilMs = QDateTime::currentMSecsSinceEpoch() + m_activationWarmupMs;
     if (m_loggingService) {
-        m_loggingService->info(QStringLiteral("Mycroft Precise wake detection resumed."));
+        m_loggingService->info(QStringLiteral("Mycroft Precise wake detection resumed. warmupMs=%1").arg(m_activationWarmupMs));
     }
 }
 
@@ -130,6 +132,7 @@ void WakeWordEnginePrecise::stop()
 {
     stopAudioCapture();
     resetDetectionState();
+    m_ignoreDetectionsUntilMs = 0;
     m_paused = false;
     m_preferredDeviceId.clear();
 
@@ -185,6 +188,7 @@ bool WakeWordEnginePrecise::startAudioCapture()
     }
 
     m_audioReadyReadConnection = connect(m_audioIoDevice, &QIODevice::readyRead, this, &WakeWordEnginePrecise::flushAudioToEngine);
+    m_ignoreDetectionsUntilMs = QDateTime::currentMSecsSinceEpoch() + m_activationWarmupMs;
     return true;
 }
 
@@ -285,6 +289,9 @@ void WakeWordEnginePrecise::consumeEngineOutput()
         }
 
         const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+        if (nowMs < m_ignoreDetectionsUntilMs) {
+            continue;
+        }
         const bool stableDetection = movingAverage >= m_threshold
             && m_consecutiveAboveThreshold >= m_consistentFramesRequired;
         if (stableDetection && (nowMs - m_lastActivationMs) >= m_cooldownMs) {

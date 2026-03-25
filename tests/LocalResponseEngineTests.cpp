@@ -10,6 +10,7 @@ class LocalResponseEngineTests : public QObject
 private slots:
     void classifiesGreeting();
     void classifiesCommand();
+    void doesNotMisclassifyEmbeddedGreetingFragments();
     void loadsAndRendersGreeting();
     void rendersWakeWordReady();
     void rendersCurrentTime();
@@ -27,6 +28,12 @@ void LocalResponseEngineTests::classifiesCommand()
 {
     IntentRouter router;
     QCOMPARE(router.classify(QStringLiteral("turn off the light")), LocalIntent::Command);
+}
+
+void LocalResponseEngineTests::doesNotMisclassifyEmbeddedGreetingFragments()
+{
+    IntentRouter router;
+    QCOMPARE(router.classify(QStringLiteral("what's his name now?")), LocalIntent::Unknown);
 }
 
 void LocalResponseEngineTests::loadsAndRendersGreeting()

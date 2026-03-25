@@ -108,6 +108,8 @@ private:
     void ignoreWakeTriggersFor(int delayMs);
     int shortWakeResumeDelayMs() const;
     int postSpeechWakeResumeDelayMs() const;
+    QString buildSttPrompt() const;
+    bool shouldIgnoreAmbiguousTranscript(const QString &transcript) const;
     void updateUserProfileFromInput(const QString &input);
     LocalResponseContext buildLocalResponseContext() const;
     void deliverLocalResponse(const QString &text, const QString &status, bool speak = true);
