@@ -62,7 +62,7 @@ Ensure-Dir $thirdPartyRoot
 Ensure-Dir $downloadsRoot
 Ensure-Dir $modelsRoot
 
-$onnxVersion = "1.24.4"
+$onnxVersion = "1.23.2"
 $onnxArchive = Join-Path $downloadsRoot "onnxruntime-win-x64-$onnxVersion.zip"
 $onnxExtractRoot = Join-Path $thirdPartyRoot "onnxruntime"
 $onnxUrl = "https://github.com/microsoft/onnxruntime/releases/download/v$onnxVersion/onnxruntime-win-x64-$onnxVersion.zip"
@@ -75,6 +75,11 @@ $sherpaAsset = "sherpa-onnx-v$sherpaVersion-win-x64-shared-MD-Release-no-tts.tar
 $sherpaArchive = Join-Path $downloadsRoot $sherpaAsset
 $sherpaExtractRoot = Join-Path $thirdPartyRoot "sherpa-onnx"
 $sherpaUrl = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v$sherpaVersion/$sherpaAsset"
+
+$sherpaKwsAsset = "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01.tar.bz2"
+$sherpaKwsArchive = Join-Path $downloadsRoot $sherpaKwsAsset
+$sherpaKwsExtractRoot = Join-Path $thirdPartyRoot "sherpa-kws-model"
+$sherpaKwsUrl = "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/$sherpaKwsAsset"
 
 $rnnoiseArchive = Join-Path $downloadsRoot "rnnoise-main.zip"
 $rnnoiseExtractRoot = Join-Path $thirdPartyRoot "rnnoise"
@@ -94,6 +99,11 @@ if (-not (Test-Path $sherpaArchive)) {
 }
 Expand-TarBz2 $sherpaArchive $sherpaExtractRoot
 
+if (-not (Test-Path $sherpaKwsArchive)) {
+    Download-File $sherpaKwsUrl $sherpaKwsArchive
+}
+Expand-TarBz2 $sherpaKwsArchive $sherpaKwsExtractRoot
+
 if (-not (Test-Path $rnnoiseArchive)) {
     Download-File $rnnoiseUrl $rnnoiseArchive
 }
@@ -104,4 +114,5 @@ Write-Host "Voice stack bootstrap complete."
 Write-Host "ONNX Runtime: $onnxExtractRoot"
 Write-Host "Silero model: $sileroModelPath"
 Write-Host "sherpa-onnx: $sherpaExtractRoot"
+Write-Host "sherpa kws model: $sherpaKwsExtractRoot"
 Write-Host "RNNoise source: $rnnoiseExtractRoot"
