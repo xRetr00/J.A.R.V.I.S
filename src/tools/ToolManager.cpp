@@ -67,21 +67,26 @@ ToolManager::ToolManager(QObject *parent)
 QList<ToolInfo> ToolManager::scan()
 {
     const QString root = toolsRoot();
+    const QString sourceRoot = QStringLiteral(JARVIS_SOURCE_DIR) + QStringLiteral("/third_party");
     m_tools = {
         probeTool(QStringLiteral("onnxruntime"), QStringLiteral("runtime"), {
                       root + QStringLiteral("/onnxruntime/lib/onnxruntime.dll"),
-                      root + QStringLiteral("/onnxruntime/bin/onnxruntime.dll")
+                      root + QStringLiteral("/onnxruntime/bin/onnxruntime.dll"),
+                      sourceRoot + QStringLiteral("/onnxruntime/onnxruntime-win-x64-1.24.4/lib/onnxruntime.dll")
                   }, true, true),
         probeTool(QStringLiteral("sherpa-onnx"), QStringLiteral("wake"), {
                       root + QStringLiteral("/sherpa-onnx/sherpa-onnx.exe"),
-                      root + QStringLiteral("/sherpa-onnx/bin/sherpa-onnx.exe")
+                      root + QStringLiteral("/sherpa-onnx/bin/sherpa-onnx.exe"),
+                      sourceRoot + QStringLiteral("/sherpa-onnx/sherpa-onnx-v1.12.33-win-x64-shared-MD-Release-no-tts/bin/sherpa-onnx.exe")
                   }, false, true),
         probeTool(QStringLiteral("silero-vad-model"), QStringLiteral("vad"), {
-                      root + QStringLiteral("/models/silero/silero_vad.onnx")
+                      root + QStringLiteral("/models/silero/silero_vad.onnx"),
+                      sourceRoot + QStringLiteral("/models/silero_vad.onnx")
                   }, true, true),
         probeTool(QStringLiteral("rnnoise"), QStringLiteral("audio"), {
                       root + QStringLiteral("/rnnoise/rnnoise.dll"),
-                      root + QStringLiteral("/rnnoise/bin/rnnoise.dll")
+                      root + QStringLiteral("/rnnoise/bin/rnnoise.dll"),
+                      sourceRoot + QStringLiteral("/rnnoise/rnnoise-main")
                   }, false, true),
         probeTool(QStringLiteral("piper"), QStringLiteral("tts"), {
                       root + QStringLiteral("/piper/piper.exe")
