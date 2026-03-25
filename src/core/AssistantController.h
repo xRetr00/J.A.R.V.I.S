@@ -115,6 +115,8 @@ private:
     };
 
     void setupStateMachine();
+    void createWakeWordEngine();
+    void bindWakeWordEngineSignals();
     void transitionToState(AssistantState state);
     void setStatus(const QString &status);
     void setDuplexState(DuplexState state);
@@ -144,6 +146,9 @@ private:
     void handleCommandFinished(const QString &text);
     void logPromptResponsePair(const QString &response, const QString &source, const QString &status = QString());
     CommandEnvelope parseCommand(const QString &payload) const;
+    QString resolveWakeEngineRuntimePath() const;
+    QString resolveWakeEngineModelPath() const;
+    QString wakeEngineDisplayName() const;
 
     AppSettings *m_settings = nullptr;
     IdentityProfileService *m_identityProfileService = nullptr;

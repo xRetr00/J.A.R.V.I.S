@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include <QDateTime>
+#include <QFileInfo>
 #include <QLocale>
 #include <QRegularExpression>
 #include <QTimer>
@@ -29,6 +30,7 @@
 #include "stt/RuntimeSpeechRecognizer.h"
 #include "tts/TtsEngine.h"
 #include "tts/WorkerTtsEngine.h"
+#include "wakeword/SherpaWakeWordEngine.h"
 #include "wakeword/WakeWordEngine.h"
 #include "wakeword/WakeWordEnginePrecise.h"
 #include "workers/VoicePipelineRuntime.h"
@@ -222,6 +224,17 @@ QStringList transcriptWords(const QString &input)
 {
     return input.toLower().split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
 }
+
+QString firstExistingPath(const QStringList &candidates)
+{
+    for (const QString &candidate : candidates) {
+        if (!candidate.isEmpty() && QFileInfo::exists(candidate)) {
+            return QFileInfo(candidate).absoluteFilePath();
+        }
+    }
+
+    return {};
+}
 }
 
 AssistantController::AssistantController(
@@ -246,8 +259,8 @@ AssistantController::AssistantController(
     m_localResponseEngine = new LocalResponseEngine(this);
     m_audioInputService = new AudioInputService(this);
     m_whisperSttEngine = new RuntimeSpeechRecognizer(m_voicePipelineRuntime, this);
-    m_wakeWordEngine = new WakeWordEnginePrecise(m_loggingService, this);
     m_ttsEngine = new WorkerTtsEngine(m_voicePipelineRuntime, this);
+    createWakeWordEngine();
 }
 
 void AssistantController::initialize()
@@ -315,45 +328,7 @@ void AssistantController::initialize()
         stopListening();
     });
 
-    connect(m_wakeWordEngine, &WakeWordEngine::wakeWordDetected, this, [this]() {
-        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-        if (isMicrophoneBlocked() || nowMs < m_ignoreWakeUntilMs) {
-            if (m_loggingService) {
-                m_loggingService->info(QStringLiteral("Wake trigger ignored while microphone gate is closed."));
-            }
-            return;
-        }
-
-        if (m_currentState == AssistantState::Speaking || m_currentState == AssistantState::Processing || m_ttsEngine->isSpeaking()) {
-            if (m_loggingService) {
-                m_loggingService->info(QStringLiteral("Wake trigger ignored while assistant is busy."));
-            }
-            return;
-        }
-
-        pauseWakeMonitor();
-        invalidateWakeMonitorResume();
-        m_aiBackendClient->cancelActiveRequest();
-        invalidateActiveTranscription();
-        m_ttsEngine->clear();
-        m_streamAssembler->reset();
-        if (!m_responseText.isEmpty()) {
-            m_responseText.clear();
-            emit responseTextChanged();
-        }
-        m_followUpListeningAfterWakeAck = true;
-        m_lastPromptForAiLog = m_settings->wakeWordPhrase();
-        deliverLocalResponse(
-            m_localResponseEngine->wakeWordReady(buildLocalResponseContext()),
-            QStringLiteral("Wake word detected"),
-            true);
-    });
-    connect(m_wakeWordEngine, &WakeWordEngine::errorOccurred, this, [this](const QString &message) {
-        if (m_loggingService) {
-            m_loggingService->error(QStringLiteral("Precise wake engine error: %1").arg(message));
-        }
-        setStatus(message);
-    });
+    bindWakeWordEngineSignals();
 
     connect(m_whisperSttEngine, &SpeechRecognizer::transcriptionReady, this, [this](quint64 requestId, const TranscriptionResult &result) {
         if (requestId != m_activeSttRequestId || isMicrophoneBlocked()) {
@@ -772,6 +747,64 @@ void AssistantController::setupStateMachine()
     });
 
     transitionToState(AssistantState::Idle);
+}
+
+void AssistantController::createWakeWordEngine()
+{
+    if (m_wakeWordEngine) {
+        m_wakeWordEngine->stop();
+        delete m_wakeWordEngine;
+        m_wakeWordEngine = nullptr;
+    }
+
+    if (m_settings->wakeEngineKind() == QStringLiteral("sherpa-onnx")) {
+        m_wakeWordEngine = new SherpaWakeWordEngine(m_settings, m_loggingService, this);
+    } else {
+        m_wakeWordEngine = new WakeWordEnginePrecise(m_loggingService, this);
+    }
+}
+
+void AssistantController::bindWakeWordEngineSignals()
+{
+    connect(m_wakeWordEngine, &WakeWordEngine::wakeWordDetected, this, [this]() {
+        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+        if (isMicrophoneBlocked() || nowMs < m_ignoreWakeUntilMs) {
+            if (m_loggingService) {
+                m_loggingService->info(QStringLiteral("Wake trigger ignored while microphone gate is closed."));
+            }
+            return;
+        }
+
+        if (m_currentState == AssistantState::Speaking || m_currentState == AssistantState::Processing || m_ttsEngine->isSpeaking()) {
+            if (m_loggingService) {
+                m_loggingService->info(QStringLiteral("Wake trigger ignored while assistant is busy."));
+            }
+            return;
+        }
+
+        pauseWakeMonitor();
+        invalidateWakeMonitorResume();
+        m_aiBackendClient->cancelActiveRequest();
+        invalidateActiveTranscription();
+        m_ttsEngine->clear();
+        m_streamAssembler->reset();
+        if (!m_responseText.isEmpty()) {
+            m_responseText.clear();
+            emit responseTextChanged();
+        }
+        m_followUpListeningAfterWakeAck = true;
+        m_lastPromptForAiLog = m_settings->wakeWordPhrase();
+        deliverLocalResponse(
+            m_localResponseEngine->wakeWordReady(buildLocalResponseContext()),
+            QStringLiteral("Wake word detected"),
+            true);
+    });
+    connect(m_wakeWordEngine, &WakeWordEngine::errorOccurred, this, [this](const QString &message) {
+        if (m_loggingService) {
+            m_loggingService->error(QStringLiteral("%1 wake engine error: %2").arg(wakeEngineDisplayName(), message));
+        }
+        setStatus(message);
+    });
 }
 
 void AssistantController::transitionToState(AssistantState state)
