@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QBuffer>
+#include <QAudioFormat>
 #include <QFutureWatcher>
 #include <QQueue>
 #include <QString>
@@ -42,6 +43,7 @@ private:
     QAudioSink *m_audioSink = nullptr;
     QBuffer *m_playbackBuffer = nullptr;
     QByteArray m_playbackPcm;
+    QAudioFormat m_playbackFormat;
     QTimer m_farEndTimer;
     qint64 m_lastFarEndOffset = 0;
     quint64 m_generationCounter = 0;

@@ -7,7 +7,7 @@
 
 struct AudioFrame
 {
-    static constexpr int kMaxSamples = 480;
+    static constexpr int kMaxSamples = 1024;
 
     std::array<float, kMaxSamples> samples{};
     int sampleCount = 0;

@@ -23,6 +23,14 @@ function Expand-Zip([string]$ArchivePath, [string]$Destination) {
     Expand-Archive -Path $ArchivePath -DestinationPath $Destination -Force
 }
 
+function Expand-TarGz([string]$ArchivePath, [string]$Destination) {
+    if (Test-Path $Destination) {
+        Remove-Item -Recurse -Force $Destination
+    }
+    Ensure-Dir $Destination
+    tar -xzf $ArchivePath -C $Destination
+}
+
 function Expand-TarBz2([string]$ArchivePath, [string]$Destination) {
     if (Test-Path $Destination) {
         Remove-Item -Recurse -Force $Destination
@@ -89,6 +97,15 @@ $sentencepieceUrl = "https://github.com/google/sentencepiece/archive/refs/tags/v
 $rnnoiseArchive = Join-Path $downloadsRoot "rnnoise-main.zip"
 $rnnoiseExtractRoot = Join-Path $thirdPartyRoot "rnnoise"
 $rnnoiseUrl = "https://github.com/xiph/rnnoise/archive/refs/heads/main.zip"
+$rnnoiseModelHash = "0a8755f8e2d834eff6a54714ecc7d75f9932e845df35f8b59bc52a7cfe6e8b37"
+$rnnoiseModelArchive = Join-Path $downloadsRoot "rnnoise_data-$rnnoiseModelHash.tar.gz"
+$rnnoiseModelUrl = "https://media.xiph.org/rnnoise/models/rnnoise_data-$rnnoiseModelHash.tar.gz"
+$rnnoiseModelStageRoot = Join-Path $downloadsRoot "rnnoise-model-stage"
+
+$speexArchive = Join-Path $downloadsRoot "speexdsp-master.zip"
+$speexExtractRoot = Join-Path $thirdPartyRoot "speexdsp"
+$speexStageRoot = Join-Path $downloadsRoot "speexdsp-stage"
+$speexUrl = "https://github.com/xiph/speexdsp/archive/refs/heads/master.zip"
 
 if (-not (Test-Path $onnxArchive)) {
     Download-File $onnxUrl $onnxArchive
@@ -123,6 +140,23 @@ if (-not (Test-Path $rnnoiseArchive)) {
     Download-File $rnnoiseUrl $rnnoiseArchive
 }
 Expand-Zip $rnnoiseArchive $rnnoiseExtractRoot
+if (-not (Test-Path $rnnoiseModelArchive)) {
+    Download-File $rnnoiseModelUrl $rnnoiseModelArchive
+}
+Expand-TarGz $rnnoiseModelArchive $rnnoiseModelStageRoot
+Copy-Item (Join-Path $rnnoiseModelStageRoot "src/rnnoise_data.c") (Join-Path $rnnoiseExtractRoot "rnnoise-main/src/rnnoise_data.c") -Force
+Copy-Item (Join-Path $rnnoiseModelStageRoot "src/rnnoise_data.h") (Join-Path $rnnoiseExtractRoot "rnnoise-main/src/rnnoise_data.h") -Force
+Remove-Item -Recurse -Force $rnnoiseModelStageRoot
+
+if (-not (Test-Path $speexArchive)) {
+    Download-File $speexUrl $speexArchive
+}
+Expand-Zip $speexArchive $speexStageRoot
+if (Test-Path $speexExtractRoot) {
+    Remove-Item -Recurse -Force $speexExtractRoot
+}
+Move-Item (Join-Path $speexStageRoot "speexdsp-master") $speexExtractRoot
+Remove-Item -Recurse -Force $speexStageRoot
 
 Write-Host ""
 Write-Host "Voice stack bootstrap complete."
@@ -132,3 +166,4 @@ Write-Host "sherpa-onnx: $sherpaExtractRoot"
 Write-Host "sherpa kws model: $sherpaKwsExtractRoot"
 Write-Host "SentencePiece source: $sentencepieceExtractRoot"
 Write-Host "RNNoise source: $rnnoiseExtractRoot"
+Write-Host "SpeexDSP source: $speexExtractRoot"

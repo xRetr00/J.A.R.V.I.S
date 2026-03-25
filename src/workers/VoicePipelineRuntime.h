@@ -29,11 +29,12 @@ public:
 
 public slots:
     void configureAudioProcessing(const AudioProcessingConfig &config);
-    void setWakeActive(bool active);
     void startInputGeneration(quint64 generationId);
     void startInputCapture(quint64 generationId, double sensitivity, const QString &preferredDeviceId);
     void stopInputCapture(bool finalize = true);
     void clearInputCapture();
+    void startWakeCapture(quint64 generationId, const QString &preferredDeviceId);
+    void stopWakeCapture();
     void transcribe(quint64 generationId, const QByteArray &pcmData, const QString &initialPrompt, bool suppressNonSpeechTokens = true);
     void speak(quint64 generationId, const QString &text);
     void cancelSpeechIo();
@@ -44,7 +45,6 @@ public slots:
 
 signals:
     void inputAudioLevelChanged(quint64 generationId, const AudioLevel &level);
-    void wakeDetected(quint64 generationId);
     void speechFrame(quint64 generationId, const AudioFrame &frame);
     void speechActivityChanged(quint64 generationId, bool active);
     void inputCaptureFinished(quint64 generationId, const QByteArray &pcmData, bool hadSpeech);

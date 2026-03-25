@@ -22,25 +22,32 @@ public slots:
     void configure(const AudioProcessingConfig &config);
     void startGeneration(quint64 generationId);
     void startCapture(quint64 generationId, double sensitivity, const QString &preferredDeviceId);
+    void startWakeMonitor(quint64 generationId, const QString &preferredDeviceId);
     void stopCapture(bool finalize);
+    void stopWakeMonitor();
     void clearCapture();
     void setFarEndFrame(const AudioFrame &frame);
-    void setWakeActive(bool active);
     void reset();
 
 signals:
     void audioLevelChanged(quint64 generationId, const AudioLevel &level);
-    void wakeDetected(quint64 generationId);
     void speechFrame(quint64 generationId, const AudioFrame &frame);
     void speechActivityChanged(quint64 generationId, bool active);
     void captureFinished(quint64 generationId, const QByteArray &pcmData, bool hadSpeech);
     void captureFailed(quint64 generationId, const QString &errorText);
 
 private:
+    enum class CaptureMode {
+        None,
+        Direct,
+        WakeMonitor
+    };
+
     void processMicBuffer();
     void finishCapture(bool hadSpeech);
     bool startAudioDevice(const QString &preferredDeviceId);
     void stopAudioDevice();
+    void resetCaptureState();
     float computePeak(const AudioFrame &frame) const;
     AudioFrame buildFrame(const qint16 *samples, int sampleCount, qint64 sequence) const;
 
@@ -51,7 +58,7 @@ private:
     QByteArray m_recordedPcm;
     QByteArray m_pendingPcm;
     quint64 m_generationId = 0;
-    bool m_wakeActive = false;
+    CaptureMode m_captureMode = CaptureMode::None;
     bool m_lastSpeechActive = false;
     bool m_captureActive = false;
     bool m_hasDetectedSpeech = false;

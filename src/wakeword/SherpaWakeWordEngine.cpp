@@ -1,13 +1,11 @@
 #include "wakeword/SherpaWakeWordEngine.h"
 
 #include <algorithm>
-#include <array>
 #include <vector>
 
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QMediaDevices>
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <QStringList>
@@ -24,8 +22,6 @@ namespace {
 constexpr int kSampleRate = 16000;
 constexpr int kMinCooldownMs = 700;
 constexpr int kMaxCooldownMs = 1600;
-constexpr int kChunkSamples = 320;
-constexpr int kChunkBytes = kChunkSamples * static_cast<int>(sizeof(qint16));
 
 QString firstExisting(const QStringList &candidates)
 {
@@ -69,9 +65,6 @@ SherpaWakeWordEngine::SherpaWakeWordEngine(AppSettings *settings, LoggingService
     , m_settings(settings)
     , m_loggingService(loggingService)
 {
-    m_format.setSampleRate(kSampleRate);
-    m_format.setChannelCount(1);
-    m_format.setSampleFormat(QAudioFormat::Int16);
 }
 
 SherpaWakeWordEngine::~SherpaWakeWordEngine()
@@ -109,7 +102,6 @@ bool SherpaWakeWordEngine::start(
     m_threshold = std::clamp(threshold, 0.10f, 0.85f);
     m_cooldownMs = std::clamp(cooldownMs, kMinCooldownMs, kMaxCooldownMs);
     m_lastActivationMs = 0;
-    m_pendingAudio.clear();
     m_preferredDeviceId = preferredDeviceId;
     m_ignoreDetectionsUntilMs = 0;
     m_paused = false;
@@ -119,10 +111,8 @@ bool SherpaWakeWordEngine::start(
         return false;
     }
 
-    if (!startAudioCapture()) {
-        stop();
-        return false;
-    }
+    resetDetectorState();
+    m_ignoreDetectionsUntilMs = QDateTime::currentMSecsSinceEpoch() + m_activationWarmupMs;
 
     if (m_loggingService) {
         m_loggingService->info(QStringLiteral("sherpa-onnx wake engine started. runtime=\"%1\" model=\"%2\" threshold=%3 cooldownMs=%4 wakeWord=\"%5\"")
@@ -143,7 +133,6 @@ void SherpaWakeWordEngine::pause()
     }
 
     m_paused = true;
-    stopAudioCapture();
     resetDetectorState();
     if (m_loggingService) {
         m_loggingService->info(QStringLiteral("sherpa-onnx wake detection paused."));
@@ -153,11 +142,6 @@ void SherpaWakeWordEngine::pause()
 void SherpaWakeWordEngine::resume()
 {
     if (!isActive() || !m_paused) {
-        return;
-    }
-
-    if (!startAudioCapture()) {
-        emit errorOccurred(QStringLiteral("Failed to resume microphone capture for sherpa-onnx wake detection"));
         return;
     }
 
@@ -171,8 +155,6 @@ void SherpaWakeWordEngine::resume()
 
 void SherpaWakeWordEngine::stop()
 {
-    stopAudioCapture();
-    m_pendingAudio.clear();
     m_ignoreDetectionsUntilMs = 0;
     m_paused = false;
 
@@ -196,6 +178,48 @@ bool SherpaWakeWordEngine::isActive() const
 bool SherpaWakeWordEngine::isPaused() const
 {
     return m_paused;
+}
+
+void SherpaWakeWordEngine::processAudioFrame(const AudioFrame &frame)
+{
+#if !JARVIS_HAS_SHERPA_ONNX
+    Q_UNUSED(frame);
+#else
+    if (m_paused || !m_keywordSpotter || !m_stream) {
+        return;
+    }
+
+    if (frame.sampleRate != kSampleRate || frame.sampleCount <= 0) {
+        return;
+    }
+
+    m_stream->AcceptWaveform(kSampleRate, frame.samples.data(), frame.sampleCount);
+    while (m_keywordSpotter->IsReady(m_stream.get())) {
+        m_keywordSpotter->Decode(m_stream.get());
+    }
+
+    const sherpa_onnx::cxx::KeywordResult result = m_keywordSpotter->GetResult(m_stream.get());
+    if (result.keyword.empty()) {
+        return;
+    }
+
+    emit probabilityUpdated(1.0f);
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    if (nowMs < m_ignoreDetectionsUntilMs || (nowMs - m_lastActivationMs) < m_cooldownMs) {
+        m_keywordSpotter->Reset(m_stream.get());
+        return;
+    }
+
+    m_lastActivationMs = nowMs;
+    if (m_loggingService) {
+        m_loggingService->info(QStringLiteral("sherpa-onnx wake word detected. keyword=\"%1\" threshold=%2 cooldownMs=%3")
+            .arg(QString::fromStdString(result.keyword))
+            .arg(m_threshold, 0, 'f', 2)
+            .arg(m_cooldownMs));
+    }
+    m_keywordSpotter->Reset(m_stream.get());
+    emit wakeWordDetected();
+#endif
 }
 
 bool SherpaWakeWordEngine::prepareKeywordSpotter(const QString &runtimePath, const QString &modelPath, float threshold)
@@ -345,121 +369,14 @@ bool SherpaWakeWordEngine::writeKeywordsFile(const QString &modelPath, QString *
 #endif
 }
 
-bool SherpaWakeWordEngine::startAudioCapture()
-{
-    QAudioDevice device = QMediaDevices::defaultAudioInput();
-    if (!m_preferredDeviceId.isEmpty()) {
-        for (const QAudioDevice &candidate : QMediaDevices::audioInputs()) {
-            if (QString::fromUtf8(candidate.id()) == m_preferredDeviceId) {
-                device = candidate;
-                break;
-            }
-        }
-    }
-
-    if (device.isNull()) {
-        emit errorOccurred(QStringLiteral("No microphone available for sherpa-onnx wake detection"));
-        return false;
-    }
-
-    if (!device.isFormatSupported(m_format)) {
-        emit errorOccurred(QStringLiteral("Microphone does not support 16 kHz mono PCM for sherpa-onnx wake detection"));
-        return false;
-    }
-
-    stopAudioCapture();
-    m_audioSource = std::make_unique<QAudioSource>(device, m_format, this);
-    m_audioSource->setBufferSize(kChunkBytes * 6);
-    m_audioIoDevice = m_audioSource->start();
-    if (!m_audioIoDevice) {
-        emit errorOccurred(QStringLiteral("Failed to start microphone capture for sherpa-onnx wake detection"));
-        return false;
-    }
-
-    m_audioReadyReadConnection = connect(m_audioIoDevice, &QIODevice::readyRead, this, &SherpaWakeWordEngine::processMicAudio);
-    m_ignoreDetectionsUntilMs = QDateTime::currentMSecsSinceEpoch() + m_activationWarmupMs;
-    return true;
-}
-
-void SherpaWakeWordEngine::stopAudioCapture()
-{
-    if (m_audioReadyReadConnection) {
-        disconnect(m_audioReadyReadConnection);
-        m_audioReadyReadConnection = {};
-    }
-
-    if (m_audioSource) {
-        m_audioSource->stop();
-        m_audioSource.reset();
-    }
-    m_audioIoDevice = nullptr;
-}
-
 void SherpaWakeWordEngine::resetDetectorState()
 {
 #if JARVIS_HAS_SHERPA_ONNX
-    m_pendingAudio.clear();
     if (m_keywordSpotter && m_keywordSpotter->Get()) {
         auto stream = std::make_unique<sherpa_onnx::cxx::OnlineStream>(m_keywordSpotter->CreateStream());
         if (stream && stream->Get() != nullptr) {
             m_stream = std::move(stream);
         }
-    }
-#endif
-}
-
-void SherpaWakeWordEngine::processMicAudio()
-{
-#if !JARVIS_HAS_SHERPA_ONNX
-    return;
-#else
-    if (!m_audioIoDevice || !m_keywordSpotter || !m_stream || m_paused) {
-        return;
-    }
-
-    static constexpr float kInt16Scale = 1.0f / 32768.0f;
-    static std::array<float, kChunkSamples> sampleBuffer {};
-
-    m_pendingAudio.append(m_audioIoDevice->readAll());
-    while (m_pendingAudio.size() >= kChunkBytes) {
-        const char *raw = m_pendingAudio.constData();
-        const auto *samples = reinterpret_cast<const qint16 *>(raw);
-        for (int i = 0; i < kChunkSamples; ++i) {
-            sampleBuffer[static_cast<size_t>(i)] = static_cast<float>(samples[i]) * kInt16Scale;
-        }
-        m_pendingAudio.remove(0, kChunkBytes);
-
-        m_stream->AcceptWaveform(kSampleRate, sampleBuffer.data(), kChunkSamples);
-        while (m_keywordSpotter->IsReady(m_stream.get())) {
-            m_keywordSpotter->Decode(m_stream.get());
-        }
-
-        const sherpa_onnx::cxx::KeywordResult result = m_keywordSpotter->GetResult(m_stream.get());
-        if (result.keyword.empty()) {
-            continue;
-        }
-
-        emit probabilityUpdated(1.0f);
-        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-        if (nowMs < m_ignoreDetectionsUntilMs) {
-            m_keywordSpotter->Reset(m_stream.get());
-            continue;
-        }
-
-        if ((nowMs - m_lastActivationMs) < m_cooldownMs) {
-            m_keywordSpotter->Reset(m_stream.get());
-            continue;
-        }
-
-        m_lastActivationMs = nowMs;
-        if (m_loggingService) {
-            m_loggingService->info(QStringLiteral("sherpa-onnx wake word detected. keyword=\"%1\" threshold=%2 cooldownMs=%3")
-                .arg(QString::fromStdString(result.keyword))
-                .arg(m_threshold, 0, 'f', 2)
-                .arg(m_cooldownMs));
-        }
-        m_keywordSpotter->Reset(m_stream.get());
-        emit wakeWordDetected();
     }
 #endif
 }

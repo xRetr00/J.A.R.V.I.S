@@ -7,8 +7,8 @@
 
 namespace {
 constexpr int kSampleRate = 16000;
-constexpr int kFrameMs = 20;
-constexpr int kFrameSamples = 320;
+constexpr int kFrameMs = 30;
+constexpr int kFrameSamples = 480;
 constexpr int kFrameBytes = kFrameSamples * static_cast<int>(sizeof(qint16));
 constexpr int kMinSpeechMs = 300;
 constexpr int kSilenceHoldMs = 800;
@@ -43,24 +43,36 @@ void SpeechInputWorker::startCapture(quint64 generationId, double sensitivity, c
     }
 
     m_generationId = generationId;
-    m_lastSpeechActive = false;
-    m_captureActive = false;
-    m_hasDetectedSpeech = false;
+    resetCaptureState();
     m_silenceThreshold = sensitivity;
-    m_consecutiveSpeechMs = 0;
-    m_consecutiveSilenceMs = 0;
-    m_frameSequence = 0;
-    m_recordedPcm.clear();
-    m_pendingPcm.clear();
 
     if (!startAudioDevice(preferredDeviceId)) {
         emit captureFailed(m_generationId, QStringLiteral("No microphone available"));
         return;
     }
 
+    m_captureMode = CaptureMode::Direct;
     m_captureActive = true;
     m_captureElapsed.restart();
     m_speechElapsed.invalidate();
+}
+
+void SpeechInputWorker::startWakeMonitor(quint64 generationId, const QString &preferredDeviceId)
+{
+    if (m_captureActive) {
+        stopCapture(false);
+    }
+
+    m_generationId = generationId;
+    resetCaptureState();
+
+    if (!startAudioDevice(preferredDeviceId)) {
+        emit captureFailed(m_generationId, QStringLiteral("No microphone available"));
+        return;
+    }
+
+    m_captureMode = CaptureMode::WakeMonitor;
+    m_captureActive = true;
 }
 
 void SpeechInputWorker::stopCapture(bool finalize)
@@ -69,21 +81,22 @@ void SpeechInputWorker::stopCapture(bool finalize)
         return;
     }
 
-    if (finalize) {
+    if (finalize && m_captureMode == CaptureMode::Direct) {
         finishCapture(m_hasDetectedSpeech);
         return;
     }
 
     stopAudioDevice();
-    m_captureActive = false;
-    m_recordedPcm.clear();
-    m_pendingPcm.clear();
-    m_hasDetectedSpeech = false;
-    m_lastSpeechActive = false;
-    m_consecutiveSpeechMs = 0;
-    m_consecutiveSilenceMs = 0;
-    m_speechElapsed.invalidate();
-    m_captureElapsed.invalidate();
+    resetCaptureState();
+}
+
+void SpeechInputWorker::stopWakeMonitor()
+{
+    if (m_captureMode != CaptureMode::WakeMonitor) {
+        return;
+    }
+
+    stopCapture(false);
 }
 
 void SpeechInputWorker::clearCapture()
@@ -94,11 +107,6 @@ void SpeechInputWorker::clearCapture()
 void SpeechInputWorker::setFarEndFrame(const AudioFrame &frame)
 {
     m_chain.setFarEnd(frame);
-}
-
-void SpeechInputWorker::setWakeActive(bool active)
-{
-    m_wakeActive = active;
 }
 
 void SpeechInputWorker::reset()
@@ -115,13 +123,18 @@ void SpeechInputWorker::processMicBuffer()
 
     const QByteArray chunk = m_audioIoDevice->readAll();
     if (chunk.isEmpty()) {
-        if (!m_hasDetectedSpeech && m_captureElapsed.isValid() && m_captureElapsed.elapsed() >= kIdleCaptureWindowMs) {
+        if (m_captureMode == CaptureMode::Direct
+            && !m_hasDetectedSpeech
+            && m_captureElapsed.isValid()
+            && m_captureElapsed.elapsed() >= kIdleCaptureWindowMs) {
             finishCapture(false);
         }
         return;
     }
 
-    m_recordedPcm.append(chunk);
+    if (m_captureMode == CaptureMode::Direct) {
+        m_recordedPcm.append(chunk);
+    }
     m_pendingPcm.append(chunk);
 
     while (m_pendingPcm.size() >= kFrameBytes) {
@@ -151,8 +164,8 @@ void SpeechInputWorker::processMicBuffer()
             emit speechActivityChanged(m_generationId, m_lastSpeechActive);
         }
 
-        if (m_wakeActive && processed.speechDetected) {
-            emit wakeDetected(m_generationId);
+        if (m_captureMode != CaptureMode::Direct) {
+            continue;
         }
 
         if (processed.speechDetected) {
@@ -196,15 +209,7 @@ void SpeechInputWorker::finishCapture(bool hadSpeech)
     const QByteArray pcmData = m_recordedPcm;
 
     stopAudioDevice();
-    m_captureActive = false;
-    m_recordedPcm.clear();
-    m_pendingPcm.clear();
-    m_lastSpeechActive = false;
-    m_hasDetectedSpeech = false;
-    m_consecutiveSpeechMs = 0;
-    m_consecutiveSilenceMs = 0;
-    m_speechElapsed.invalidate();
-    m_captureElapsed.invalidate();
+    resetCaptureState();
 
     emit captureFinished(generationId, pcmData, hadSpeech);
 }
@@ -250,6 +255,21 @@ void SpeechInputWorker::stopAudioDevice()
     }
 
     m_audioIoDevice = nullptr;
+}
+
+void SpeechInputWorker::resetCaptureState()
+{
+    m_captureMode = CaptureMode::None;
+    m_captureActive = false;
+    m_recordedPcm.clear();
+    m_pendingPcm.clear();
+    m_hasDetectedSpeech = false;
+    m_lastSpeechActive = false;
+    m_consecutiveSpeechMs = 0;
+    m_consecutiveSilenceMs = 0;
+    m_frameSequence = 0;
+    m_speechElapsed.invalidate();
+    m_captureElapsed.invalidate();
 }
 
 float SpeechInputWorker::computePeak(const AudioFrame &frame) const

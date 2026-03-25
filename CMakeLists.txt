@@ -17,6 +17,8 @@ option(JARVIS_BUILD_TESTS "Build JARVIS tests" ON)
 set(JARVIS_ONNXRUNTIME_ROOT "" CACHE PATH "Path to a local ONNX Runtime package root")
 set(JARVIS_SHERPA_ROOT "" CACHE PATH "Path to a local sherpa-onnx package root")
 set(JARVIS_SENTENCEPIECE_ROOT "${CMAKE_SOURCE_DIR}/third_party/sentencepiece" CACHE PATH "Path to a local sentencepiece source tree")
+set(JARVIS_SPEEXDSP_ROOT "${CMAKE_SOURCE_DIR}/third_party/speexdsp" CACHE PATH "Path to a local SpeexDSP source tree")
+set(JARVIS_RNNOISE_ROOT "${CMAKE_SOURCE_DIR}/third_party/rnnoise/rnnoise-main" CACHE PATH "Path to a local RNNoise source tree")
 
 find_package(Qt6 6.6 REQUIRED COMPONENTS
     Concurrent
@@ -77,6 +79,48 @@ target_include_directories(fvad
     PRIVATE
         ${libfvad_SOURCE_DIR}/src
 )
+
+if(EXISTS "${JARVIS_SPEEXDSP_ROOT}/include/speex/speex_echo.h")
+    add_library(speexdsp STATIC
+        ${JARVIS_SPEEXDSP_ROOT}/libspeexdsp/fftwrap.c
+        ${JARVIS_SPEEXDSP_ROOT}/libspeexdsp/filterbank.c
+        ${JARVIS_SPEEXDSP_ROOT}/libspeexdsp/kiss_fft.c
+        ${JARVIS_SPEEXDSP_ROOT}/libspeexdsp/kiss_fftr.c
+        ${JARVIS_SPEEXDSP_ROOT}/libspeexdsp/mdf.c
+        ${JARVIS_SPEEXDSP_ROOT}/libspeexdsp/preprocess.c
+        ${JARVIS_SPEEXDSP_ROOT}/libspeexdsp/resample.c
+        ${JARVIS_SPEEXDSP_ROOT}/libspeexdsp/smallft.c
+    )
+    target_include_directories(speexdsp
+        PUBLIC
+            ${JARVIS_SPEEXDSP_ROOT}/include
+        PRIVATE
+            ${JARVIS_SPEEXDSP_ROOT}/libspeexdsp
+    )
+    target_compile_definitions(speexdsp PRIVATE FLOATING_POINT USE_SMALLFT EXPORT=)
+endif()
+
+if(EXISTS "${JARVIS_RNNOISE_ROOT}/include/rnnoise.h"
+    AND EXISTS "${JARVIS_RNNOISE_ROOT}/src/rnnoise_data.c")
+    add_library(rnnoise STATIC
+        ${JARVIS_RNNOISE_ROOT}/src/celt_lpc.c
+        ${JARVIS_RNNOISE_ROOT}/src/denoise.c
+        ${JARVIS_RNNOISE_ROOT}/src/kiss_fft.c
+        ${JARVIS_RNNOISE_ROOT}/src/nnet.c
+        ${JARVIS_RNNOISE_ROOT}/src/nnet_default.c
+        ${JARVIS_RNNOISE_ROOT}/src/parse_lpcnet_weights.c
+        ${JARVIS_RNNOISE_ROOT}/src/pitch.c
+        ${JARVIS_RNNOISE_ROOT}/src/rnn.c
+        ${JARVIS_RNNOISE_ROOT}/src/rnnoise_data.c
+        ${JARVIS_RNNOISE_ROOT}/src/rnnoise_tables.c
+    )
+    target_include_directories(rnnoise
+        PUBLIC
+            ${JARVIS_RNNOISE_ROOT}/include
+        PRIVATE
+            ${JARVIS_RNNOISE_ROOT}/src
+    )
+endif()
 
 qt_standard_project_setup(REQUIRES 6.6)
 
@@ -272,6 +316,14 @@ target_link_libraries(jarvis_lib
         spdlog::spdlog
         fvad
 )
+
+if(TARGET speexdsp)
+    target_link_libraries(jarvis_lib PUBLIC speexdsp)
+endif()
+
+if(TARGET rnnoise)
+    target_link_libraries(jarvis_lib PUBLIC rnnoise)
+endif()
 
 function(jarvis_copy_optional_runtime_dlls target_name)
     if(TARGET onnxruntime)

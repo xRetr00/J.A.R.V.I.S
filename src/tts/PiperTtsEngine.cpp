@@ -240,15 +240,30 @@ PiperTtsEngine::PiperTtsEngine(AppSettings *settings, QObject *parent)
         }
 
         const qint64 currentOffset = std::clamp(m_playbackBuffer->pos(), static_cast<qint64>(0), static_cast<qint64>(m_playbackPcm.size()));
-        const qint64 bytesPerFrame = 320 * static_cast<qint64>(sizeof(qint16));
+        if (m_playbackFormat.sampleRate() <= 0 || m_playbackFormat.bytesPerSample() <= 0) {
+            return;
+        }
+
+        const int chunkSamples = std::clamp(
+            (m_playbackFormat.sampleRate() * 30) / 1000,
+            1,
+            AudioFrame::kMaxSamples);
+        const int channelCount = std::max(1, m_playbackFormat.channelCount());
+        const qint64 bytesPerFrame = static_cast<qint64>(chunkSamples)
+            * static_cast<qint64>(m_playbackFormat.bytesPerSample())
+            * static_cast<qint64>(channelCount);
         while (m_lastFarEndOffset + bytesPerFrame <= currentOffset) {
             AudioFrame frame;
-            frame.sampleRate = 16000;
+            frame.sampleRate = m_playbackFormat.sampleRate();
             frame.channels = 1;
-            frame.sampleCount = 320;
+            frame.sampleCount = chunkSamples;
             const auto *samples = reinterpret_cast<const qint16 *>(m_playbackPcm.constData() + m_lastFarEndOffset);
             for (int i = 0; i < frame.sampleCount; ++i) {
-                frame.samples[static_cast<std::size_t>(i)] = static_cast<float>(samples[i]) / 32768.0f;
+                int mixed = 0;
+                for (int channel = 0; channel < channelCount; ++channel) {
+                    mixed += samples[(i * channelCount) + channel];
+                }
+                frame.samples[static_cast<std::size_t>(i)] = static_cast<float>(mixed) / static_cast<float>(channelCount * 32768.0f);
             }
             emit farEndFrameReady(frame);
             m_lastFarEndOffset += bytesPerFrame;
@@ -408,6 +423,7 @@ void PiperTtsEngine::playFile(const QString &path)
 
     m_audioSink = new QAudioSink(device, format, this);
     m_playbackPcm = pcmData;
+    m_playbackFormat = format;
     m_playbackBuffer = new QBuffer(this);
     m_playbackBuffer->setData(m_playbackPcm);
     m_playbackBuffer->open(QIODevice::ReadOnly);
@@ -436,6 +452,7 @@ void PiperTtsEngine::stopPlayback()
 {
     m_farEndTimer.stop();
     m_lastFarEndOffset = 0;
+    m_playbackFormat = QAudioFormat();
     if (m_audioSink != nullptr) {
         m_audioSink->stop();
         m_audioSink->deleteLater();

@@ -1,11 +1,6 @@
 #pragma once
 
-#include <QAudioFormat>
-#include <QAudioSource>
-#include <QByteArray>
 #include <QDateTime>
-#include <QIODevice>
-#include <QPointer>
 #include <memory>
 
 #include "wakeword/WakeWordEngine.h"
@@ -39,22 +34,16 @@ public:
     void stop() override;
     bool isActive() const override;
     bool isPaused() const override;
+    bool usesExternalAudioInput() const override { return true; }
+    void processAudioFrame(const AudioFrame &frame) override;
 
 private:
     bool prepareKeywordSpotter(const QString &runtimePath, const QString &modelPath, float threshold);
     bool writeKeywordsFile(const QString &modelPath, QString *keywordsPath, QString *errorText) const;
-    bool startAudioCapture();
-    void stopAudioCapture();
     void resetDetectorState();
-    void processMicAudio();
 
     AppSettings *m_settings = nullptr;
     LoggingService *m_loggingService = nullptr;
-    std::unique_ptr<QAudioSource> m_audioSource;
-    QPointer<QIODevice> m_audioIoDevice;
-    QAudioFormat m_format;
-    QByteArray m_pendingAudio;
-    QMetaObject::Connection m_audioReadyReadConnection;
     qint64 m_lastActivationMs = 0;
     float m_threshold = 0.25f;
     int m_cooldownMs = 900;

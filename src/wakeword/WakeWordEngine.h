@@ -2,6 +2,8 @@
 
 #include <QObject>
 
+#include "audio/AudioProcessingTypes.h"
+
 class WakeWordEngine : public QObject
 {
     Q_OBJECT
@@ -25,6 +27,8 @@ public:
     virtual void stop() = 0;
     virtual bool isActive() const = 0;
     virtual bool isPaused() const = 0;
+    virtual bool usesExternalAudioInput() const { return false; }
+    virtual void processAudioFrame(const AudioFrame &frame) { Q_UNUSED(frame); }
 
 signals:
     void probabilityUpdated(float probability);

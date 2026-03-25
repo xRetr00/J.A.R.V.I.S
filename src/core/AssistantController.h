@@ -5,7 +5,6 @@
 #include "core/AssistantTypes.h"
 
 class AppSettings;
-class AudioInputService;
 class DeviceManager;
 class IntentRouter;
 class AiBackendClient;
@@ -162,7 +161,6 @@ private:
     DeviceManager *m_deviceManager = nullptr;
     IntentRouter *m_intentRouter = nullptr;
     LocalResponseEngine *m_localResponseEngine = nullptr;
-    AudioInputService *m_audioInputService = nullptr;
     SpeechRecognizer *m_whisperSttEngine = nullptr;
     WakeWordEngine *m_wakeWordEngine = nullptr;
     TtsEngine *m_ttsEngine = nullptr;

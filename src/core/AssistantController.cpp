@@ -20,7 +20,6 @@
 #include "ai/SpokenReply.h"
 #include "ai/ReasoningRouter.h"
 #include "ai/StreamAssembler.h"
-#include "audio/AudioInputService.h"
 #include "core/IntentRouter.h"
 #include "core/LocalResponseEngine.h"
 #include "devices/DeviceManager.h"
@@ -258,7 +257,6 @@ AssistantController::AssistantController(
     m_deviceManager = new DeviceManager(this);
     m_intentRouter = new IntentRouter(this);
     m_localResponseEngine = new LocalResponseEngine(this);
-    m_audioInputService = new AudioInputService(this);
     m_whisperSttEngine = new RuntimeSpeechRecognizer(m_voicePipelineRuntime, this);
     m_ttsEngine = new WorkerTtsEngine(m_voicePipelineRuntime, this);
     createWakeWordEngine();
@@ -301,8 +299,19 @@ void AssistantController::initialize()
         if (m_loggingService) {
             const QString mode = m_audioCaptureMode == AudioCaptureMode::Direct
                     ? QStringLiteral("direct")
-                    : QStringLiteral("none");
+                    : (m_audioCaptureMode == AudioCaptureMode::WakeMonitor
+                        ? QStringLiteral("wake")
+                        : QStringLiteral("none"));
             m_loggingService->info(QStringLiteral("Audio speech detected. mode=%1").arg(mode));
+        }
+    });
+    connect(m_voicePipelineRuntime, &VoicePipelineRuntime::speechFrame, this, [this](quint64 generationId, const AudioFrame &frame) {
+        if (generationId != m_activeInputCaptureId || m_audioCaptureMode != AudioCaptureMode::WakeMonitor) {
+            return;
+        }
+
+        if (m_wakeWordEngine && m_wakeWordEngine->isActive() && m_wakeWordEngine->usesExternalAudioInput()) {
+            m_wakeWordEngine->processAudioFrame(frame);
         }
     });
     connect(m_voicePipelineRuntime, &VoicePipelineRuntime::inputCaptureFinished, this, [this](quint64 generationId, const QByteArray &pcmData, bool hadSpeech) {
@@ -317,7 +326,9 @@ void AssistantController::initialize()
         if (m_loggingService) {
             const QString mode = completedMode == AudioCaptureMode::Direct
                     ? QStringLiteral("direct")
-                    : QStringLiteral("none");
+                    : (completedMode == AudioCaptureMode::WakeMonitor
+                        ? QStringLiteral("wake")
+                        : QStringLiteral("none"));
             m_loggingService->info(QStringLiteral("Audio capture finished. mode=%1 bytes=%2 hadSpeech=%3")
                 .arg(mode)
                 .arg(pcmData.size())
@@ -344,9 +355,13 @@ void AssistantController::initialize()
             return;
         }
 
+        const AudioCaptureMode failedMode = m_audioCaptureMode;
         m_audioCaptureMode = AudioCaptureMode::None;
         if (m_loggingService) {
             m_loggingService->error(QStringLiteral("Input capture failed: %1").arg(errorText));
+        }
+        if (failedMode == AudioCaptureMode::WakeMonitor && m_wakeWordEngine->isActive()) {
+            m_wakeWordEngine->stop();
         }
         setStatus(errorText);
         resumeWakeMonitor(shortWakeResumeDelayMs());
@@ -611,6 +626,11 @@ void AssistantController::startWakeMonitor()
     m_wakeMonitorEnabled = true;
     if (m_wakeWordEngine->isActive()) {
         if (m_wakeWordEngine->isPaused() && canStartWakeMonitor()) {
+            if (m_wakeWordEngine->usesExternalAudioInput()) {
+                m_activeInputCaptureId = static_cast<quint64>(QDateTime::currentMSecsSinceEpoch());
+                m_audioCaptureMode = AudioCaptureMode::WakeMonitor;
+                m_voicePipelineRuntime->startWakeCapture(m_activeInputCaptureId, m_settings->selectedAudioInputDeviceId());
+            }
             m_wakeWordEngine->resume();
         }
         return;
@@ -629,12 +649,23 @@ void AssistantController::startWakeMonitor()
         if (m_loggingService) {
             m_loggingService->warn(QStringLiteral("Wake monitor could not start."));
         }
+        return;
+    }
+
+    if (m_wakeWordEngine->usesExternalAudioInput()) {
+        m_activeInputCaptureId = static_cast<quint64>(QDateTime::currentMSecsSinceEpoch());
+        m_audioCaptureMode = AudioCaptureMode::WakeMonitor;
+        m_voicePipelineRuntime->startWakeCapture(m_activeInputCaptureId, m_settings->selectedAudioInputDeviceId());
     }
 }
 
 void AssistantController::stopWakeMonitor()
 {
     m_wakeMonitorEnabled = false;
+    if (m_audioCaptureMode == AudioCaptureMode::WakeMonitor) {
+        m_voicePipelineRuntime->stopWakeCapture();
+        m_audioCaptureMode = AudioCaptureMode::None;
+    }
     if (m_wakeWordEngine->isActive()) {
         m_wakeWordEngine->stop();
     }
@@ -650,25 +681,10 @@ void AssistantController::stopListening()
         return;
     }
     invalidateWakeMonitorResume();
-    const QByteArray pcm = m_audioInputService->recordedPcm();
-    const AudioCaptureMode completedMode = m_audioCaptureMode;
-    m_lastCompletedCaptureMode = completedMode;
-    m_audioInputService->stop();
-    m_audioCaptureMode = AudioCaptureMode::None;
     if (m_loggingService) {
-        const QString mode = completedMode == AudioCaptureMode::Direct
-                ? QStringLiteral("direct")
-                : QStringLiteral("none");
-        m_loggingService->info(QStringLiteral("Audio capture stopped. mode=%1 bytes=%2").arg(mode).arg(pcm.size()));
+        m_loggingService->info(QStringLiteral("Audio capture stop requested. mode=direct"));
     }
-    emit processingRequested();
-    if (pcm.isEmpty()) {
-        setStatus(QStringLiteral("No audio captured"));
-        resumeWakeMonitor(shortWakeResumeDelayMs());
-        emit idleRequested();
-        return;
-    }
-    m_activeSttRequestId = m_whisperSttEngine->transcribePcm(pcm, buildSttPrompt(), true);
+    m_voicePipelineRuntime->stopInputCapture(true);
 }
 
 void AssistantController::cancelActiveRequest()
@@ -874,10 +890,11 @@ void AssistantController::invalidateActiveTranscription()
 void AssistantController::clearActiveSpeechCapture()
 {
     invalidateActiveTranscription();
-    if (m_audioInputService->isActive()) {
-        m_audioInputService->stop();
+    if (m_audioCaptureMode == AudioCaptureMode::WakeMonitor) {
+        m_voicePipelineRuntime->stopWakeCapture();
+    } else if (m_audioCaptureMode == AudioCaptureMode::Direct) {
+        m_voicePipelineRuntime->clearInputCapture();
     }
-    m_audioInputService->clearRecordedAudio();
     m_audioCaptureMode = AudioCaptureMode::None;
     m_lastCompletedCaptureMode = AudioCaptureMode::None;
 }
@@ -908,6 +925,12 @@ void AssistantController::pauseWakeMonitor()
         return;
     }
 
+    if (m_wakeWordEngine->usesExternalAudioInput()) {
+        m_voicePipelineRuntime->stopWakeCapture();
+        if (m_audioCaptureMode == AudioCaptureMode::WakeMonitor) {
+            m_audioCaptureMode = AudioCaptureMode::None;
+        }
+    }
     m_wakeWordEngine->pause();
 }
 
@@ -930,6 +953,11 @@ void AssistantController::resumeWakeMonitor(int delayMs)
         if (m_wakeWordEngine->isActive()) {
             if (m_wakeWordEngine->isPaused()) {
                 m_wakeWordEngine->resume();
+                if (m_wakeWordEngine->usesExternalAudioInput()) {
+                    m_activeInputCaptureId = static_cast<quint64>(QDateTime::currentMSecsSinceEpoch());
+                    m_audioCaptureMode = AudioCaptureMode::WakeMonitor;
+                    m_voicePipelineRuntime->startWakeCapture(m_activeInputCaptureId, m_settings->selectedAudioInputDeviceId());
+                }
             }
         } else {
             startWakeMonitor();
@@ -1031,7 +1059,7 @@ bool AssistantController::canStartWakeMonitor() const
     return m_wakeMonitorEnabled
         && m_currentState != AssistantState::Listening
         && !isMicrophoneBlocked()
-        && !m_audioInputService->isActive()
+        && m_audioCaptureMode == AudioCaptureMode::None
         && !m_ttsEngine->isSpeaking()
         && !resolveWakeEngineRuntimePath().isEmpty()
         && !resolveWakeEngineModelPath().isEmpty();
@@ -1080,35 +1108,29 @@ bool AssistantController::startAudioCapture(AudioCaptureMode mode, bool announce
     if (isMicrophoneBlocked() || m_ttsEngine->isSpeaking()) {
         return false;
     }
-    if (m_audioInputService->isActive()) {
+    if (m_audioCaptureMode != AudioCaptureMode::None || mode != AudioCaptureMode::Direct) {
         return false;
     }
 
-    if (m_audioInputService->start(m_settings->micSensitivity(), m_settings->selectedAudioInputDeviceId())) {
-        m_audioCaptureMode = mode;
-        if (m_loggingService) {
-            const QString modeText = QStringLiteral("direct");
-            m_loggingService->info(QStringLiteral("Audio capture started. mode=%1 device=\"%2\" sensitivity=%3")
-                .arg(modeText, m_settings->selectedAudioInputDeviceId())
-                .arg(m_settings->micSensitivity(), 0, 'f', 3));
-        }
-        if (announceListening) {
-            setDuplexState(DuplexState::Listening);
-            setStatus(QStringLiteral("Listening"));
-            emit listeningRequested();
-        } else {
-            setDuplexState(DuplexState::Open);
-        }
-        return true;
-    }
-
-    if (announceListening) {
-        setStatus(QStringLiteral("No microphone available"));
-    }
+    m_activeInputCaptureId = static_cast<quint64>(QDateTime::currentMSecsSinceEpoch());
+    m_audioCaptureMode = mode;
+    m_voicePipelineRuntime->startInputCapture(
+        m_activeInputCaptureId,
+        m_settings->micSensitivity(),
+        m_settings->selectedAudioInputDeviceId());
     if (m_loggingService) {
-        m_loggingService->error(QStringLiteral("Failed to start audio capture."));
+        m_loggingService->info(QStringLiteral("Audio capture started. mode=direct device=\"%1\" sensitivity=%2")
+            .arg(m_settings->selectedAudioInputDeviceId())
+            .arg(m_settings->micSensitivity(), 0, 'f', 3));
     }
-    return false;
+    if (announceListening) {
+        setDuplexState(DuplexState::Listening);
+        setStatus(QStringLiteral("Listening"));
+        emit listeningRequested();
+    } else {
+        setDuplexState(DuplexState::Open);
+    }
+    return true;
 }
 
 void AssistantController::updateUserProfileFromInput(const QString &input)

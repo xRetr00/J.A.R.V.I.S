@@ -10,11 +10,16 @@
 
 extern "C" {
 #include <fvad.h>
+#include <rnnoise.h>
+#include <speex/speex_echo.h>
+#include <speex/speex_preprocess.h>
+#include <speex/speex_resampler.h>
 }
 
 namespace {
-constexpr int kSileroWindowSamples = 320;
-constexpr float kMinAecMix = 0.08f;
+constexpr int kFvadWindowSamples = 320;
+constexpr int kEchoTailMs = 180;
+constexpr int kResamplerQuality = 4;
 
 QString resolveSileroModelPath()
 {
@@ -42,13 +47,25 @@ AudioProcessingChain::~AudioProcessingChain()
 {
     if (m_vad != nullptr) {
         fvad_free(m_vad);
-        m_vad = nullptr;
+    }
+    if (m_echoState != nullptr) {
+        speex_echo_state_destroy(m_echoState);
+    }
+    if (m_preprocessState != nullptr) {
+        speex_preprocess_state_destroy(m_preprocessState);
+    }
+    if (m_farEndResampler != nullptr) {
+        speex_resampler_destroy(m_farEndResampler);
+    }
+    if (m_rnnoise != nullptr) {
+        rnnoise_destroy(m_rnnoise);
     }
 }
 
 void AudioProcessingChain::initialize(const AudioProcessingConfig &config)
 {
     m_config = config;
+
     if (m_vad != nullptr) {
         fvad_free(m_vad);
         m_vad = nullptr;
@@ -56,11 +73,40 @@ void AudioProcessingChain::initialize(const AudioProcessingConfig &config)
     m_vad = fvad_new();
     if (m_vad != nullptr) {
         fvad_set_mode(m_vad, 2);
-        fvad_set_sample_rate(m_vad, 16000);
+        fvad_set_sample_rate(m_vad, kProcessSampleRate);
     }
+
+    if (m_echoState != nullptr) {
+        speex_echo_state_destroy(m_echoState);
+        m_echoState = nullptr;
+    }
+    if (m_preprocessState != nullptr) {
+        speex_preprocess_state_destroy(m_preprocessState);
+        m_preprocessState = nullptr;
+    }
+    if (m_farEndResampler != nullptr) {
+        speex_resampler_destroy(m_farEndResampler);
+        m_farEndResampler = nullptr;
+    }
+    if (m_rnnoise != nullptr) {
+        rnnoise_destroy(m_rnnoise);
+        m_rnnoise = nullptr;
+    }
+
+    m_echoState = speex_echo_state_init(
+        kProcessFrameSamples,
+        (kProcessSampleRate * kEchoTailMs) / 1000);
+    if (m_echoState != nullptr) {
+        int sampleRate = kProcessSampleRate;
+        speex_echo_ctl(m_echoState, SPEEX_ECHO_SET_SAMPLING_RATE, &sampleRate);
+    }
+
+    m_preprocessState = speex_preprocess_state_init(kProcessFrameSamples, kProcessSampleRate);
+    configureSpeexPreprocessor();
+
+    m_rnnoise = rnnoise_create(nullptr);
     initializeSileroVad();
-    m_farEndSamples.fill(0.0f);
-    m_farEndSampleCount = 0;
+    resetProcessingState();
 }
 
 AudioFrame AudioProcessingChain::process(const AudioFrame &in)
@@ -74,90 +120,212 @@ AudioFrame AudioProcessingChain::process(const AudioFrame &in)
         return out;
     }
 
-    if (m_config.aecEnabled && m_farEndSampleCount > 0) {
-        const int echoSamples = std::min(sampleCount, m_farEndSampleCount);
-        for (int i = 0; i < echoSamples; ++i) {
-            out.samples[static_cast<std::size_t>(i)] -= m_farEndSamples[static_cast<std::size_t>(i)] * kMinAecMix;
+    if (sampleCount != kProcessFrameSamples || in.sampleRate != kProcessSampleRate) {
+        out.speechDetected = detectVoiceActivity(out, false);
+        return out;
+    }
+
+    for (int i = 0; i < kProcessFrameSamples; ++i) {
+        m_inputPcm[static_cast<size_t>(i)] = toInt16Sample(in.samples[static_cast<size_t>(i)]);
+        m_aecPcm[static_cast<size_t>(i)] = m_inputPcm[static_cast<size_t>(i)];
+    }
+
+    if (m_config.aecEnabled && m_echoState != nullptr) {
+        speex_echo_capture(m_echoState, m_inputPcm.data(), m_aecPcm.data());
+    }
+
+    std::copy(m_aecPcm.begin(), m_aecPcm.end(), m_preprocessPcm.begin());
+    bool speexVadDetected = false;
+    if (m_preprocessState != nullptr) {
+        speexVadDetected = speex_preprocess_run(m_preprocessState, m_preprocessPcm.data()) == 1;
+    }
+
+    if (m_config.rnnoiseEnabled && m_rnnoise != nullptr) {
+        for (int i = 0; i < kProcessFrameSamples; ++i) {
+            m_rnnoiseFrame[static_cast<size_t>(i)] = static_cast<float>(m_preprocessPcm[static_cast<size_t>(i)]);
+        }
+        rnnoise_process_frame(m_rnnoise, m_rnnoiseOutput.data(), m_rnnoiseFrame.data());
+        for (int i = 0; i < kProcessFrameSamples; ++i) {
+            out.samples[static_cast<size_t>(i)] = std::clamp(
+                m_rnnoiseOutput[static_cast<size_t>(i)] / 32768.0f,
+                -1.0f,
+                1.0f);
+        }
+    } else {
+        for (int i = 0; i < kProcessFrameSamples; ++i) {
+            out.samples[static_cast<size_t>(i)] = static_cast<float>(m_preprocessPcm[static_cast<size_t>(i)]) / 32768.0f;
         }
     }
 
-    if (m_config.noiseSuppressionEnabled) {
-        const float noiseFloor = 0.004f + ((1.0f - m_config.vadSensitivity) * 0.018f);
-        for (int i = 0; i < sampleCount; ++i) {
-            if (std::abs(out.samples[static_cast<std::size_t>(i)]) < noiseFloor) {
-                out.samples[static_cast<std::size_t>(i)] = 0.0f;
-            }
-        }
-    }
-
-    if (m_config.rnnoiseEnabled) {
-        float previous = 0.0f;
-        for (int i = 0; i < sampleCount; ++i) {
-            const float current = out.samples[static_cast<std::size_t>(i)];
-            out.samples[static_cast<std::size_t>(i)] = (current * 0.82f) + (previous * 0.18f);
-            previous = current;
-        }
-    }
-
-    if (m_config.agcEnabled) {
-        const float rms = computeRms(out);
-        if (rms > 0.0001f) {
-            const float target = 0.12f;
-            const float gain = std::clamp(target / rms, 0.7f, 3.2f);
-            for (int i = 0; i < sampleCount; ++i) {
-                out.samples[static_cast<std::size_t>(i)] = std::clamp(
-                    out.samples[static_cast<std::size_t>(i)] * gain,
-                    -1.0f,
-                    1.0f);
-            }
-        }
-    }
-
-    out.speechDetected = detectVoiceActivity(out);
+    out.sampleCount = kProcessFrameSamples;
+    out.sampleRate = kProcessSampleRate;
+    out.channels = 1;
+    out.speechDetected = detectVoiceActivity(out, speexVadDetected);
     return out;
 }
 
 void AudioProcessingChain::setFarEnd(const AudioFrame &ttsFrame)
 {
-    m_farEndSampleCount = std::clamp(ttsFrame.sampleCount, 0, AudioFrame::kMaxSamples);
-    for (int i = 0; i < m_farEndSampleCount; ++i) {
-        m_farEndSamples[static_cast<std::size_t>(i)] = ttsFrame.samples[static_cast<std::size_t>(i)];
+    if (!m_config.aecEnabled || m_echoState == nullptr || ttsFrame.sampleCount <= 0) {
+        return;
     }
-    for (int i = m_farEndSampleCount; i < AudioFrame::kMaxSamples; ++i) {
-        m_farEndSamples[static_cast<std::size_t>(i)] = 0.0f;
+
+    const float *inputSamples = ttsFrame.samples.data();
+    int inputSampleCount = std::clamp(ttsFrame.sampleCount, 0, AudioFrame::kMaxSamples);
+    int inputRate = ttsFrame.sampleRate > 0 ? ttsFrame.sampleRate : kProcessSampleRate;
+
+    if (inputRate != kProcessSampleRate) {
+        if (!ensureFarEndResampler(inputRate)) {
+            return;
+        }
+
+        spx_uint32_t inLen = static_cast<spx_uint32_t>(inputSampleCount);
+        spx_uint32_t outLen = static_cast<spx_uint32_t>(m_farEndResampled.size());
+        if (speex_resampler_process_float(
+                m_farEndResampler,
+                0,
+                inputSamples,
+                &inLen,
+                m_farEndResampled.data(),
+                &outLen) != RESAMPLER_ERR_SUCCESS) {
+            return;
+        }
+
+        inputSamples = m_farEndResampled.data();
+        inputSampleCount = static_cast<int>(outLen);
+    }
+
+    for (int i = 0; i < inputSampleCount; ++i) {
+        m_farEndPlaybackPcm[static_cast<size_t>(m_farEndPlaybackSampleCount++)] = toInt16Sample(inputSamples[static_cast<size_t>(i)]);
+        if (m_farEndPlaybackSampleCount == kProcessFrameSamples) {
+            speex_echo_playback(m_echoState, m_farEndPlaybackPcm.data());
+            m_farEndPlaybackSampleCount = 0;
+        }
     }
 }
 
-bool AudioProcessingChain::detectVoiceActivity(const AudioFrame &frame)
+void AudioProcessingChain::resetProcessingState()
 {
+    m_farEndPlaybackSampleCount = 0;
+    m_inputPcm.fill(0);
+    m_aecPcm.fill(0);
+    m_preprocessPcm.fill(0);
+    m_farEndPlaybackPcm.fill(0);
+    m_rnnoiseFrame.fill(0.0f);
+    m_rnnoiseOutput.fill(0.0f);
+    m_farEndResampled.fill(0.0f);
+    m_farEndResamplerInputRate = 0;
+
+    if (m_echoState != nullptr) {
+        speex_echo_state_reset(m_echoState);
+    }
+    if (m_preprocessState != nullptr) {
+        configureSpeexPreprocessor();
+    }
+}
+
+void AudioProcessingChain::configureSpeexPreprocessor()
+{
+    if (m_preprocessState == nullptr) {
+        return;
+    }
+
+    const int denoise = m_config.noiseSuppressionEnabled ? 1 : 0;
+    const int agc = m_config.agcEnabled ? 1 : 0;
+    const int vad = 1;
+    const int noiseSuppressDb = m_config.noiseSuppressionEnabled ? -28 : 0;
+    const int echoSuppressDb = m_config.aecEnabled ? -40 : 0;
+    const int echoSuppressActiveDb = m_config.aecEnabled ? -18 : 0;
+    const int probabilityStart = std::clamp(
+        static_cast<int>(65.0f - (m_config.vadSensitivity * 30.0f)),
+        28,
+        80);
+    const int probabilityContinue = std::clamp(probabilityStart - 12, 18, 72);
+    const int agcLevel = 16000;
+    const int agcIncrement = 12;
+    const int agcDecrement = -18;
+    const int agcMaxGain = 18;
+
+    speex_preprocess_ctl(m_preprocessState, SPEEX_PREPROCESS_SET_DENOISE, const_cast<int *>(&denoise));
+    speex_preprocess_ctl(m_preprocessState, SPEEX_PREPROCESS_SET_AGC, const_cast<int *>(&agc));
+    speex_preprocess_ctl(m_preprocessState, SPEEX_PREPROCESS_SET_VAD, const_cast<int *>(&vad));
+    speex_preprocess_ctl(m_preprocessState, SPEEX_PREPROCESS_SET_NOISE_SUPPRESS, const_cast<int *>(&noiseSuppressDb));
+    speex_preprocess_ctl(m_preprocessState, SPEEX_PREPROCESS_SET_ECHO_SUPPRESS, const_cast<int *>(&echoSuppressDb));
+    speex_preprocess_ctl(m_preprocessState, SPEEX_PREPROCESS_SET_ECHO_SUPPRESS_ACTIVE, const_cast<int *>(&echoSuppressActiveDb));
+    speex_preprocess_ctl(m_preprocessState, SPEEX_PREPROCESS_SET_PROB_START, const_cast<int *>(&probabilityStart));
+    speex_preprocess_ctl(m_preprocessState, SPEEX_PREPROCESS_SET_PROB_CONTINUE, const_cast<int *>(&probabilityContinue));
+    speex_preprocess_ctl(m_preprocessState, SPEEX_PREPROCESS_SET_AGC_TARGET, const_cast<int *>(&agcLevel));
+    speex_preprocess_ctl(m_preprocessState, SPEEX_PREPROCESS_SET_AGC_INCREMENT, const_cast<int *>(&agcIncrement));
+    speex_preprocess_ctl(m_preprocessState, SPEEX_PREPROCESS_SET_AGC_DECREMENT, const_cast<int *>(&agcDecrement));
+    speex_preprocess_ctl(m_preprocessState, SPEEX_PREPROCESS_SET_AGC_MAX_GAIN, const_cast<int *>(&agcMaxGain));
+
+    SpeexEchoState *echoState = m_config.aecEnabled ? m_echoState : nullptr;
+    speex_preprocess_ctl(m_preprocessState, SPEEX_PREPROCESS_SET_ECHO_STATE, &echoState);
+}
+
+bool AudioProcessingChain::ensureFarEndResampler(int inputRate)
+{
+    if (inputRate == kProcessSampleRate) {
+        return true;
+    }
+
+    if (m_farEndResampler != nullptr && m_farEndResamplerInputRate == inputRate) {
+        return true;
+    }
+
+    if (m_farEndResampler != nullptr) {
+        speex_resampler_destroy(m_farEndResampler);
+        m_farEndResampler = nullptr;
+    }
+
+    int error = RESAMPLER_ERR_SUCCESS;
+    m_farEndResampler = speex_resampler_init(
+        1,
+        static_cast<spx_uint32_t>(inputRate),
+        static_cast<spx_uint32_t>(kProcessSampleRate),
+        kResamplerQuality,
+        &error);
+    if (error != RESAMPLER_ERR_SUCCESS || m_farEndResampler == nullptr) {
+        m_farEndResamplerInputRate = 0;
+        return false;
+    }
+
+    m_farEndResamplerInputRate = inputRate;
+    speex_resampler_skip_zeros(m_farEndResampler);
+    return true;
+}
+
+bool AudioProcessingChain::detectVoiceActivity(const AudioFrame &frame, bool speexVadDetected)
+{
+    if (speexVadDetected) {
+        return true;
+    }
+
     if (m_sileroVad && m_sileroVad->isReady()) {
         const float probability = m_sileroVad->inferProbability(
             frame.samples.data(),
             frame.sampleCount,
             frame.sampleRate);
-        const float threshold = std::clamp(0.35f + ((1.0f - m_config.vadSensitivity) * 0.35f), 0.30f, 0.75f);
+        const float threshold = std::clamp(0.32f + ((1.0f - m_config.vadSensitivity) * 0.30f), 0.28f, 0.72f);
         if (probability >= threshold) {
             return true;
         }
     }
 
-    if (frame.sampleCount < kSileroWindowSamples || m_vad == nullptr) {
-        return computeRms(frame) >= std::max(0.012f, m_config.vadSensitivity * 0.05f);
+    if (frame.sampleCount < kFvadWindowSamples || m_vad == nullptr) {
+        return computeRms(frame) >= std::max(0.012f, m_config.vadSensitivity * 0.045f);
     }
 
-    std::array<int16_t, kSileroWindowSamples> pcm{};
-    for (int i = 0; i < kSileroWindowSamples; ++i) {
-        const float value = std::clamp(frame.samples[static_cast<std::size_t>(i)], -1.0f, 1.0f);
-        pcm[static_cast<std::size_t>(i)] = static_cast<int16_t>(value * 32767.0f);
+    std::array<int16_t, kFvadWindowSamples> pcm{};
+    for (int i = 0; i < kFvadWindowSamples; ++i) {
+        pcm[static_cast<size_t>(i)] = toInt16Sample(frame.samples[static_cast<size_t>(i)]);
     }
 
-    const int vad = fvad_process(m_vad, pcm.data(), kSileroWindowSamples);
-    if (vad == 1) {
+    if (fvad_process(m_vad, pcm.data(), kFvadWindowSamples) == 1) {
         return true;
     }
 
-    const float rms = computeRms(frame);
-    return rms >= std::max(0.012f, m_config.vadSensitivity * 0.05f);
+    return computeRms(frame) >= std::max(0.012f, m_config.vadSensitivity * 0.045f);
 }
 
 float AudioProcessingChain::computeRms(const AudioFrame &frame) const
@@ -192,4 +360,9 @@ bool AudioProcessingChain::initializeSileroVad()
     }
 
     return true;
+}
+
+qint16 AudioProcessingChain::toInt16Sample(float value) const
+{
+    return static_cast<qint16>(std::clamp(value * 32768.0f, -32768.0f, 32767.0f));
 }
