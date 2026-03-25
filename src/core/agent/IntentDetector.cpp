@@ -181,8 +181,10 @@ IntentResult IntentDetector::detect(const QString &input, const QString &workspa
                 .tasks = {buildTask(QStringLiteral("memory_write"),
                                     QJsonObject{
                                         {QStringLiteral("kind"), QStringLiteral("preference")},
-                                        {QStringLiteral("title"), QStringLiteral("User memory")},
-                                        {QStringLiteral("content"), memoryText}
+                                        {QStringLiteral("title"), QStringLiteral("general_preference")},
+                                        {QStringLiteral("key"), QStringLiteral("general_preference")},
+                                        {QStringLiteral("content"), memoryText},
+                                        {QStringLiteral("value"), memoryText}
                                     },
                                     70)}
             };

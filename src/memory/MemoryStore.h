@@ -3,8 +3,11 @@
 #include <QObject>
 #include <QString>
 #include <QStringList>
+#include <memory>
 
 #include "core/AssistantTypes.h"
+
+class MemoryManager;
 
 class MemoryStore : public QObject
 {
@@ -25,9 +28,7 @@ public:
 
 private:
     QString transcriptPath() const;
-    QString memoryPath() const;
     QList<MemoryRecord> loadMemory() const;
-    QList<MemoryEntry> loadEntries() const;
-    bool saveEntries(const QList<MemoryEntry> &entries) const;
     MemoryEntry normalizeEntry(const MemoryEntry &entry) const;
+    std::unique_ptr<MemoryManager> m_memoryManager;
 };

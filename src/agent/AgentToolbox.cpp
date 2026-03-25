@@ -270,6 +270,8 @@ AgentToolResult AgentToolbox::executeMemoryWrite(const AgentToolCall &call, cons
     entry.kind = extractString(args, "kind");
     entry.title = extractString(args, "title");
     entry.content = extractString(args, "content");
+    entry.key = extractString(args, "key");
+    entry.value = extractString(args, "value");
     entry.secret = args.value("secret", false);
     entry.source = QStringLiteral("agent_tool");
     const bool ok = m_memoryStore->upsertEntry(entry);

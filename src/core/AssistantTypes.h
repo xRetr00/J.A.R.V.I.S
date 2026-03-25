@@ -6,6 +6,7 @@
 #include <vector>
 
 #include <QMetaType>
+#include <QDateTime>
 #include <QJsonObject>
 #include <QStringList>
 #include <QString>
@@ -45,6 +46,12 @@ enum class TaskState {
     Finished,
     Canceled,
     Expired
+};
+
+enum class MemoryType {
+    Preference,
+    Fact,
+    Context
 };
 
 enum class LocalIntent {
@@ -166,6 +173,10 @@ struct AgentTraceEntry {
 };
 
 struct MemoryEntry {
+    MemoryType type = MemoryType::Fact;
+    QString key;
+    QString value;
+    QDateTime createdAt;
     QString id;
     QString kind;
     QString title;
@@ -263,6 +274,7 @@ Q_DECLARE_METATYPE(AgentToolSpec)
 Q_DECLARE_METATYPE(QList<AgentToolSpec>)
 Q_DECLARE_METATYPE(IntentType)
 Q_DECLARE_METATYPE(TaskState)
+Q_DECLARE_METATYPE(MemoryType)
 Q_DECLARE_METATYPE(AgentTask)
 Q_DECLARE_METATYPE(QList<AgentTask>)
 Q_DECLARE_METATYPE(BackgroundTaskResult)

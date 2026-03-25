@@ -138,6 +138,7 @@ set(JARVIS_SOURCES
     src/audio/AudioProcessingChain.cpp
     src/audio/SileroVadSession.cpp
     src/core/agent/IntentDetector.cpp
+    src/core/agent/IntentEngine.cpp
     src/core/AssistantController.cpp
     src/core/IntentRouter.cpp
     src/core/LocalResponseEngine.cpp
@@ -147,6 +148,7 @@ set(JARVIS_SOURCES
     src/devices/MockDevices.cpp
     src/gui/BackendFacade.cpp
     src/logging/LoggingService.cpp
+    src/memory/MemoryManager.cpp
     src/memory/MemoryStore.cpp
     src/overlay/OverlayController.cpp
     src/settings/AppSettings.cpp
@@ -181,6 +183,7 @@ set(JARVIS_HEADERS
     src/audio/AudioProcessingTypes.h
     src/audio/SileroVadSession.h
     src/core/agent/IntentDetector.h
+    src/core/agent/IntentEngine.h
     src/core/AssistantController.h
     src/core/AssistantTypes.h
     src/core/IntentRouter.h
@@ -192,6 +195,7 @@ set(JARVIS_HEADERS
     src/devices/MockDevices.h
     src/gui/BackendFacade.h
     src/logging/LoggingService.h
+    src/memory/MemoryManager.h
     src/memory/MemoryStore.h
     src/overlay/OverlayController.h
     src/settings/AppSettings.h

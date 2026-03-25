@@ -26,6 +26,7 @@
 #include "ai/StreamAssembler.h"
 #include "agent/AgentToolbox.h"
 #include "core/agent/IntentDetector.h"
+#include "core/agent/IntentEngine.h"
 #include "core/IntentRouter.h"
 #include "core/LocalResponseEngine.h"
 #include "core/tasks/TaskDispatcher.h"
@@ -358,6 +359,7 @@ AssistantController::AssistantController(
     m_skillStore = new SkillStore(this);
     m_agentToolbox = new AgentToolbox(m_settings, m_memoryStore, m_skillStore, m_loggingService, this);
     m_deviceManager = new DeviceManager(this);
+    m_intentEngine = new IntentEngine(m_loggingService, this);
     m_backgroundIntentDetector = new IntentDetector(this);
     m_intentRouter = new IntentRouter(this);
     m_localResponseEngine = new LocalResponseEngine(this);
@@ -828,8 +830,22 @@ void AssistantController::submitText(const QString &text)
         return;
     }
 
+    const IntentResult mlIntent = m_intentEngine->classify(routedInput);
     const IntentResult detectedIntent = m_backgroundIntentDetector->detect(routedInput, QDir::currentPath());
-    if (detectedIntent.confidence > 0.8f && !detectedIntent.tasks.isEmpty()) {
+    const IntentResult effectiveIntent = m_intentEngine->isReady() ? mlIntent : detectedIntent;
+
+    if (m_loggingService) {
+        m_loggingService->info(QStringLiteral("Intent routing. mlType=%1 mlConfidence=%2 extractedType=%3 extractedConfidence=%4 onnxReady=%5")
+            .arg(static_cast<int>(mlIntent.type))
+            .arg(mlIntent.confidence, 0, 'f', 2)
+            .arg(static_cast<int>(detectedIntent.type))
+            .arg(detectedIntent.confidence, 0, 'f', 2)
+            .arg(m_intentEngine->isReady() ? QStringLiteral("true") : QStringLiteral("false")));
+    }
+
+    if (effectiveIntent.confidence > 0.8f
+        && effectiveIntent.type == detectedIntent.type
+        && !detectedIntent.tasks.isEmpty()) {
         dispatchBackgroundTasks(detectedIntent.tasks);
         deliverLocalResponse(
             detectedIntent.spokenMessage,
@@ -859,9 +875,9 @@ void AssistantController::submitText(const QString &text)
 
     if (intent == LocalIntent::Command || m_reasoningRouter->isLikelyCommand(routedInput)) {
         startCommandRequest(routedInput);
-    } else if (detectedIntent.type != IntentType::GENERAL_CHAT
-               && detectedIntent.confidence >= 0.4f
-               && detectedIntent.confidence <= 0.8f
+    } else if (effectiveIntent.type != IntentType::GENERAL_CHAT
+               && effectiveIntent.confidence > 0.4f
+               && effectiveIntent.confidence <= 0.8f
                && m_settings->agentEnabled()) {
         startAgentConversationRequest(routedInput);
     } else {

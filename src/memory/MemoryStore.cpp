@@ -1,19 +1,20 @@
 #include "memory/MemoryStore.h"
 
-#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QRegularExpression>
 #include <QStandardPaths>
 
-#include <algorithm>
+#include <memory>
 
 #include <nlohmann/json.hpp>
+
+#include "memory/MemoryManager.h"
 
 namespace {
 QString appDataRoot()
 {
-    const auto root = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    const QString root = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     QDir().mkpath(root);
     return root;
 }
@@ -36,10 +37,49 @@ QString slugify(QString value)
     }
     return value.trimmed().remove(QRegularExpression(QStringLiteral("^-+|-+$")));
 }
+
+MemoryType inferMemoryType(const QString &content)
+{
+    const QString lowered = content.toLower();
+    if (lowered.contains(QStringLiteral("prefer"))
+        || lowered.contains(QStringLiteral("i like"))
+        || lowered.contains(QStringLiteral("short answers"))
+        || lowered.contains(QStringLiteral("long answers"))) {
+        return MemoryType::Preference;
+    }
+
+    return MemoryType::Fact;
+}
+
+QString inferMemoryKey(const QString &content, MemoryType type)
+{
+    const QString lowered = content.toLower();
+    if (type == MemoryType::Preference) {
+        if (lowered.contains(QStringLiteral("short answers"))) {
+            return QStringLiteral("response_style");
+        }
+        if (lowered.contains(QStringLiteral("long answers"))) {
+            return QStringLiteral("response_style");
+        }
+        if (lowered.contains(QStringLiteral("voice"))) {
+            return QStringLiteral("voice_preference");
+        }
+        return QStringLiteral("general_preference");
+    }
+
+    if (lowered.startsWith(QStringLiteral("my name is "))) {
+        return QStringLiteral("name");
+    }
+    if (lowered.contains(QStringLiteral("project"))) {
+        return QStringLiteral("project_fact");
+    }
+    return QStringLiteral("general_fact");
+}
 }
 
 MemoryStore::MemoryStore(QObject *parent)
     : QObject(parent)
+    , m_memoryManager(std::make_unique<MemoryManager>())
 {
 }
 
@@ -66,29 +106,31 @@ void MemoryStore::appendConversation(const QString &role, const QString &content
 
 void MemoryStore::extractUserFacts(const QString &content)
 {
-    const QString lowered = content.trimmed().toLower();
-
-    auto saveStructured = [this](const QString &kind, const QString &title, const QString &value, const QStringList &tags = {}) {
-        MemoryEntry entry;
-        entry.id = slugify(kind + QStringLiteral("-") + title);
-        entry.kind = kind;
-        entry.title = title;
-        entry.content = value.trimmed();
-        entry.tags = tags;
-        entry.confidence = 0.92f;
-        entry.source = QStringLiteral("conversation");
-        upsertEntry(entry);
-    };
-
-    if (lowered.startsWith(QStringLiteral("my name is "))) {
-        saveStructured(QStringLiteral("profile"), QStringLiteral("name"), content.mid(11), {QStringLiteral("identity")});
-    } else if (lowered.startsWith(QStringLiteral("i prefer "))) {
-        saveStructured(QStringLiteral("preference"), QStringLiteral("general"), content.mid(9), {QStringLiteral("preference")});
-    } else if (lowered.startsWith(QStringLiteral("remember that "))) {
-        saveStructured(QStringLiteral("project_fact"), QStringLiteral("remembered-fact"), content.mid(12), {QStringLiteral("remembered")});
-    } else if (lowered.startsWith(QStringLiteral("my project is "))) {
-        saveStructured(QStringLiteral("project_fact"), QStringLiteral("project"), content.mid(14), {QStringLiteral("project")});
+    QString normalizedText = content.trimmed();
+    if (normalizedText.isEmpty()) {
+        return;
     }
+
+    normalizedText.remove(QRegularExpression(
+        QStringLiteral("^(remember that|remember|save this preference|my name is|i prefer)\\s+"),
+        QRegularExpression::CaseInsensitiveOption));
+    normalizedText = normalizedText.trimmed();
+    if (normalizedText.isEmpty()) {
+        return;
+    }
+
+    MemoryEntry entry;
+    entry.type = inferMemoryType(content);
+    entry.kind = entry.type == MemoryType::Preference ? QStringLiteral("preference") : QStringLiteral("fact");
+    entry.key = inferMemoryKey(content, entry.type);
+    entry.title = entry.key;
+    entry.value = normalizedText;
+    entry.content = normalizedText;
+    entry.id = slugify(entry.kind + QStringLiteral("-") + entry.key);
+    entry.confidence = 0.92f;
+    entry.source = QStringLiteral("conversation");
+    entry.createdAt = QDateTime::currentDateTimeUtc();
+    upsertEntry(entry);
 }
 
 QList<AiMessage> MemoryStore::recentMessages(int maxCount) const
@@ -122,11 +164,11 @@ QList<AiMessage> MemoryStore::recentMessages(int maxCount) const
 QList<MemoryRecord> MemoryStore::relevantMemory(const QString &query) const
 {
     QList<MemoryRecord> relevant;
-    for (const auto &entry : searchEntries(query, 12)) {
+    for (const MemoryEntry &entry : searchEntries(query, 12)) {
         relevant.push_back({
             .type = entry.kind,
-            .key = entry.title,
-            .value = entry.content,
+            .key = entry.key,
+            .value = entry.value,
             .confidence = entry.confidence,
             .source = entry.source,
             .updatedAt = entry.updatedAt
@@ -137,64 +179,27 @@ QList<MemoryRecord> MemoryStore::relevantMemory(const QString &query) const
 
 QList<MemoryEntry> MemoryStore::searchEntries(const QString &query, int maxCount) const
 {
-    const QString lowered = query.toLower();
-    QList<MemoryEntry> relevant;
-    for (const auto &entry : loadEntries()) {
-        const QString haystack = QStringList{entry.kind, entry.title, entry.content, entry.tags.join(' ')}.join(' ').toLower();
-        if (lowered.isEmpty() || haystack.contains(lowered)) {
-            relevant.push_back(entry);
-        }
-    }
-
-    if (relevant.size() > maxCount) {
-        relevant = relevant.mid(0, maxCount);
-    }
-    return relevant;
+    return m_memoryManager->search(query, maxCount);
 }
 
 bool MemoryStore::upsertEntry(const MemoryEntry &entry)
 {
-    QList<MemoryEntry> entries = loadEntries();
-    const MemoryEntry normalized = normalizeEntry(entry);
-    for (MemoryEntry &existing : entries) {
-        if ((!normalized.id.isEmpty() && existing.id == normalized.id)
-            || (!normalized.title.isEmpty() && existing.title == normalized.title && existing.kind == normalized.kind)) {
-            existing = normalized;
-            return saveEntries(entries);
-        }
-    }
-
-    entries.push_back(normalized);
-    return saveEntries(entries);
+    return m_memoryManager->write(normalizeEntry(entry));
 }
 
 bool MemoryStore::deleteEntry(const QString &idOrTitle)
 {
-    QList<MemoryEntry> entries = loadEntries();
-    const int previousSize = entries.size();
-    entries.erase(std::remove_if(entries.begin(), entries.end(), [&](const MemoryEntry &entry) {
-        return entry.id == idOrTitle || entry.title == idOrTitle;
-    }), entries.end());
-    if (entries.size() == previousSize) {
-        return false;
-    }
-    return saveEntries(entries);
+    return m_memoryManager->remove(idOrTitle);
 }
 
 QList<MemoryEntry> MemoryStore::allEntries() const
 {
-    return loadEntries();
+    return m_memoryManager->entries();
 }
 
 QString MemoryStore::userName() const
 {
-    for (const auto &entry : loadEntries()) {
-        if (entry.kind == QStringLiteral("profile") && entry.title == QStringLiteral("name")) {
-            return entry.content;
-        }
-    }
-
-    return {};
+    return m_memoryManager->userName();
 }
 
 QString MemoryStore::transcriptPath() const
@@ -202,19 +207,14 @@ QString MemoryStore::transcriptPath() const
     return appDataRoot() + QStringLiteral("/transcript.jsonl");
 }
 
-QString MemoryStore::memoryPath() const
-{
-    return appDataRoot() + QStringLiteral("/memory.json");
-}
-
 QList<MemoryRecord> MemoryStore::loadMemory() const
 {
     QList<MemoryRecord> records;
-    for (const auto &entry : loadEntries()) {
+    for (const MemoryEntry &entry : allEntries()) {
         records.push_back({
             .type = entry.kind,
-            .key = entry.title,
-            .value = entry.content,
+            .key = entry.key,
+            .value = entry.value,
             .confidence = entry.confidence,
             .source = entry.source,
             .updatedAt = entry.updatedAt
@@ -223,95 +223,40 @@ QList<MemoryRecord> MemoryStore::loadMemory() const
     return records;
 }
 
-QList<MemoryEntry> MemoryStore::loadEntries() const
-{
-    QFile file(memoryPath());
-    if (!file.exists() || !file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        return {};
-    }
-
-    const auto parsed = nlohmann::json::parse(file.readAll().constData(), nullptr, false);
-    if (!parsed.is_array()) {
-        return {};
-    }
-
-    QList<MemoryEntry> entries;
-    for (const auto &entry : parsed) {
-        MemoryEntry memoryEntry;
-        if (entry.contains("kind")) {
-            memoryEntry.id = QString::fromStdString(entry.value("id", std::string{}));
-            memoryEntry.kind = QString::fromStdString(entry.value("kind", std::string{}));
-            memoryEntry.title = QString::fromStdString(entry.value("title", std::string{}));
-            memoryEntry.content = QString::fromStdString(entry.value("content", std::string{}));
-            memoryEntry.confidence = entry.value("confidence", 0.0f);
-            memoryEntry.secret = entry.value("secret", false);
-            memoryEntry.source = QString::fromStdString(entry.value("source", std::string{}));
-            memoryEntry.updatedAt = QString::fromStdString(entry.value("updatedAt", std::string{}));
-            if (entry.contains("tags") && entry.at("tags").is_array()) {
-                for (const auto &tag : entry.at("tags")) {
-                    if (tag.is_string()) {
-                        memoryEntry.tags.push_back(QString::fromStdString(tag.get<std::string>()));
-                    }
-                }
-            }
-        } else {
-            memoryEntry.kind = QString::fromStdString(entry.value("type", std::string{}));
-            memoryEntry.title = QString::fromStdString(entry.value("key", std::string{}));
-            memoryEntry.content = QString::fromStdString(entry.value("value", std::string{}));
-            memoryEntry.confidence = entry.value("confidence", 0.0f);
-            memoryEntry.source = QString::fromStdString(entry.value("source", std::string{}));
-            memoryEntry.updatedAt = QString::fromStdString(entry.value("updatedAt", std::string{}));
-        }
-        entries.push_back(normalizeEntry(memoryEntry));
-    }
-
-    return entries;
-}
-
-bool MemoryStore::saveEntries(const QList<MemoryEntry> &entries) const
-{
-    nlohmann::json json = nlohmann::json::array();
-    for (const auto &entry : entries) {
-        json.push_back({
-            {"id", entry.id.toStdString()},
-            {"kind", entry.kind.toStdString()},
-            {"title", entry.title.toStdString()},
-            {"content", entry.content.toStdString()},
-            {"tags", nlohmann::json::array()},
-            {"confidence", entry.confidence},
-            {"secret", entry.secret},
-            {"source", entry.source.toStdString()},
-            {"updatedAt", entry.updatedAt.toStdString()}
-        });
-        auto &last = json.back();
-        for (const QString &tag : entry.tags) {
-            last["tags"].push_back(tag.toStdString());
-        }
-    }
-
-    QFile file(memoryPath());
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
-        return false;
-    }
-
-    file.write(QByteArray::fromStdString(json.dump(2)));
-    return true;
-}
-
 MemoryEntry MemoryStore::normalizeEntry(const MemoryEntry &entry) const
 {
     MemoryEntry normalized = entry;
-    normalized.kind = normalized.kind.trimmed();
-    normalized.title = normalized.title.trimmed();
-    normalized.content = normalized.content.trimmed();
+
+    if (normalized.kind.trimmed().isEmpty()) {
+        normalized.kind = normalized.type == MemoryType::Preference
+            ? QStringLiteral("preference")
+            : (normalized.type == MemoryType::Context ? QStringLiteral("context") : QStringLiteral("fact"));
+    }
+
+    if (normalized.key.trimmed().isEmpty()) {
+        normalized.key = normalized.title.trimmed();
+    }
+    if (normalized.title.trimmed().isEmpty()) {
+        normalized.title = normalized.key.trimmed();
+    }
+    if (normalized.value.trimmed().isEmpty()) {
+        normalized.value = normalized.content.trimmed();
+    }
+    if (normalized.content.trimmed().isEmpty()) {
+        normalized.content = normalized.value.trimmed();
+    }
+    if (!normalized.createdAt.isValid()) {
+        normalized.createdAt = QDateTime::currentDateTimeUtc();
+    }
     if (normalized.id.trimmed().isEmpty()) {
-        normalized.id = slugify(normalized.kind + QStringLiteral("-") + normalized.title);
+        normalized.id = slugify(normalized.kind + QStringLiteral("-") + normalized.key);
     }
     if (normalized.updatedAt.trimmed().isEmpty()) {
-        normalized.updatedAt = nowIso();
+        normalized.updatedAt = normalized.createdAt.toUTC().toString(Qt::ISODate);
     }
     if (normalized.source.trimmed().isEmpty()) {
         normalized.source = QStringLiteral("agent");
     }
+
     return normalized;
 }

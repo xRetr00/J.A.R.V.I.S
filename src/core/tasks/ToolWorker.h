@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <optional>
 
 #include <QElapsedTimer>
@@ -9,6 +10,7 @@
 #include <QStringList>
 
 #include "core/AssistantTypes.h"
+#include "memory/MemoryManager.h"
 
 class LoggingService;
 
@@ -48,10 +50,11 @@ private:
     QJsonObject processDirList(const AgentTask &task);
     QJsonObject processFileRead(const AgentTask &task);
     QJsonObject processFileWrite(const AgentTask &task);
-    QJsonObject processMemoryWrite(const AgentTask &task) const;
+    QJsonObject processMemoryWrite(const AgentTask &task);
 
     QStringList m_allowedRoots;
     LoggingService *m_loggingService = nullptr;
+    std::unique_ptr<MemoryManager> m_memoryManager;
     QHash<QString, QElapsedTimer> m_lastExecution;
     QHash<QString, CachedResult> m_cache;
     QSet<int> m_canceledTaskIds;

@@ -9,6 +9,7 @@
 #include <QTextStream>
 
 #include "logging/LoggingService.h"
+#include "memory/MemoryManager.h"
 
 namespace {
 constexpr qint64 kDirListCooldownMs = 2000;
@@ -34,6 +35,7 @@ ToolWorker::ToolWorker(const QStringList &allowedRoots, LoggingService *loggingS
     : QObject(parent)
     , m_allowedRoots(allowedRoots)
     , m_loggingService(loggingService)
+    , m_memoryManager(std::make_unique<MemoryManager>())
 {
 }
 
@@ -328,18 +330,36 @@ QJsonObject ToolWorker::processFileWrite(const AgentTask &task)
                        });
 }
 
-QJsonObject ToolWorker::processMemoryWrite(const AgentTask &task) const
+QJsonObject ToolWorker::processMemoryWrite(const AgentTask &task)
 {
-    const QString title = task.args.value(QStringLiteral("title")).toString();
-    const QString content = task.args.value(QStringLiteral("content")).toString();
+    MemoryEntry entry;
+    entry.kind = task.args.value(QStringLiteral("kind")).toString(QStringLiteral("fact"));
+    entry.title = task.args.value(QStringLiteral("title")).toString(task.args.value(QStringLiteral("key")).toString(QStringLiteral("general_fact")));
+    entry.content = task.args.value(QStringLiteral("content")).toString(task.args.value(QStringLiteral("value")).toString());
+    entry.key = task.args.value(QStringLiteral("key")).toString(entry.title);
+    entry.value = task.args.value(QStringLiteral("value")).toString(entry.content);
+    entry.source = QStringLiteral("tool_worker");
+    entry.createdAt = QDateTime::currentDateTimeUtc();
+
+    const bool ok = m_memoryManager->write(entry);
+    if (!ok) {
+        return buildResult(task,
+                           false,
+                           TaskState::Finished,
+                           QStringLiteral("Memory write rejected"),
+                           QStringLiteral("That memory entry could not be stored."),
+                           QStringLiteral("The entry was empty or looked like a secret/full file."));
+    }
+
     return buildResult(task,
                        true,
                        TaskState::Finished,
-                       QStringLiteral("Memory write queued"),
-                       QStringLiteral("Memory storage stub acknowledged the request."),
-                       QStringLiteral("Stub only. Title: %1 | Content: %2").arg(title, content),
+                       QStringLiteral("Memory saved"),
+                       QStringLiteral("Saved memory for %1").arg(entry.key),
+                       QStringLiteral("Stored %1 memory entry.").arg(entry.kind),
                        QJsonObject{
-                           {QStringLiteral("title"), title},
-                           {QStringLiteral("content"), content}
+                           {QStringLiteral("key"), entry.key},
+                           {QStringLiteral("value"), entry.value},
+                           {QStringLiteral("kind"), entry.kind}
                        });
 }

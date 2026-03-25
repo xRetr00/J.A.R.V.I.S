@@ -10,6 +10,7 @@ class AppSettings;
 class AgentToolbox;
 class DeviceManager;
 class IntentDetector;
+class IntentEngine;
 class IntentRouter;
 class AiBackendClient;
 class LocalResponseEngine;
@@ -223,6 +224,7 @@ private:
     SkillStore *m_skillStore = nullptr;
     AgentToolbox *m_agentToolbox = nullptr;
     DeviceManager *m_deviceManager = nullptr;
+    IntentEngine *m_intentEngine = nullptr;
     IntentDetector *m_backgroundIntentDetector = nullptr;
     IntentRouter *m_intentRouter = nullptr;
     LocalResponseEngine *m_localResponseEngine = nullptr;
