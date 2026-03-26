@@ -237,6 +237,7 @@ qt_add_shaders(jarvis_lib "jarvis_shaders"
         "/qt/qml/JARVIS/gui/shaders"
     FILES
         src/gui/shaders/orb.frag
+        src/gui/shaders/text_shimmer.frag
 )
 
 target_include_directories(jarvis_lib

@@ -30,6 +30,13 @@ Window {
     property real sideLaneWidth: taskVm.backgroundTaskResults.length > 0
         ? Math.min(width * (width >= 1480 * dpiScale ? 0.3 : 0.2), 470 * dpiScale)
         : 0
+    property real textShimmerStrength: Math.min(
+        1.0,
+        0.16
+        + motion.listeningAmount * 0.22
+        + motion.thinkingAmount * 0.38
+        + motion.executingAmount * 0.48
+        + motion.inputBoost * 0.2)
 
     onClosing: function(close) {
         close.accepted = false
@@ -141,6 +148,16 @@ Window {
                             wrapMode: Text.Wrap
                             maximumLineCount: 2
                             elide: Text.ElideRight
+                            layer.enabled: root.visible
+                            layer.smooth: true
+                            layer.effect: ShaderEffect {
+                                property real time: motion.time
+                                property real shimmerStrength: root.textShimmerStrength
+                                property real shimmerSpeed: 0.32 + motion.executingAmount * 0.24 + motion.thinkingAmount * 0.14
+                                property real shimmerWidth: 0.3
+                                property real shimmerSkew: 0.45
+                                fragmentShader: "qrc:/qt/qml/JARVIS/gui/shaders/src/gui/shaders/text_shimmer.frag.qsb"
+                            }
                         }
 
                         Text {
