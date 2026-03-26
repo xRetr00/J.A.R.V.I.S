@@ -6,6 +6,7 @@
 
 class AssistantController;
 class AppSettings;
+class AgentViewModel;
 class BackendFacade;
 class IdentityProfileService;
 class LoggingService;
@@ -13,7 +14,9 @@ class NativeHotkeyFilter;
 class OverlayController;
 class QQmlApplicationEngine;
 class QQuickWindow;
+class SettingsViewModel;
 class QSystemTrayIcon;
+class TaskViewModel;
 class QWindow;
 
 class JarvisApplication : public QObject
@@ -32,6 +35,9 @@ private:
     std::unique_ptr<AssistantController> m_assistantController;
     std::unique_ptr<OverlayController> m_overlayController;
     std::unique_ptr<BackendFacade> m_backendFacade;
+    std::unique_ptr<AgentViewModel> m_agentViewModel;
+    std::unique_ptr<SettingsViewModel> m_settingsViewModel;
+    std::unique_ptr<TaskViewModel> m_taskViewModel;
     std::unique_ptr<QQmlApplicationEngine> m_engine;
     std::unique_ptr<QSystemTrayIcon> m_trayIcon;
     std::unique_ptr<NativeHotkeyFilter> m_hotkeyFilter;

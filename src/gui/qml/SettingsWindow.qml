@@ -7,11 +7,15 @@ import "." as JarvisUi
 Window {
     id: settingsWindow
 
-    width: 680
-    height: 860
+    width: Math.min(Math.max(760, Screen.width * 0.5), 1120)
+    height: Math.min(Math.max(760, Screen.height * 0.86), Screen.height)
+    minimumWidth: 760
+    minimumHeight: 720
     visible: false
     title: backend.assistantName + " Control Surface"
     color: "#050912"
+
+    property real dpiScale: Math.max(1.0, Screen.devicePixelRatio)
 
     onClosing: function(close) {
         close.accepted = false

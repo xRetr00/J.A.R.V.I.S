@@ -7,11 +7,15 @@ import "." as JarvisUi
 Window {
     id: wizard
 
-    width: 920
-    height: 760
+    width: Math.min(Math.max(920, Screen.width * 0.72), 1400)
+    height: Math.min(Math.max(760, Screen.height * 0.82), Screen.height)
+    minimumWidth: 900
+    minimumHeight: 720
     visible: false
     title: backend.assistantName + " Setup"
     color: "#050912"
+
+    property real dpiScale: Math.max(1.0, Screen.devicePixelRatio)
 
     property int stepIndex: 0
 

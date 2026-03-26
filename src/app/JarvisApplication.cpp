@@ -18,7 +18,10 @@
 #include "audio/AudioProcessingTypes.h"
 #include "core/AssistantController.h"
 #include "core/AssistantTypes.h"
+#include "gui/AgentViewModel.h"
 #include "gui/BackendFacade.h"
+#include "gui/SettingsViewModel.h"
+#include "gui/TaskViewModel.h"
 #include "logging/LoggingService.h"
 #include "overlay/OverlayController.h"
 #include "settings/AppSettings.h"
@@ -115,11 +118,17 @@ bool JarvisApplication::initialize()
         m_identityProfileService.get(),
         m_assistantController.get(),
         m_overlayController.get());
+    m_agentViewModel = std::make_unique<AgentViewModel>(m_backendFacade.get());
+    m_settingsViewModel = std::make_unique<SettingsViewModel>(m_backendFacade.get());
+    m_taskViewModel = std::make_unique<TaskViewModel>(m_backendFacade.get());
     m_engine = std::make_unique<QQmlApplicationEngine>();
     const QIcon appIcon(QStringLiteral(":/qt/qml/JARVIS/gui/assets/icon.ico"));
     m_trayIcon = std::make_unique<QSystemTrayIcon>(appIcon.isNull() ? qApp->style()->standardIcon(QStyle::SP_ComputerIcon) : appIcon, this);
 
     m_engine->rootContext()->setContextProperty(QStringLiteral("backend"), m_backendFacade.get());
+    m_engine->rootContext()->setContextProperty(QStringLiteral("agentVm"), m_agentViewModel.get());
+    m_engine->rootContext()->setContextProperty(QStringLiteral("settingsVm"), m_settingsViewModel.get());
+    m_engine->rootContext()->setContextProperty(QStringLiteral("taskVm"), m_taskViewModel.get());
     qInfo() << "Loading QML windows";
     m_engine->load(QUrl(QStringLiteral("qrc:/qt/qml/JARVIS/gui/qml/OverlayWindow.qml")));
     m_engine->load(QUrl(QStringLiteral("qrc:/qt/qml/JARVIS/gui/qml/SettingsWindow.qml")));

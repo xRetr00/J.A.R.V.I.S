@@ -9,103 +9,127 @@ layout(std140, binding = 0) uniform buf {
     float time;
     float audioLevel;
     float speaking;
+    float uiState;
+    float quality;
     vec2 resolution;
 } ubuf;
 
-/*
-    "Ionize" by @XorDev
-
-    https://x.com/XorDev/status/1921224922166104360
-*/
-void mainImage(out vec4 O, in vec2 I, float time, vec3 resolution)
+float hash21(vec2 p)
 {
-    //Time for waves and coloring
-    float t = time,
-    //Raymarch iterator
-    i = 0.0,
-    //Raymarch depth
-    z = 0.0,
-    //Raymarch step distance
-    d = 0.0,
-    //Signed distance for coloring
-    s = 0.0;
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+}
 
-    //Clear fragcolor and raymarch loop 100 times
-    O = vec4(0.0);
-    for (; i++ < 1e2; )
-    {
-        //Raymarch sample point
-        vec3 p = z * normalize(vec3(I + I, 0.0) - resolution.xyy),
-        //Vector for undistorted coordinates
-        v;
-        //Shift camera back 9 units
-        p.z += 9.0;
-        //Save coordinates
-        v = p;
-        //Apply turbulence waves
-        //https://mini.gmshaders.com/p/turbulence
-        for (d = 1.0; d < 9.0; d += d)
-            p += 0.5 * sin(p.yzx * d + t) / d;
-        //Distance to gyroid
-        z += d = 0.2 * (0.01 + abs(s = dot(cos(p), sin(p / 0.7).yzx))
-        //Spherical boundary
-        - min(d = 6.0 - length(v), -d * 0.1));
-        //Coloring and glow attenuation
-        O += (cos(s / 0.1 + z + t + vec4(2.0, 4.0, 5.0, 0.0)) + 1.2) / d / z;
-    }
-    //Tanh tonemapping
-    //https://www.shadertoy.com/view/ms3BD7
-    O = tanh(O / 2e3);
+float noise21(vec2 p)
+{
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+
+    float a = hash21(i);
+    float b = hash21(i + vec2(1.0, 0.0));
+    float c = hash21(i + vec2(0.0, 1.0));
+    float d = hash21(i + vec2(1.0, 1.0));
+
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+float layeredNoise(vec2 p, float t)
+{
+    float n0 = noise21(p * 2.1 + vec2(t * 0.30, -t * 0.18));
+    float n1 = noise21(p * 4.8 + vec2(-t * 0.55, t * 0.43));
+    float n2 = noise21(p * 9.4 + vec2(t * 0.92, t * 0.67));
+    return n0 * 0.52 + n1 * 0.31 + n2 * 0.17;
 }
 
 void main()
 {
     vec2 safeResolution = max(ubuf.resolution, vec2(1.0));
-    vec2 uv = qt_TexCoord0;
-    vec2 centeredUv = uv * 2.0 - 1.0;
-    centeredUv.x *= safeResolution.x / safeResolution.y;
+    vec2 uv = qt_TexCoord0 * 2.0 - 1.0;
+    uv.x *= safeResolution.x / safeResolution.y;
 
-    float reactive = clamp(ubuf.audioLevel * 1.15 + ubuf.speaking * 0.95, 0.0, 1.0);
-    float pulse = 1.0 + 0.035 * sin(ubuf.time * (1.1 + ubuf.speaking * 1.8)) + reactive * 0.06;
-    float distortionStrength = 0.012 + reactive * 0.055;
+    float audioReactive = clamp(ubuf.audioLevel, 0.0, 1.0);
+    float speakingReactive = clamp(ubuf.speaking, 0.0, 1.0);
+    float stateReactive = clamp(ubuf.uiState / 3.0, 0.0, 1.0);
 
-    vec2 warpedUv = centeredUv / pulse;
-    warpedUv += vec2(
-        sin(centeredUv.y * 8.0 + ubuf.time * 1.7),
-        cos(centeredUv.x * 7.0 - ubuf.time * 1.45)
-    ) * distortionStrength;
+    float speed = mix(0.9, 2.8, stateReactive + speakingReactive * 0.4);
+    float pulse = sin(ubuf.time * speed + audioReactive * 3.0);
+    float pulseStrength = 0.04 + 0.05 * speakingReactive + 0.04 * stateReactive;
 
-    vec2 I = (warpedUv * 0.5 + 0.5) * safeResolution;
-    vec4 O = vec4(0.0);
-    mainImage(O, I, ubuf.time, vec3(safeResolution, 1.0));
+    vec2 distortedUv = uv;
+    distortedUv += sin(distortedUv.yx * 4.0 + ubuf.time) * (0.02 + speakingReactive * 0.01) * (0.3 + audioReactive);
+    distortedUv *= 1.0 + pulse * pulseStrength;
 
-    vec3 color = max(O.rgb, vec3(0.0));
-    color *= 0.92 + reactive * 0.42;
+    float radius = length(distortedUv);
+    float orbRadius = 0.78 + audioReactive * 0.03;
+    float radialDensity = clamp(1.0 - radius / max(orbRadius, 0.001), 0.0, 1.0);
+    float depthFalloff = radialDensity * radialDensity;
 
-    float radius = length(centeredUv);
-    float orbRadius = 0.74 + reactive * 0.03;
-    float mask = 1.0 - smoothstep(orbRadius - 0.09, orbRadius + 0.012, radius);
-    float glow = smoothstep(orbRadius + 0.22, orbRadius - 0.03, radius) * (0.18 + reactive * 0.22);
-    float radial = clamp(1.0 - radius / max(orbRadius, 0.001), 0.0, 1.0);
-    float core = pow(radial, 2.8);
-    float fresnel = pow(clamp(radius / max(orbRadius, 0.001), 0.0, 1.0), 2.3);
-    float radialMod = 0.78 + 0.22 * sin(radius * 16.0 - ubuf.time * 0.9);
-    float shell = smoothstep(orbRadius - 0.16, orbRadius - 0.02, radius);
-    float innerParallax = 0.5 + 0.5 * sin((centeredUv.x - centeredUv.y) * 18.0 + ubuf.time * 1.6);
-    float refractedBand = 0.5 + 0.5 * cos(radius * 24.0 - ubuf.time * 2.2 + centeredUv.y * 10.0);
-    float specular = pow(max(0.0, 1.0 - length(centeredUv - vec2(-0.14, -0.18)) / 0.42), 4.5);
+    int steps = 40;
+    if (ubuf.quality < 0.5) {
+        steps = 20;
+    } else if (ubuf.quality > 1.5) {
+        steps = 60;
+    }
 
-    color *= 0.8 + core * 0.75 + radialMod * 0.08;
-    color += vec3(0.22, 0.42, 0.85) * glow;
-    color += vec3(0.42, 0.72, 1.0) * fresnel * 0.22;
-    color += vec3(0.18, 0.34, 0.62) * core * (0.45 + reactive * 0.25);
-    color += vec3(0.08, 0.18, 0.34) * shell * innerParallax * 0.35;
-    color += vec3(0.24, 0.46, 0.88) * refractedBand * shell * 0.18;
-    color += vec3(0.82, 0.93, 1.0) * specular * (0.18 + reactive * 0.14);
-    color *= mask;
+    vec3 marchColor = vec3(0.0);
+    float marchAlpha = 0.0;
+    float t = 0.0;
+    vec3 rayOrigin = vec3(0.0, 0.0, 2.3);
+    vec3 rayDir = normalize(vec3(distortedUv * 1.08, -1.9));
 
-    float intensity = max(max(color.r, color.g), color.b);
-    float alpha = clamp(mask * (0.58 + intensity * 0.88 + core * 0.28 + shell * 0.1) + glow * 0.95 + fresnel * 0.12, 0.0, 1.0) * ubuf.qt_Opacity;
+    for (int i = 0; i < 60; ++i) {
+        if (i >= steps) {
+            break;
+        }
 
-    fragColor = vec4(color, alpha);
+        vec3 pos = rayOrigin + rayDir * t;
+        float shell = length(pos.xy);
+        float sphereMask = smoothstep(orbRadius + 0.14, orbRadius - 0.20, shell);
+
+        float n = layeredNoise(pos.xy + pos.z * 0.7, ubuf.time * (0.7 + stateReactive * 0.8));
+        float n2 = layeredNoise(pos.yx * 1.4 + pos.z * 0.35, ubuf.time * (1.3 + speakingReactive * 0.9));
+        float turbulence = mix(n, n2, 0.45);
+
+        float density = sphereMask * (0.26 + turbulence * 0.95) * (0.4 + depthFalloff * 0.95);
+        density *= 0.65 + 0.35 * (0.5 + 0.5 * pulse);
+
+        vec3 baseColor = mix(vec3(0.10, 0.24, 0.55), vec3(0.35, 0.70, 1.0), turbulence);
+        baseColor += vec3(0.08, 0.12, 0.22) * speakingReactive;
+
+        float alphaStep = density * 0.042;
+        marchColor += baseColor * alphaStep * (1.0 - marchAlpha);
+        marchAlpha += alphaStep * (1.0 - marchAlpha);
+
+        t += 0.055;
+    }
+
+    vec2 normalUv = distortedUv / max(orbRadius, 0.001);
+    float z = sqrt(max(0.0, 1.0 - dot(normalUv, normalUv)));
+    vec3 normal = normalize(vec3(normalUv, z));
+    vec3 lightDir = normalize(vec3(-0.34, -0.42, 0.84));
+    float light = clamp(dot(normal, lightDir), 0.0, 1.0);
+    float fresnel = pow(1.0 - clamp(normal.z, 0.0, 1.0), 2.2);
+
+    float core = pow(radialDensity, 2.6);
+    float aura = smoothstep(orbRadius + 0.30, orbRadius - 0.02, radius);
+    float softMask = 1.0 - smoothstep(orbRadius - 0.05, orbRadius + 0.12, radius);
+
+    float flicker = 0.93 + 0.07 * sin(ubuf.time * 17.0 + audioReactive * 8.0);
+    vec3 colorShift = vec3(
+        0.93 + 0.07 * sin(ubuf.time * 0.17),
+        0.92 + 0.08 * sin(ubuf.time * 0.23 + 1.3),
+        0.90 + 0.10 * sin(ubuf.time * 0.19 + 2.2)
+    );
+
+    vec3 coreColor = vec3(0.44, 0.80, 1.0) * core * (0.8 + 0.55 * speakingReactive);
+    vec3 auraColor = vec3(0.18, 0.37, 0.85) * aura * (0.35 + 0.25 * stateReactive);
+    vec3 lit = marchColor * (0.72 + light * 0.58) + coreColor + auraColor + vec3(0.50, 0.78, 1.0) * fresnel * 0.34;
+    lit *= flicker * colorShift;
+
+    float alpha = clamp(marchAlpha * 1.28 + core * 0.55 + aura * 0.44 + fresnel * 0.15, 0.0, 1.0);
+    alpha *= softMask;
+
+    fragColor = vec4(max(lit, vec3(0.0)), alpha * ubuf.qt_Opacity);
 }

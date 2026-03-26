@@ -146,7 +146,10 @@ set(JARVIS_SOURCES
     src/core/tasks/ToolWorker.cpp
     src/devices/DeviceManager.cpp
     src/devices/MockDevices.cpp
+    src/gui/AgentViewModel.cpp
     src/gui/BackendFacade.cpp
+    src/gui/SettingsViewModel.cpp
+    src/gui/TaskViewModel.cpp
     src/logging/LoggingService.cpp
     src/memory/MemoryManager.cpp
     src/memory/MemoryStore.cpp
@@ -193,10 +196,13 @@ set(JARVIS_HEADERS
     src/devices/Device.h
     src/devices/DeviceManager.h
     src/devices/MockDevices.h
+    src/gui/AgentViewModel.h
     src/gui/BackendFacade.h
+    src/gui/SettingsViewModel.h
     src/logging/LoggingService.h
     src/memory/MemoryManager.h
     src/memory/MemoryStore.h
+    src/gui/TaskViewModel.h
     src/overlay/OverlayController.h
     src/settings/AppSettings.h
     src/settings/IdentityProfileService.h

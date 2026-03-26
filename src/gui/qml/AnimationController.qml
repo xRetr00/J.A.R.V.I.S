@@ -10,72 +10,90 @@ Item {
     property string stateName: "IDLE"
     property real inputLevel: 0.0
     property bool overlayVisible: false
+    property int uiState: mapUiState(stateName)
 
     property real time: 0.0
-    property real smoothedInput: 0.0
-    property real speakingSignal: 0.0
-    property real jitterSignal: 0.0
+    property real targetInput: Math.max(0.0, Math.min(1.0, inputLevel * 9.0))
+    property real smoothedInput: targetInput
+    property real speakingTarget: executingAmount * (0.52 + 0.33 * Math.sin(time * 8.4) + 0.15 * Math.sin(time * 13.8 + 1.2))
+    property real speakingSignal: speakingTarget
+    property real jitterSignal: Math.sin(time * 33.0) * 0.5 + Math.sin(time * 51.0 + 0.7) * 0.5
 
-    readonly property real idleAmount: stateName === "IDLE" ? 1.0 : 0.0
-    readonly property real listeningAmount: stateName === "LISTENING" ? 1.0 : 0.0
-    readonly property real processingAmount: stateName === "PROCESSING" ? 1.0 : 0.0
-    readonly property real speakingAmount: stateName === "SPEAKING" ? 1.0 : 0.0
+    readonly property int StateIdle: 0
+    readonly property int StateListening: 1
+    readonly property int StateThinking: 2
+    readonly property int StateExecuting: 3
+
+    readonly property real idleAmount: uiState === StateIdle ? 1.0 : 0.0
+    readonly property real listeningAmount: uiState === StateListening ? 1.0 : 0.0
+    readonly property real thinkingAmount: uiState === StateThinking ? 1.0 : 0.0
+    readonly property real executingAmount: uiState === StateExecuting ? 1.0 : 0.0
     readonly property real inputBoost: Math.min(1.0, smoothedInput * 8.5)
     readonly property real idleBreath: 0.5 + 0.5 * Math.sin(time * 1.05)
-    readonly property real orbitalRotation: (time * (26 + processingAmount * 70)) % 360
+    readonly property real orbitalRotation: (time * (22 + thinkingAmount * 78 + executingAmount * 54)) % 360
     readonly property real orbScale: 0.96
         + idleAmount * (0.03 + idleBreath * 0.015)
         + listeningAmount * (0.05 + inputBoost * 0.1)
-        + processingAmount * 0.08
-        + speakingAmount * (0.06 + speakingSignal * 0.08)
+        + thinkingAmount * 0.08
+        + executingAmount * (0.06 + speakingSignal * 0.08)
     readonly property real distortion: 0.08
         + idleAmount * 0.03
         + listeningAmount * (0.16 + inputBoost * 0.3)
-        + processingAmount * 0.18
-        + speakingAmount * (0.12 + speakingSignal * 0.18)
+        + thinkingAmount * 0.18
+        + executingAmount * (0.12 + speakingSignal * 0.18)
     readonly property real glow: 0.24
         + idleAmount * 0.08
         + listeningAmount * (0.14 + inputBoost * 0.18)
-        + processingAmount * 0.18
-        + speakingAmount * (0.24 + speakingSignal * 0.2)
+        + thinkingAmount * 0.18
+        + executingAmount * (0.24 + speakingSignal * 0.2)
     readonly property real auraPulse: 0.36 + idleBreath * 0.16 + speakingSignal * 0.22 + inputBoost * 0.16
     readonly property real listeningVibration: listeningAmount * (0.8 + inputBoost * 1.4) * jitterSignal
 
-    Timer {
-        id: frameDriver
+    function mapUiState(name) {
+        const normalized = (name || "").toString().trim().toUpperCase()
+        if (normalized === "LISTENING") {
+            return StateListening
+        }
+        if (normalized === "PROCESSING" || normalized === "THINKING") {
+            return StateThinking
+        }
+        if (normalized === "SPEAKING" || normalized === "EXECUTING") {
+            return StateExecuting
+        }
+        return StateIdle
+    }
+
+    onStateNameChanged: {
+        uiState = mapUiState(stateName)
+    }
+
+    NumberAnimation on time {
+        from: 0
+        to: 20000
+        duration: 12000000
+        loops: Animation.Infinite
         running: root.overlayVisible
-        repeat: true
-        interval: root.stateName === "IDLE" ? 33 : 16
+    }
 
-        property double lastTick: 0
-
-        onTriggered: {
-            const now = Date.now()
-            if (lastTick === 0) {
-                lastTick = now
-                return
-            }
-
-            const dt = Math.min(0.05, (now - lastTick) / 1000.0)
-            lastTick = now
-
-            root.time += dt
-
-            const targetInput = Math.max(0.0, Math.min(1.0, root.inputLevel * 9.0))
-            root.smoothedInput += (targetInput - root.smoothedInput) * Math.min(1.0, dt * 10.0)
-
-            const waveform = 0.46
-                + 0.34 * Math.sin(root.time * 7.2)
-                + 0.2 * Math.sin(root.time * 12.6 + 1.7)
-            const targetSpeech = root.stateName === "SPEAKING" ? Math.max(0.0, waveform) : 0.0
-            root.speakingSignal += (targetSpeech - root.speakingSignal) * Math.min(1.0, dt * 8.5)
-            root.jitterSignal = Math.sin(root.time * 33.0) * 0.5 + Math.sin(root.time * 51.0 + 0.7) * 0.5
+    Behavior on smoothedInput {
+        NumberAnimation {
+            duration: 130
+            easing.type: Easing.OutCubic
         }
+    }
 
-        onRunningChanged: {
-            if (!running) {
-                lastTick = 0
-            }
+    Behavior on speakingSignal {
+        NumberAnimation {
+            duration: 140
+            easing.type: Easing.OutCubic
         }
+    }
+
+    onTargetInputChanged: {
+        smoothedInput = targetInput
+    }
+
+    onSpeakingTargetChanged: {
+        speakingSignal = Math.max(0.0, speakingTarget)
     }
 }
