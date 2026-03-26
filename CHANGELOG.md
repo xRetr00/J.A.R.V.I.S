@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Documentation
+
+- Updated README and docs to match current codebase behavior and module layout.
+- Documented default wake engine path (`sherpa-onnx`) and optional Precise fallback.
+- Expanded build documentation with optional ONNX/sherpa/sentencepiece/speexdsp/rnnoise dependencies.
+- Expanded configuration reference with current agent, MCP, audio-processing, and tooling settings keys.
+
 ## [1.0.0] - 2026-03-25
 
 ### Added

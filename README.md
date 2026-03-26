@@ -2,15 +2,17 @@
 
 Local-first desktop voice assistant built with Qt 6 and modern C++.
 
-J.A.R.V.I.S runs in the system tray, listens for a wake phrase, transcribes speech locally, routes requests to a local OpenAI-compatible backend, and speaks replies through local TTS.
+Jarvis runs in the system tray, listens for a wake phrase, transcribes speech locally, routes requests to a local OpenAI-compatible backend, and speaks replies through local TTS.
 
 ## Highlights
 
 - Local-first voice pipeline:
-  - Wake word detection with Mycroft Precise
-  - STT via whisper.cpp
-  - TTS via Piper (or qwen3-tts mode)
+  - Wake word detection with Sherpa ONNX keyword spotting (default) or Mycroft Precise
+  - STT via whisper.cpp (runtime worker path)
+  - TTS via Piper with worker-based playback
 - OpenAI-compatible AI backend support (LM Studio style endpoint)
+- Agent mode controls for tool-aware conversations and background task dispatch
+- Tool and model discovery/download workflow in Settings
 - Animated overlay UI with tray-first workflow
 - First-run setup wizard for identity, AI, voice, and wake tuning
 - Runtime settings window with live requirement checks
@@ -20,24 +22,33 @@ J.A.R.V.I.S runs in the system tray, listens for a wake phrase, transcribes spee
 ## Tech Stack
 
 - C++20
-- Qt 6 (Core, Gui, Network, Multimedia, Quick, QuickControls2, Svg, Widgets)
+- Qt 6 (Concurrent, Core, Gui, Network, Multimedia, Quick, QuickControls2, Svg, Widgets, Test)
 - CMake + Ninja
 - nlohmann/json
 - spdlog
 - libfvad
+- Optional local speech stack components:
+  - ONNX Runtime
+  - sherpa-onnx + sentencepiece
+  - SpeexDSP
+  - RNNoise
 
 ## Project Layout
 
 - src/app: app bootstrap, tray lifecycle, window orchestration
-- src/core: assistant state machine and orchestration
+- src/core: assistant state machine, intent routing, local response engine, task dispatch
+- src/agent: tool schema/registry for agent-capable requests
 - src/ai: prompt building, model discovery, streaming assembly, backend clients
-- src/audio: microphone capture and VAD preprocessing
-- src/stt: speech recognition integration
-- src/tts: speech synthesis engines
-- src/wakeword: wake phrase engines
+- src/audio: microphone capture, processing chain, VAD integration surface
+- src/stt: speech recognizer interfaces and runtime recognizer
+- src/tts: speech synthesis engines and worker TTS integration
+- src/wakeword: wake phrase engines (Sherpa + Precise)
+- src/workers: threaded runtime workers for speech I/O and AI backend
 - src/gui: Qt/QML facade and overlay/settings/setup windows
 - src/settings: runtime settings and identity/profile persistence
 - src/tools: external tool and model discovery/download workflow
+- src/memory: local memory store and manager
+- src/skills: local skill manifest store
 - tests: Qt unit tests
 - docs: build and architecture documentation
 
@@ -81,8 +92,9 @@ On first launch, the Setup wizard opens automatically.
    - piper executable + voice model
    - ffmpeg path
 4. Wake Word:
-   - precise-engine executable
-   - wake model path (.pb)
+  - wake engine kind (sherpa-onnx or precise)
+  - precise-engine executable + wake model path (.pb) when using Precise
+  - sherpa keyword-spotting model root when using sherpa-onnx
    - threshold and cooldown tuning
 5. Final Check:
    - run setup tests and complete setup
@@ -91,6 +103,10 @@ On first launch, the Setup wizard opens automatically.
 
 - Settings file:
   - %APPDATA%/../Local/<Org>/<App>/settings.json (Qt AppDataLocation)
+- Local tools root:
+  - %APPDATA%/../Local/<Org>/<App>/third_party
+- Download cache root:
+  - %APPDATA%/../Local/<Org>/<App>/tools
 - Identity:
   - config/identity.json
 - User profile:
@@ -123,6 +139,17 @@ Current test suites:
 - tests/IdentityProfileTests.cpp
 - tests/LocalResponseEngineTests.cpp
 
+## Current Defaults
+
+- Wake engine: sherpa-onnx
+- TTS engine: piper
+- Audio processing:
+  - AEC enabled
+  - RNNoise disabled
+  - VAD sensitivity 0.55
+- Request timeout: 12000 ms
+- Reasoning mode: balanced (with auto-routing enabled)
+
 ## Documentation
 
 - docs/BUILD.md
@@ -130,7 +157,3 @@ Current test suites:
 - docs/CONFIGURATION.md
 - docs/RELEASE_v1.0.0.md
 - CHANGELOG.md
-
-## Version
-
-This repository is prepared for release v1.0.0.

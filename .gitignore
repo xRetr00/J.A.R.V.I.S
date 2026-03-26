@@ -2,6 +2,8 @@
 .cmake/
 bin/
 CMakeFiles/
+cmake/
+config/
 cmake_install.cmake
 Makefile
 CMakeCache.txt

@@ -1,6 +1,6 @@
 # Voice Pipeline Next Phase
 
-This document describes the current implementation added in this branch and the next integration steps for the local-first speech stack.
+This document describes the current implementation state and the remaining integration steps for the local-first speech stack.
 
 ## New File Structure
 
@@ -45,22 +45,25 @@ src/
 - `AssistantController` now uses runtime-backed proxies for the OpenAI-compatible backend, Whisper STT, and Piper TTS paths.
 - `PiperTtsEngine` now uses `QAudioSink` instead of `QMediaPlayer`, and emits far-end frames for future AEC integration.
 - `ToolManager` scans the local tool root, downloads known source/model assets asynchronously over HTTPS, tracks progress, and verifies SHA-256 when a manifest entry provides one.
-- Setup and settings QML now expose audio-processing toggles, wake/TTS engine selectors, and a tools status panel with install progress.
+- Setup and settings QML expose audio-processing toggles, wake/TTS engine selectors, and a tools status panel with install progress.
+- `SherpaWakeWordEngine` is integrated and uses `jarvis_sherpa_wake_helper` for wake detection when `wakeEngineKind=sherpa-onnx`.
 
 ## Current Runtime Status
 
-- The app still uses the existing `AssistantController` contracts and the current production flow remains active.
-- The worker runtime is now the active execution path for:
+- The app still uses `AssistantController` contracts as the orchestration boundary.
+- The worker runtime is the active execution path for:
   - OpenAI-compatible backend requests,
   - Whisper STT requests,
   - Piper synthesis/playback.
-- Wake detection and direct microphone capture still use the current production path and should be migrated next.
+- Wake detection supports both:
+  - `sherpa-onnx` via `SherpaWakeWordEngine` + helper process,
+  - `precise` via `WakeWordEnginePrecise`.
 - `AudioProcessingChain` currently uses:
   - far-end subtraction placeholder for AEC,
   - threshold-based suppression,
   - lightweight smoothing for the RNNoise toggle,
   - `libfvad` fallback for VAD.
-- Real WebRTC APM, RNNoise, and ONNX Runtime Silero should be linked in behind the same interfaces next.
+- Real WebRTC APM and production RNNoise/Silero backend integration are still pending behind the same interfaces.
 
 ## Worker Wiring Example
 
@@ -245,7 +248,7 @@ public:
 
 ### sherpa-onnx
 
-Use the official keyword-spotting models and C API/C++-friendly runtime for the future wake-engine replacement. Keep the current `WakeWordEngine` interface and implement a `SherpaWakeWordEngine` behind it.
+Current status: integrated for wake detection. Ongoing work should focus on model packaging simplification and optional GPU/runtime-provider support.
 
 ## ToolManager Integration
 
