@@ -7,10 +7,10 @@ import "." as JarvisUi
 Window {
     id: root
 
+    x: Screen.virtualX
+    y: Screen.virtualY
     width: Screen.width
     height: Screen.height
-    minimumWidth: 960
-    minimumHeight: 540
     visible: false
     color: "transparent"
     flags: Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool | Qt.NoDropShadowWindowHint
@@ -31,12 +31,12 @@ Window {
         ? Math.min(width * (width >= 1480 * dpiScale ? 0.3 : 0.2), 470 * dpiScale)
         : 0
     property real textShimmerStrength: Math.min(
-        1.0,
-        0.16
-        + motion.listeningAmount * 0.22
-        + motion.thinkingAmount * 0.38
-        + motion.executingAmount * 0.48
-        + motion.inputBoost * 0.2)
+        0.85,
+        0.08
+        + motion.listeningAmount * 0.16
+        + motion.thinkingAmount * 0.24
+        + motion.executingAmount * 0.32
+        + motion.inputBoost * 0.12)
 
     onClosing: function(close) {
         close.accepted = false
@@ -128,10 +128,6 @@ Window {
                     Layout.preferredWidth: contentWidth
                     Layout.maximumWidth: contentWidth
                     implicitHeight: presenceStack.implicitHeight
-                    transform: Translate {
-                        x: agentVm.presenceOffsetX * 16 * dpiScale
-                        y: -agentVm.presenceOffsetY * 12 * dpiScale
-                    }
 
                     ColumnLayout {
                         id: presenceStack
@@ -153,8 +149,8 @@ Window {
                             layer.effect: ShaderEffect {
                                 property real time: motion.time
                                 property real shimmerStrength: root.textShimmerStrength
-                                property real shimmerSpeed: 0.32 + motion.executingAmount * 0.24 + motion.thinkingAmount * 0.14
-                                property real shimmerWidth: 0.3
+                                property real shimmerSpeed: 0.2 + motion.executingAmount * 0.18 + motion.thinkingAmount * 0.1
+                                property real shimmerWidth: 0.2
                                 property real shimmerSkew: 0.45
                                 fragmentShader: "qrc:/qt/qml/JARVIS/gui/shaders/src/gui/shaders/text_shimmer.frag.qsb"
                             }
@@ -179,8 +175,8 @@ Window {
                     Layout.preferredWidth: orbBaseSize
                     Layout.preferredHeight: orbBaseSize
                     transform: Translate {
-                        x: agentVm.presenceOffsetX * 22 * dpiScale + motion.listeningVibrationX * 6 * dpiScale
-                        y: -agentVm.presenceOffsetY * 18 * dpiScale + motion.listeningVibrationY * 6 * dpiScale
+                        x: motion.listeningVibrationX * 4 * dpiScale
+                        y: motion.listeningVibrationY * 4 * dpiScale
                     }
 
                     JarvisUi.OrbRenderer {

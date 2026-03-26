@@ -23,14 +23,15 @@ void main()
     vec4 base = texture(source, uv);
 
     float phase = fract(time * shimmerSpeed);
+    float sweep = mix(-shimmerWidth, 1.0 + shimmerWidth, phase);
     float diagonalCoord = uv.x + (1.0 - uv.y) * shimmerSkew;
-    float dist = abs(diagonalCoord - phase * (1.0 + shimmerSkew));
+    float dist = abs(diagonalCoord - sweep);
 
     float band = 1.0 - smoothstep(0.0, shimmerWidth, dist);
-    float highlight = band * shimmerStrength;
+    float highlight = pow(max(band, 0.0), 1.8) * shimmerStrength;
 
-    vec3 shimmerTint = vec3(0.82, 0.92, 1.0) * highlight;
-    vec3 finalRgb = base.rgb + shimmerTint * base.a;
+    vec3 shimmerTint = vec3(0.88, 0.95, 1.0) * highlight;
+    vec3 finalRgb = min(base.rgb + shimmerTint * base.a, vec3(base.a));
 
     fragColor = vec4(finalRgb, base.a) * qt_Opacity;
 }
