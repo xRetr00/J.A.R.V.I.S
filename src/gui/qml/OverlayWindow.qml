@@ -30,6 +30,8 @@ Window {
     property real sideLaneWidth: taskVm.backgroundTaskResults.length > 0
         ? Math.min(width * (width >= 1480 * dpiScale ? 0.3 : 0.2), 470 * dpiScale)
         : 0
+    property real presenceDriftX: agentVm.presenceOffsetX * Math.min(width * 0.04, 34 * dpiScale)
+    property real presenceDriftY: agentVm.presenceOffsetY * Math.min(height * 0.03, 24 * dpiScale)
     property real textShimmerStrength: Math.min(
         0.85,
         0.08
@@ -97,50 +99,52 @@ Window {
     Item {
         anchors.fill: parent
 
-        RowLayout {
-            anchors.fill: parent
-            anchors.margins: pageMargin
-            spacing: pageMargin
+        Text {
+            anchors.top: parent.top
+            anchors.topMargin: root.pageMargin
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: agentVm.assistantName + "  |  " + microStatus()
+            color: "#dbeeff"
+            opacity: 0.78
+            font.pixelSize: Math.round(12 * root.dpiScale)
+            font.letterSpacing: 1.8
+        }
 
-            Item {
-                Layout.preferredWidth: sideLaneWidth
-                Layout.fillHeight: true
+        Item {
+            id: centerFrame
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.verticalCenterOffset: root.height * 0.06 + root.presenceDriftY
+            width: Math.max(root.contentWidth, root.orbBaseSize)
+            height: centerStack.implicitHeight
+            transform: Translate {
+                x: root.presenceDriftX
+                y: 0
             }
 
             ColumnLayout {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                spacing: sectionSpacing
-
-                Text {
-                    Layout.alignment: Qt.AlignHCenter
-                    text: agentVm.assistantName + "  |  " + microStatus()
-                    color: "#dbeeff"
-                    opacity: 0.78
-                    font.pixelSize: Math.round(12 * dpiScale)
-                    font.letterSpacing: 1.8
-                }
-
-                Item { Layout.fillHeight: true }
+                id: centerStack
+                anchors.fill: parent
+                spacing: root.sectionSpacing
 
                 Item {
                     Layout.alignment: Qt.AlignHCenter
-                    Layout.preferredWidth: contentWidth
-                    Layout.maximumWidth: contentWidth
+                    Layout.preferredWidth: root.contentWidth
+                    Layout.maximumWidth: root.contentWidth
                     implicitHeight: presenceStack.implicitHeight
 
                     ColumnLayout {
                         id: presenceStack
                         anchors.horizontalCenter: parent.horizontalCenter
                         width: parent.width
-                        spacing: 8 * dpiScale
+                        spacing: 8 * root.dpiScale
 
                         Text {
                             Layout.fillWidth: true
                             horizontalAlignment: Text.AlignHCenter
                             text: presenceLine()
                             color: "#edf6ff"
-                            font.pixelSize: Math.round(Math.max(18 * dpiScale, Math.min(root.shortEdge * 0.03, 28 * dpiScale)))
+                            font.pixelSize: Math.round(Math.max(18 * root.dpiScale, Math.min(root.shortEdge * 0.03, 28 * root.dpiScale)))
                             wrapMode: Text.Wrap
                             maximumLineCount: 2
                             elide: Text.ElideRight
@@ -162,7 +166,7 @@ Window {
                             text: compactText(agentVm.statusText, "")
                             visible: text.length > 0 && text !== presenceLine()
                             color: "#7f9fc7"
-                            font.pixelSize: Math.round(12 * dpiScale)
+                            font.pixelSize: Math.round(12 * root.dpiScale)
                             wrapMode: Text.Wrap
                             maximumLineCount: 1
                             elide: Text.ElideRight
@@ -172,11 +176,11 @@ Window {
 
                 Item {
                     Layout.alignment: Qt.AlignHCenter
-                    Layout.preferredWidth: orbBaseSize
-                    Layout.preferredHeight: orbBaseSize
+                    Layout.preferredWidth: root.orbBaseSize
+                    Layout.preferredHeight: root.orbBaseSize
                     transform: Translate {
-                        x: motion.listeningVibrationX * 4 * dpiScale
-                        y: motion.listeningVibrationY * 4 * dpiScale
+                        x: motion.listeningVibrationX * 4 * root.dpiScale
+                        y: motion.listeningVibrationY * 4 * root.dpiScale
                     }
 
                     JarvisUi.OrbRenderer {
@@ -184,8 +188,8 @@ Window {
                         anchors.fill: parent
                         stateName: agentVm.stateName
                         uiState: agentVm.uiState
-                        quality: root.shortEdge < 760 * dpiScale ? orb.qualityLow
-                            : root.shortEdge < 1100 * dpiScale ? orb.qualityMedium
+                        quality: root.shortEdge < 760 * root.dpiScale ? orb.qualityLow
+                            : root.shortEdge < 1100 * root.dpiScale ? orb.qualityMedium
                             : orb.qualityHigh
                         time: motion.time
                         audioLevel: motion.inputBoost
@@ -198,141 +202,130 @@ Window {
                         flicker: motion.flicker
                     }
                 }
-
-                Item { Layout.fillHeight: true }
             }
+        }
 
-            Item {
-                Layout.preferredWidth: sideLaneWidth
-                Layout.fillHeight: true
-                visible: taskVm.backgroundTaskResults.length > 0
+        Rectangle {
+            id: taskPanel
+            anchors.right: parent.right
+            anchors.rightMargin: root.pageMargin
+            anchors.verticalCenter: parent.verticalCenter
+            width: root.sideLaneWidth
+            height: Math.min(parent.height * 0.7, 640 * root.dpiScale)
+            visible: root.showTaskPanel
+            radius: 28 * root.dpiScale
+            color: "#c40b1320"
+            border.width: 1
+            border.color: "#284762"
 
-                ColumnLayout {
-                    anchors.fill: parent
-                    spacing: sectionSpacing
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 18 * root.dpiScale
+                spacing: 12 * root.dpiScale
 
-                    Item { Layout.fillHeight: true }
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10 * root.dpiScale
 
-                    Rectangle {
-                        id: taskPanel
+                    Text {
                         Layout.fillWidth: true
-                        Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
-                        Layout.preferredHeight: Math.min(parent.height * 0.7, 640 * dpiScale)
-                        visible: root.showTaskPanel
-                        radius: 28 * dpiScale
-                        color: "#c40b1320"
-                        border.width: 1
-                        border.color: "#284762"
+                        text: "Background Results"
+                        color: "#eef7ff"
+                        font.pixelSize: Math.round(20 * root.dpiScale)
+                        font.weight: Font.Medium
+                    }
 
-                        ColumnLayout {
-                            anchors.fill: parent
-                            anchors.margins: 18 * dpiScale
-                            spacing: 12 * dpiScale
+                    Button {
+                        text: "Hide"
+                        onClicked: taskVm.setBackgroundPanelVisible(false)
+                    }
+                }
 
-                            RowLayout {
+                ScrollView {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+
+                    ColumnLayout {
+                        width: taskPanel.width - 54 * root.dpiScale
+                        spacing: 12 * root.dpiScale
+
+                        Repeater {
+                            model: taskVm.backgroundTaskResults
+
+                            delegate: Rectangle {
+                                id: resultCard
+                                required property var modelData
                                 Layout.fillWidth: true
-                                spacing: 10 * dpiScale
-
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: "Background Results"
-                                    color: "#eef7ff"
-                                    font.pixelSize: Math.round(20 * dpiScale)
-                                    font.weight: Font.Medium
-                                }
-
-                                Button {
-                                    text: "Hide"
-                                    onClicked: taskVm.setBackgroundPanelVisible(false)
-                                }
-                            }
-
-                            ScrollView {
-                                Layout.fillWidth: true
-                                Layout.fillHeight: true
-                                clip: true
+                                width: parent.width
+                                radius: 18 * root.dpiScale
+                                color: "#101d2b"
+                                border.width: 1
+                                border.color: modelData.success ? "#346b52" : "#7a4557"
+                                implicitHeight: resultColumn.implicitHeight + 20 * root.dpiScale
 
                                 ColumnLayout {
-                                    width: taskPanel.width - 54 * dpiScale
-                                    spacing: 12 * dpiScale
+                                    id: resultColumn
+                                    anchors.fill: parent
+                                    anchors.margins: 12 * root.dpiScale
+                                    spacing: 6 * root.dpiScale
 
-                                    Repeater {
-                                        model: taskVm.backgroundTaskResults
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: resultCard.modelData.finishedAt + "  " + resultCard.modelData.title
+                                        color: "#edf6ff"
+                                        font.pixelSize: Math.round(13 * root.dpiScale)
+                                        wrapMode: Text.Wrap
+                                    }
 
-                                        delegate: Rectangle {
-                                            required property var modelData
-                                            Layout.fillWidth: true
-                                            width: parent.width
-                                            radius: 18 * dpiScale
-                                            color: "#101d2b"
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: resultCard.modelData.summary
+                                        color: resultCard.modelData.success ? "#8fe1b0" : "#ffb5cc"
+                                        font.pixelSize: Math.round(12 * root.dpiScale)
+                                        wrapMode: Text.Wrap
+                                    }
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: resultCard.modelData.detail
+                                        color: "#bfd3ea"
+                                        font.pixelSize: Math.round(12 * root.dpiScale)
+                                        wrapMode: Text.Wrap
+                                    }
+
+                                    TextArea {
+                                        Layout.fillWidth: true
+                                        readOnly: true
+                                        wrapMode: TextArea.Wrap
+                                        text: resultCard.modelData.payload
+                                        color: "#dcecff"
+                                        background: Rectangle {
+                                            radius: 12 * root.dpiScale
+                                            color: "#0b1520"
                                             border.width: 1
-                                            border.color: modelData.success ? "#346b52" : "#7a4557"
-                                            implicitHeight: resultColumn.implicitHeight + 20 * dpiScale
-
-                                            ColumnLayout {
-                                                id: resultColumn
-                                                anchors.fill: parent
-                                                anchors.margins: 12 * dpiScale
-                                                spacing: 6 * dpiScale
-
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: modelData.finishedAt + "  " + modelData.title
-                                                    color: "#edf6ff"
-                                                    font.pixelSize: Math.round(13 * dpiScale)
-                                                    wrapMode: Text.Wrap
-                                                }
-
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: modelData.summary
-                                                    color: modelData.success ? "#8fe1b0" : "#ffb5cc"
-                                                    font.pixelSize: Math.round(12 * dpiScale)
-                                                    wrapMode: Text.Wrap
-                                                }
-
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: modelData.detail
-                                                    color: "#bfd3ea"
-                                                    font.pixelSize: Math.round(12 * dpiScale)
-                                                    wrapMode: Text.Wrap
-                                                }
-
-                                                TextArea {
-                                                    Layout.fillWidth: true
-                                                    readOnly: true
-                                                    wrapMode: TextArea.Wrap
-                                                    text: modelData.payload
-                                                    color: "#dcecff"
-                                                    background: Rectangle {
-                                                        radius: 12 * dpiScale
-                                                        color: "#0b1520"
-                                                        border.width: 1
-                                                        border.color: "#20364b"
-                                                    }
-                                                    implicitHeight: Math.min(160 * dpiScale, Math.max(60 * dpiScale, contentHeight + 18 * dpiScale))
-                                                }
-                                            }
+                                            border.color: "#20364b"
                                         }
+                                        implicitHeight: Math.min(160 * root.dpiScale, Math.max(60 * root.dpiScale, contentHeight + 18 * root.dpiScale))
                                     }
                                 }
                             }
                         }
                     }
-
-                    Item { Layout.fillHeight: true }
-
-                    Button {
-                        Layout.alignment: Qt.AlignRight
-                        visible: !root.showTaskPanel && taskVm.backgroundTaskResults.length > 0
-                        text: "Results"
-                        onClicked: {
-                            taskVm.setBackgroundPanelVisible(true)
-                            taskVm.notifyTaskPanelRendered()
-                        }
-                    }
                 }
+            }
+        }
+
+        Button {
+            anchors.right: parent.right
+            anchors.rightMargin: root.pageMargin
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: root.pageMargin
+            visible: !root.showTaskPanel && taskVm.backgroundTaskResults.length > 0
+            text: "Results"
+            onClicked: {
+                taskVm.setBackgroundPanelVisible(true)
+                taskVm.notifyTaskPanelRendered()
             }
         }
 
