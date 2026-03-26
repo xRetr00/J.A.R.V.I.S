@@ -13,6 +13,7 @@ private slots:
     void promptAdapterAppliesDeepPrefix();
     void promptAdapterInjectsIdentityAndProfile();
     void promptAdapterInjectsRuntimeContext();
+    void promptAdapterSelectsComputerToolsForGeneralChat();
     void spokenReplyParsesStructuredPayload();
     void spokenReplyFallsBackToSanitizedPlainText();
     void spokenReplyStripsUnclosedThinkBlocks();
@@ -79,6 +80,29 @@ void AiServicesTests::promptAdapterInjectsRuntimeContext()
     QVERIFY(messages.first().content.contains(QStringLiteral("wake phrase: Jarvis")));
     QVERIFY(messages.first().content.contains(QStringLiteral("timezone:")));
     QVERIFY(messages.first().content.contains(QStringLiteral("Spoken-safe output only")));
+}
+
+void AiServicesTests::promptAdapterSelectsComputerToolsForGeneralChat()
+{
+    PromptAdapter adapter;
+    const QList<AgentToolSpec> tools = {
+        {QStringLiteral("computer_open_url"), {}, {}},
+        {QStringLiteral("computer_open_app"), {}, {}},
+        {QStringLiteral("computer_write_file"), {}, {}},
+        {QStringLiteral("computer_set_timer"), {}, {}},
+        {QStringLiteral("web_search"), {}, {}}
+    };
+
+    const QList<AgentToolSpec> selected = adapter.getRelevantTools(IntentType::GENERAL_CHAT, tools);
+    QStringList names;
+    for (const auto &tool : selected) {
+        names.push_back(tool.name);
+    }
+
+    QVERIFY(names.contains(QStringLiteral("computer_open_url")));
+    QVERIFY(names.contains(QStringLiteral("computer_open_app")));
+    QVERIFY(names.contains(QStringLiteral("computer_write_file")));
+    QVERIFY(names.contains(QStringLiteral("computer_set_timer")));
 }
 
 void AiServicesTests::spokenReplyParsesStructuredPayload()

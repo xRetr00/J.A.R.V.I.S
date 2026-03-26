@@ -10,6 +10,7 @@
 #include <QStandardPaths>
 #include <QUrl>
 
+#include "core/ComputerControl.h"
 #include "logging/LoggingService.h"
 #include "memory/MemoryStore.h"
 #include "settings/AppSettings.h"
@@ -117,6 +118,23 @@ QList<AgentToolSpec> AgentToolbox::builtInTools() const
          schemaObject({{"query", {{"type", "string"}}}}, {"query"})},
         {QStringLiteral("web_fetch"), QStringLiteral("Fetch the contents of a public URL."),
          schemaObject({{"url", {{"type", "string"}}}}, {"url"})},
+        {QStringLiteral("computer_list_apps"), QStringLiteral("List installed Windows apps from the Start menu, optionally filtered by name."),
+         schemaObject({{"query", {{"type", "string"}}}, {"limit", {{"type", "integer"}}}}, {})},
+        {QStringLiteral("computer_open_app"), QStringLiteral("Open an installed Windows app, a shortcut, or an executable path."),
+         schemaObject({{"target", {{"type", "string"}}}, {"arguments", {{"type", "array"}, {"items", {{"type", "string"}}}}}}, {"target"})},
+        {QStringLiteral("computer_open_url"), QStringLiteral("Open a URL in the system default browser or handler. Use this for browser sites like YouTube."),
+         schemaObject({{"url", {{"type", "string"}}}}, {"url"})},
+        {QStringLiteral("computer_write_file"), QStringLiteral("Create a UTF-8 text file on the computer. Relative paths default to the Desktop unless base_dir is provided."),
+         schemaObject({{"path", {{"type", "string"}}},
+                       {"content", {{"type", "string"}}},
+                       {"base_dir", {{"type", "string"}}},
+                       {"overwrite", {{"type", "boolean"}}}},
+                      {"path", "content"})},
+        {QStringLiteral("computer_set_timer"), QStringLiteral("Set a local Windows timer that will show a reminder when it finishes."),
+         schemaObject({{"duration_seconds", {{"type", "integer"}}},
+                       {"title", {{"type", "string"}}},
+                       {"message", {{"type", "string"}}}},
+                      {"duration_seconds"})},
         {QStringLiteral("skill_list"), QStringLiteral("List installed declarative skills."),
          schemaObject({})},
         {QStringLiteral("skill_install"), QStringLiteral("Install a skill from a GitHub repo URL or zip URL."),
@@ -146,6 +164,11 @@ AgentToolResult AgentToolbox::execute(const AgentToolCall &call)
     if (call.name == QStringLiteral("ai_log_read")) return executeAiLogRead(call, args);
     if (call.name == QStringLiteral("web_search")) return executeWebSearch(call, args);
     if (call.name == QStringLiteral("web_fetch")) return executeWebFetch(call, args);
+    if (call.name == QStringLiteral("computer_list_apps")) return executeComputerListApps(call, args);
+    if (call.name == QStringLiteral("computer_open_app")) return executeComputerOpenApp(call, args);
+    if (call.name == QStringLiteral("computer_open_url")) return executeComputerOpenUrl(call, args);
+    if (call.name == QStringLiteral("computer_write_file")) return executeComputerWriteFile(call, args);
+    if (call.name == QStringLiteral("computer_set_timer")) return executeComputerSetTimer(call, args);
     if (call.name == QStringLiteral("skill_list")) return executeSkillList(call);
     if (call.name == QStringLiteral("skill_install")) return executeSkillInstall(call, args);
     if (call.name == QStringLiteral("skill_create")) return executeSkillCreate(call, args);
@@ -411,6 +434,64 @@ AgentToolResult AgentToolbox::executeWebFetch(const AgentToolCall &call, const n
         output = output.left(12000) + QStringLiteral("\n...[truncated]");
     }
     return successResult(call, output);
+}
+
+AgentToolResult AgentToolbox::executeComputerListApps(const AgentToolCall &call, const nlohmann::json &args)
+{
+    const QString query = extractString(args, "query");
+    const int limit = args.contains("limit") && args.at("limit").is_number_integer() ? args.at("limit").get<int>() : 20;
+    const auto result = ComputerControl::listApps(query, limit);
+    const QString output = result.lines.isEmpty()
+        ? result.detail
+        : result.lines.join(QStringLiteral("\n"));
+    return result.success ? successResult(call, output) : failedResult(call, output);
+}
+
+AgentToolResult AgentToolbox::executeComputerOpenApp(const AgentToolCall &call, const nlohmann::json &args)
+{
+    QStringList arguments;
+    if (args.contains("arguments") && args.at("arguments").is_array()) {
+        for (const auto &argument : args.at("arguments")) {
+            if (argument.is_string()) {
+                arguments.push_back(QString::fromStdString(argument.get<std::string>()));
+            }
+        }
+    }
+
+    const auto result = ComputerControl::launchApp(extractString(args, "target"), arguments);
+    QString output = result.detail;
+    if (!result.lines.isEmpty()) {
+        output += QStringLiteral("\n") + result.lines.join(QStringLiteral("\n"));
+    }
+    return result.success ? successResult(call, output.trimmed()) : failedResult(call, output.trimmed());
+}
+
+AgentToolResult AgentToolbox::executeComputerOpenUrl(const AgentToolCall &call, const nlohmann::json &args)
+{
+    const auto result = ComputerControl::openUrl(extractString(args, "url"));
+    return result.success ? successResult(call, result.detail) : failedResult(call, result.detail);
+}
+
+AgentToolResult AgentToolbox::executeComputerWriteFile(const AgentToolCall &call, const nlohmann::json &args)
+{
+    const bool overwrite = args.value("overwrite", false);
+    const auto result = ComputerControl::writeTextFile(extractString(args, "path"),
+                                                       extractString(args, "content"),
+                                                       overwrite,
+                                                       extractString(args, "base_dir"));
+    return result.success ? successResult(call, result.detail) : failedResult(call, result.detail);
+}
+
+AgentToolResult AgentToolbox::executeComputerSetTimer(const AgentToolCall &call, const nlohmann::json &args)
+{
+    if (!args.contains("duration_seconds") || !args.at("duration_seconds").is_number_integer()) {
+        return failedResult(call, QStringLiteral("duration_seconds must be an integer."));
+    }
+
+    const auto result = ComputerControl::setTimer(args.at("duration_seconds").get<int>(),
+                                                  extractString(args, "title"),
+                                                  extractString(args, "message"));
+    return result.success ? successResult(call, result.detail) : failedResult(call, result.detail);
 }
 
 AgentToolResult AgentToolbox::executeSkillList(const AgentToolCall &call)

@@ -396,7 +396,9 @@ bool isExplicitAgentWorldQuery(const QString &input)
         QStringLiteral("tool list"),
         QStringLiteral("tools available"),
         QStringLiteral("what can you access"),
-        QStringLiteral("latest model")
+        QStringLiteral("latest model"),
+        QStringLiteral("tools inside the workspace"),
+        QStringLiteral("use the tools inside the workspace")
     });
 }
 
@@ -411,7 +413,34 @@ bool isExplicitToolInventoryQuery(const QString &input)
         QStringLiteral("reach the tools"),
         QStringLiteral("what can you access"),
         QStringLiteral("what tools can you reach"),
-        QStringLiteral("correct tools available")
+        QStringLiteral("correct tools available"),
+        QStringLiteral("tools inside the workspace")
+    });
+}
+
+bool isExplicitComputerControlQuery(const QString &input)
+{
+    return containsAnyNormalized(input, {
+        QStringLiteral("open browser"),
+        QStringLiteral("open the browser"),
+        QStringLiteral("launch browser"),
+        QStringLiteral("open youtube"),
+        QStringLiteral("launch youtube"),
+        QStringLiteral("open app"),
+        QStringLiteral("open the app"),
+        QStringLiteral("launch app"),
+        QStringLiteral("launch the app"),
+        QStringLiteral("installed apps"),
+        QStringLiteral("list apps"),
+        QStringLiteral("set timer"),
+        QStringLiteral("start timer"),
+        QStringLiteral("timer for"),
+        QStringLiteral("create file on desktop"),
+        QStringLiteral("create a file on desktop"),
+        QStringLiteral("write file on desktop"),
+        QStringLiteral("desktop file"),
+        QStringLiteral("create file in documents"),
+        QStringLiteral("create file in downloads")
     });
 }
 
@@ -989,6 +1018,11 @@ void AssistantController::submitText(const QString &text)
             .arg(static_cast<int>(detectedIntent.type))
             .arg(detectedIntent.confidence, 0, 'f', 2)
             .arg(m_intentEngine->isReady() ? QStringLiteral("true") : QStringLiteral("false")));
+    }
+
+    if (m_settings->agentEnabled() && isExplicitComputerControlQuery(routedInput)) {
+        startAgentConversationRequest(routedInput, IntentType::GENERAL_CHAT);
+        return;
     }
 
     if (detectedIntent.confidence > 0.8f && !detectedIntent.tasks.isEmpty()) {
@@ -2030,16 +2064,46 @@ void AssistantController::startAgentConversationRequest(const QString &input, In
     m_activeAgentIteration = 0;
     m_agentTrace.clear();
     emit agentTraceChanged();
-    appendAgentTrace(QStringLiteral("session"), QStringLiteral("Agent request"), QStringLiteral("Starting hybrid agent conversation"), true);
+    const QList<AgentToolSpec> relevantTools = m_promptAdapter->getRelevantTools(
+        expectedIntent,
+        m_agentToolbox->builtInTools());
+    const bool directToolCalling = m_agentCapabilities.responsesApi && m_agentCapabilities.selectedModelToolCapable;
+    appendAgentTrace(QStringLiteral("session"),
+                     QStringLiteral("Agent request"),
+                     directToolCalling
+                         ? QStringLiteral("Starting direct tool-calling agent conversation")
+                         : QStringLiteral("Starting hybrid agent conversation"),
+                     true);
 
     if (m_loggingService) {
         m_loggingService->info(QStringLiteral("Starting agent request. model=\"%1\" input=\"%2\"")
             .arg(modelId, input.left(240)));
     }
 
-    const QList<AgentToolSpec> relevantTools = m_promptAdapter->getRelevantTools(
-        expectedIntent,
-        m_agentToolbox->builtInTools());
+    if (directToolCalling) {
+        const AgentRequest request{
+            .model = modelId,
+            .instructions = m_promptAdapter->buildAgentInstructions(
+                m_memoryStore->relevantMemory(input),
+                m_skillStore->listSkills(),
+                relevantTools,
+                m_identityProfileService->identity(),
+                m_identityProfileService->userProfile(),
+                QDir::currentPath(),
+                expectedIntent,
+                m_settings->memoryAutoWrite()),
+            .inputText = input,
+            .previousResponseId = {},
+            .tools = relevantTools,
+            .toolResults = {},
+            .sampling = samplingProfile(),
+            .mode = mode,
+            .timeout = std::chrono::milliseconds(effectiveRequestTimeoutMs(m_settings))
+        };
+        m_activeRequestId = m_aiBackendClient->sendAgentRequest(request);
+        return;
+    }
+
     const auto messages = m_promptAdapter->buildHybridAgentMessages(
         input,
         m_memoryStore->relevantMemory(input),

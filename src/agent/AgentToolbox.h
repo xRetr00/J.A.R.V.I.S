@@ -36,6 +36,11 @@ private:
     AgentToolResult executeAiLogRead(const AgentToolCall &call, const nlohmann::json &args);
     AgentToolResult executeWebSearch(const AgentToolCall &call, const nlohmann::json &args);
     AgentToolResult executeWebFetch(const AgentToolCall &call, const nlohmann::json &args);
+    AgentToolResult executeComputerListApps(const AgentToolCall &call, const nlohmann::json &args);
+    AgentToolResult executeComputerOpenApp(const AgentToolCall &call, const nlohmann::json &args);
+    AgentToolResult executeComputerOpenUrl(const AgentToolCall &call, const nlohmann::json &args);
+    AgentToolResult executeComputerWriteFile(const AgentToolCall &call, const nlohmann::json &args);
+    AgentToolResult executeComputerSetTimer(const AgentToolCall &call, const nlohmann::json &args);
     AgentToolResult executeSkillList(const AgentToolCall &call);
     AgentToolResult executeSkillInstall(const AgentToolCall &call, const nlohmann::json &args);
     AgentToolResult executeSkillCreate(const AgentToolCall &call, const nlohmann::json &args);

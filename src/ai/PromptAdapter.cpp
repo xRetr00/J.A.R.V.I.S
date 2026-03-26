@@ -102,6 +102,21 @@ QString toolUseGuidance(const QString &toolName)
     if (toolName == QStringLiteral("web_fetch")) {
         return QStringLiteral("you already have a URL and need its contents");
     }
+    if (toolName == QStringLiteral("computer_list_apps")) {
+        return QStringLiteral("the user asks which Windows apps are installed or available to open");
+    }
+    if (toolName == QStringLiteral("computer_open_app")) {
+        return QStringLiteral("the user asks to open an installed Windows app, executable, or shortcut");
+    }
+    if (toolName == QStringLiteral("computer_open_url")) {
+        return QStringLiteral("the user asks to open a website, browser page, or YouTube");
+    }
+    if (toolName == QStringLiteral("computer_write_file")) {
+        return QStringLiteral("the user asks to create a text file on the Desktop, Documents, Downloads, or another explicit computer path");
+    }
+    if (toolName == QStringLiteral("computer_set_timer")) {
+        return QStringLiteral("the user asks to set a local timer or reminder on this computer");
+    }
     if (toolName == QStringLiteral("skill_list")) {
         return QStringLiteral("the user asks which skills are installed");
     }
@@ -143,6 +158,18 @@ QString toolOutputHint(const QString &toolName)
     if (toolName == QStringLiteral("web_fetch")) {
         return QStringLiteral("page contents");
     }
+    if (toolName == QStringLiteral("computer_list_apps")) {
+        return QStringLiteral("installed app names and ids");
+    }
+    if (toolName == QStringLiteral("computer_open_app") || toolName == QStringLiteral("computer_open_url")) {
+        return QStringLiteral("a launch confirmation or an ambiguity/error message");
+    }
+    if (toolName == QStringLiteral("computer_write_file")) {
+        return QStringLiteral("the created file path or a write error");
+    }
+    if (toolName == QStringLiteral("computer_set_timer")) {
+        return QStringLiteral("a timer confirmation or an error");
+    }
     if (toolName == QStringLiteral("skill_list")) {
         return QStringLiteral("installed skills");
     }
@@ -171,7 +198,7 @@ QStringList toolNamesForIntent(IntentType intent)
     case IntentType::READ_FILE:
         return {QStringLiteral("file_read"), QStringLiteral("dir_list"), QStringLiteral("log_tail"), QStringLiteral("log_search"), QStringLiteral("ai_log_read")};
     case IntentType::WRITE_FILE:
-        return {QStringLiteral("file_write"), QStringLiteral("file_patch"), QStringLiteral("dir_list")};
+        return {QStringLiteral("file_write"), QStringLiteral("file_patch"), QStringLiteral("computer_write_file"), QStringLiteral("dir_list")};
     case IntentType::MEMORY_WRITE:
         return {QStringLiteral("memory_write"), QStringLiteral("memory_search"), QStringLiteral("memory_delete")};
     case IntentType::GENERAL_CHAT:
@@ -181,7 +208,12 @@ QStringList toolNamesForIntent(IntentType intent)
                 QStringLiteral("log_search"),
                 QStringLiteral("ai_log_read"),
                 QStringLiteral("dir_list"),
-                QStringLiteral("file_read")};
+                QStringLiteral("file_read"),
+                QStringLiteral("computer_list_apps"),
+                QStringLiteral("computer_open_app"),
+                QStringLiteral("computer_open_url"),
+                QStringLiteral("computer_write_file"),
+                QStringLiteral("computer_set_timer")};
     }
 }
 
@@ -211,7 +243,7 @@ QString spokenTaskGuidance(IntentType intent)
         return QStringLiteral("Say that you are saving the memory now and the result will appear visually.");
     case IntentType::GENERAL_CHAT:
     default:
-        return QStringLiteral("No tool is required unless the user explicitly asks for files, logs, memory, skills, or web access.");
+        return QStringLiteral("Use the computer-control tools when the user explicitly asks to open apps or websites, create files on the computer, or set a timer.");
     }
 }
 }
@@ -504,9 +536,15 @@ QString PromptAdapter::buildWorkspaceContext(const QString &workspaceRoot) const
     section += QStringLiteral("\n- %1").arg(QDir(cleanWorkspace).absoluteFilePath(QStringLiteral("bin/logs")));
     section += QStringLiteral("\n- %1").arg(QDir(cleanWorkspace).absoluteFilePath(QStringLiteral("skills")));
     section += QStringLiteral("\n- %1").arg(appDataPath.isEmpty() ? QStringLiteral("app data directory") : appDataPath);
+    section += QStringLiteral("\nComputer control:");
+    section += QStringLiteral("\n- computer_write_file can create a text file in Desktop, Documents, Downloads, or another explicit absolute path.");
+    section += QStringLiteral("\n- computer_open_url can open browser pages like YouTube.");
+    section += QStringLiteral("\n- computer_open_app can launch installed Windows apps, shortcuts, or executables.");
+    section += QStringLiteral("\n- computer_set_timer can schedule a local timer notification.");
     section += QStringLiteral("\nRules:");
     section += QStringLiteral("\n- Reads can target absolute paths the user names.");
-    section += QStringLiteral("\n- Writes must stay inside the writable paths listed above.");
+    section += QStringLiteral("\n- file_write and file_patch stay inside the writable paths listed above.");
+    section += QStringLiteral("\n- computer_write_file may write outside the workspace only when the user explicitly asks for a computer location or file path.");
     section += QStringLiteral("\n- Never invent a path. If a path is missing, ask for it.");
     section += QStringLiteral("\n</workspace>");
     return section;
@@ -533,6 +571,7 @@ QString PromptAdapter::buildCapabilityRulesContext(IntentType intent) const
     static const QString baseRules =
         QStringLiteral("<rules>\n"
                        "- If the request involves files, folders, or logs, you must use a tool instead of answering from memory.\n"
+                       "- If the user asks to open an app, launch a site, create a file on the computer, or set a timer, you must use a matching computer tool.\n"
                        "- If the request involves memory writes, you must use a memory tool.\n"
                        "- Prefer tools over natural-language guesses whenever a tool can verify the answer.\n"
                        "- Never claim that a background task already finished.\n"
@@ -558,6 +597,12 @@ QString PromptAdapter::buildFewShotExamples(IntentType intent) const
                        "Assistant: {\"intent\":\"READ_FILE\",\"message\":\"Okay, I'm opening the logs now. You'll see them in the panel.\",\"background_tasks\":[{\"type\":\"file_read\",\"args\":{\"path\":\"D:/J.A.R.V.I.S/bin/logs/jarvis.log\"},\"priority\":95}]}\n"
                        "User: search the web for the latest AI news\n"
                        "Assistant: {\"intent\":\"GENERAL_CHAT\",\"message\":\"All right, I'm searching the web now. The results will appear in the panel.\",\"background_tasks\":[{\"type\":\"web_search\",\"args\":{\"query\":\"latest AI news\"},\"priority\":85}]}\n"
+                       "User: open YouTube\n"
+                       "Assistant: {\"intent\":\"GENERAL_CHAT\",\"message\":\"All right, I'm opening YouTube now.\",\"background_tasks\":[{\"type\":\"computer_open_url\",\"args\":{\"url\":\"https://www.youtube.com/\"},\"priority\":90}]}\n"
+                       "User: set a timer for 10 minutes\n"
+                       "Assistant: {\"intent\":\"GENERAL_CHAT\",\"message\":\"Okay, I'm setting that timer now.\",\"background_tasks\":[{\"type\":\"computer_set_timer\",\"args\":{\"duration_seconds\":600,\"title\":\"JARVIS Timer\",\"message\":\"Your 10 minute timer is done.\"},\"priority\":88}]}\n"
+                       "User: create a file on my desktop called notes.txt with hello\n"
+                       "Assistant: {\"intent\":\"WRITE_FILE\",\"message\":\"All right, I'm creating that file now.\",\"background_tasks\":[{\"type\":\"computer_write_file\",\"args\":{\"path\":\"notes.txt\",\"base_dir\":\"desktop\",\"content\":\"hello\"},\"priority\":92}]}\n"
                        "User: remember that I like short answers\n"
                        "Assistant: {\"intent\":\"MEMORY_WRITE\",\"message\":\"Okay, I'll save that preference and show the result in the panel.\",\"background_tasks\":[{\"type\":\"memory_write\",\"args\":{\"kind\":\"preference\",\"title\":\"response_style\",\"key\":\"response_style\",\"content\":\"likes short answers\",\"value\":\"likes short answers\"},\"priority\":70}]}\n"
                        "User: how are you\n"

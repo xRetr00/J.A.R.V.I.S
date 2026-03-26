@@ -10,6 +10,7 @@
 #include <QTextStream>
 #include <QUrl>
 
+#include "core/ComputerControl.h"
 #include "logging/LoggingService.h"
 #include "memory/MemoryManager.h"
 
@@ -136,6 +137,16 @@ void ToolWorker::processTask(const AgentTask &task)
         result = processWebSearch(task);
     } else if (task.type == QStringLiteral("memory_write")) {
         result = processMemoryWrite(task);
+    } else if (task.type == QStringLiteral("computer_list_apps")) {
+        result = processComputerListApps(task);
+    } else if (task.type == QStringLiteral("computer_open_app")) {
+        result = processComputerOpenApp(task);
+    } else if (task.type == QStringLiteral("computer_open_url")) {
+        result = processComputerOpenUrl(task);
+    } else if (task.type == QStringLiteral("computer_write_file")) {
+        result = processComputerWriteFile(task);
+    } else if (task.type == QStringLiteral("computer_set_timer")) {
+        result = processComputerSetTimer(task);
     } else {
         result = buildResult(task,
                              false,
@@ -584,5 +595,98 @@ QJsonObject ToolWorker::processMemoryWrite(const AgentTask &task)
                            {QStringLiteral("key"), entry.key},
                            {QStringLiteral("value"), entry.value},
                            {QStringLiteral("kind"), entry.kind}
+                       });
+}
+
+QJsonObject ToolWorker::processComputerListApps(const AgentTask &task)
+{
+    const QString query = task.args.value(QStringLiteral("query")).toString();
+    const int limit = task.args.value(QStringLiteral("limit")).toInt(20);
+    const auto result = ComputerControl::listApps(query, limit);
+    return buildResult(task,
+                       result.success,
+                       TaskState::Finished,
+                       result.success ? QStringLiteral("Apps listed") : QStringLiteral("App listing failed"),
+                       result.summary,
+                       result.detail,
+                       QJsonObject{
+                           {QStringLiteral("query"), query},
+                           {QStringLiteral("items"), QJsonArray::fromStringList(result.lines)}
+                       });
+}
+
+QJsonObject ToolWorker::processComputerOpenApp(const AgentTask &task)
+{
+    QStringList arguments;
+    const QJsonArray argArray = task.args.value(QStringLiteral("arguments")).toArray();
+    for (const QJsonValue &value : argArray) {
+        const QString text = value.toString().trimmed();
+        if (!text.isEmpty()) {
+            arguments.push_back(text);
+        }
+    }
+
+    const QString target = task.args.value(QStringLiteral("target")).toString();
+    const auto result = ComputerControl::launchApp(target, arguments);
+    return buildResult(task,
+                       result.success,
+                       TaskState::Finished,
+                       result.success ? QStringLiteral("App opened") : QStringLiteral("App open failed"),
+                       result.summary,
+                       result.detail,
+                       QJsonObject{
+                           {QStringLiteral("target"), target},
+                           {QStringLiteral("matches"), QJsonArray::fromStringList(result.lines)}
+                       });
+}
+
+QJsonObject ToolWorker::processComputerOpenUrl(const AgentTask &task)
+{
+    const QString url = task.args.value(QStringLiteral("url")).toString();
+    const auto result = ComputerControl::openUrl(url);
+    return buildResult(task,
+                       result.success,
+                       TaskState::Finished,
+                       result.success ? QStringLiteral("URL opened") : QStringLiteral("URL open failed"),
+                       result.summary,
+                       result.detail,
+                       QJsonObject{{QStringLiteral("url"), url}});
+}
+
+QJsonObject ToolWorker::processComputerWriteFile(const AgentTask &task)
+{
+    const QString path = task.args.value(QStringLiteral("path")).toString();
+    const QString content = task.args.value(QStringLiteral("content")).toString();
+    const QString baseDir = task.args.value(QStringLiteral("base_dir")).toString();
+    const bool overwrite = task.args.value(QStringLiteral("overwrite")).toBool(false);
+    const auto result = ComputerControl::writeTextFile(path, content, overwrite, baseDir);
+    return buildResult(task,
+                       result.success,
+                       TaskState::Finished,
+                       result.success ? QStringLiteral("Computer file written") : QStringLiteral("Computer file write failed"),
+                       result.summary,
+                       result.detail,
+                       QJsonObject{
+                           {QStringLiteral("path"), result.resolvedPath},
+                           {QStringLiteral("base_dir"), baseDir}
+                       });
+}
+
+QJsonObject ToolWorker::processComputerSetTimer(const AgentTask &task)
+{
+    const int durationSeconds = task.args.value(QStringLiteral("duration_seconds")).toInt(0);
+    const QString title = task.args.value(QStringLiteral("title")).toString();
+    const QString message = task.args.value(QStringLiteral("message")).toString();
+    const auto result = ComputerControl::setTimer(durationSeconds, title, message);
+    return buildResult(task,
+                       result.success,
+                       TaskState::Finished,
+                       result.success ? QStringLiteral("Timer set") : QStringLiteral("Timer setup failed"),
+                       result.summary,
+                       result.detail,
+                       QJsonObject{
+                           {QStringLiteral("duration_seconds"), durationSeconds},
+                           {QStringLiteral("title"), title},
+                           {QStringLiteral("message"), message}
                        });
 }

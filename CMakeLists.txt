@@ -141,6 +141,7 @@ set(JARVIS_SOURCES
     src/core/agent/IntentEngine.cpp
     src/core/AssistantController.cpp
     src/core/IntentRouter.cpp
+    src/core/ComputerControl.cpp
     src/core/LocalResponseEngine.cpp
     src/core/tasks/TaskDispatcher.cpp
     src/core/tasks/ToolWorker.cpp
@@ -189,6 +190,7 @@ set(JARVIS_HEADERS
     src/core/agent/IntentEngine.h
     src/core/AssistantController.h
     src/core/AssistantTypes.h
+    src/core/ComputerControl.h
     src/core/IntentRouter.h
     src/core/LocalResponseEngine.h
     src/core/tasks/TaskDispatcher.h

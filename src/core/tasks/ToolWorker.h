@@ -56,6 +56,11 @@ private:
     QJsonObject processAiLogRead(const AgentTask &task);
     QJsonObject processWebSearch(const AgentTask &task);
     QJsonObject processMemoryWrite(const AgentTask &task);
+    QJsonObject processComputerListApps(const AgentTask &task);
+    QJsonObject processComputerOpenApp(const AgentTask &task);
+    QJsonObject processComputerOpenUrl(const AgentTask &task);
+    QJsonObject processComputerWriteFile(const AgentTask &task);
+    QJsonObject processComputerSetTimer(const AgentTask &task);
 
     QStringList m_allowedRoots;
     LoggingService *m_loggingService = nullptr;
