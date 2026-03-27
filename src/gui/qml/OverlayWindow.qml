@@ -38,17 +38,18 @@ Window {
     property color textSecondaryColor: useDarkText ? "#2b4056" : "#bfd3ea"
     property color textMutedColor: useDarkText ? "#3f5871" : "#7f9fc7"
     property color textOutlineColor: useDarkText ? "#80ffffff" : "#90060d14"
-    property real textShimmerStrength: Math.min(
-        0.85,
-        0.08
-        + motion.listeningAmount * 0.16
-        + motion.thinkingAmount * 0.24
-        + motion.executingAmount * 0.32
-        + motion.inputBoost * 0.12)
+    property bool showingModelResponse: agentVm.responseText.trim().length > 0
 
     onClosing: function(close) {
         close.accepted = false
         hide()
+    }
+
+    onVisibleChanged: {
+        if (visible) {
+            requestActivate()
+            keyCapture.forceActiveFocus()
+        }
     }
 
     function compactText(rawText, fallbackText) {
@@ -69,16 +70,31 @@ Window {
     }
 
     function presenceLine() {
-        if (agentVm.responseText.length > 0) {
+        if (root.showingModelResponse) {
             return compactText(agentVm.responseText, "")
-        }
-        if (agentVm.transcript.length > 0) {
-            return compactText(agentVm.transcript, "")
         }
         if (agentVm.uiState === stateIdle) {
             return greetingLine()
         }
         return compactText(agentVm.statusText, "Ready.")
+    }
+
+    function shouldShowStatusToast(statusText) {
+        const value = compactText(statusText, "").toLowerCase()
+        if (value.length === 0) {
+            return false
+        }
+        return value !== "processing request"
+            && value !== "listening"
+            && value !== "thinking"
+            && value !== "executing"
+            && value !== "idle"
+            && value !== "response ready"
+    }
+
+    function shouldShowModelToast(responseText) {
+        const normalizedResponse = compactText(responseText, "").toLowerCase()
+        return normalizedResponse.length > 0
     }
 
     function microStatus() {
@@ -100,6 +116,26 @@ Window {
         inputLevel: agentVm.audioLevel
         overlayVisible: agentVm.overlayVisible
         uiState: agentVm.uiState
+    }
+
+    Shortcut {
+        sequence: "M"
+        context: Qt.ApplicationShortcut
+        enabled: root.visible
+        onActivated: agentVm.interruptSpeechAndListen()
+    }
+
+    Item {
+        id: keyCapture
+        anchors.fill: parent
+        focus: root.visible
+        z: -1
+        Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_M) {
+                agentVm.interruptSpeechAndListen()
+                event.accepted = true
+            }
+        }
     }
 
     Item {
@@ -158,16 +194,7 @@ Window {
                             elide: Text.ElideRight
                             style: Text.Outline
                             styleColor: root.textOutlineColor
-                            layer.enabled: root.visible
-                            layer.smooth: true
-                            layer.effect: ShaderEffect {
-                                property real time: motion.time
-                                property real shimmerStrength: root.textShimmerStrength
-                                property real shimmerSpeed: 0.2 + motion.executingAmount * 0.18 + motion.thinkingAmount * 0.1
-                                property real shimmerWidth: 0.2
-                                property real shimmerSkew: 0.45
-                                fragmentShader: "qrc:/qt/qml/JARVIS/gui/shaders/src/gui/shaders/text_shimmer.frag.qsb"
-                            }
+                            layer.enabled: false
                         }
 
                         Text {
@@ -347,13 +374,29 @@ Window {
             }
         }
 
+        Button {
+            anchors.left: parent.left
+            anchors.leftMargin: root.pageMargin
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: root.pageMargin
+            visible: agentVm.uiState === root.stateExecuting || agentVm.uiState === root.stateThinking
+            text: "M"
+            ToolTip.visible: hovered
+            ToolTip.text: "Mute/interrupt and listen"
+            onClicked: agentVm.interruptSpeechAndListen()
+        }
+
         JarvisUi.ToastManager {
             id: toastManager
             anchors.right: parent.right
             anchors.rightMargin: pageMargin
             anchors.bottom: parent.bottom
             anchors.bottomMargin: pageMargin
+            latestUserPrompt: agentVm.transcript
             onToastClicked: function(taskId) {
+                if (taskId < 0) {
+                    return
+                }
                 taskVm.setBackgroundPanelVisible(true)
                 taskVm.notifyTaskToastShown(taskId)
             }
@@ -364,7 +407,7 @@ Window {
         target: agentVm
 
         function onStatusTextChanged() {
-            if (agentVm.statusText.length === 0) {
+            if (!root.shouldShowStatusToast(agentVm.statusText)) {
                 return
             }
             toastManager.pushToast(
@@ -375,7 +418,7 @@ Window {
         }
 
         function onResponseTextChanged() {
-            if (agentVm.responseText.length === 0) {
+            if (!root.shouldShowModelToast(agentVm.responseText)) {
                 return
             }
             toastManager.pushToast(agentVm.responseText, "response", -1, "response")

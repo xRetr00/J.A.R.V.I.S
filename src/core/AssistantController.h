@@ -77,6 +77,7 @@ public slots:
     void refreshModels();
     void submitText(const QString &text);
     void startListening();
+    void interruptSpeechAndListen();
     void startWakeMonitor();
     void stopWakeMonitor();
     void stopListening();

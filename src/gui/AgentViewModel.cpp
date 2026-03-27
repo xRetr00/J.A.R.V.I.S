@@ -99,6 +99,13 @@ void AgentViewModel::startListening()
     }
 }
 
+void AgentViewModel::interruptSpeechAndListen()
+{
+    if (m_backend) {
+        m_backend->interruptSpeechAndListen();
+    }
+}
+
 void AgentViewModel::cancelRequest()
 {
     if (m_backend) {

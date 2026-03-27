@@ -58,6 +58,13 @@ MCP integration controls:
 - mcpCatalogUrl
 - mcpServerUrl
 
+Quick-install MCP presets currently include:
+
+- @playwright/mcp
+- @modelcontextprotocol/server-filesystem
+- @modelcontextprotocol/server-memory
+- @modelcontextprotocol/server-brave-search (recommended web-search fallback)
+
 Speech recognition and intent:
 
 - whisperExecutable

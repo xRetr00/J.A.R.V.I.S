@@ -6,50 +6,82 @@ Rectangle {
 
     required property string toastMessage
     required property string toastTone
+    required property string createdAt
     property int taskId: -1
     signal clicked(int taskId)
+    signal dismissed(int taskId)
 
-    width: 320
-    height: Math.min(124, Math.max(64, contentColumn.implicitHeight + 24))
-    radius: 22
-    color: "#8c06101a"
+    width: parent ? parent.width : 420
+    implicitWidth: width
+    implicitHeight: Math.min(320, Math.max(88, contentColumn.implicitHeight + 26))
+    radius: 18
+    color: "#d90b1522"
     border.width: 1
-    border.color: toastTone === "error" ? "#74475f" : toastTone === "response" ? "#345d92" : "#263e58"
-    opacity: 0.96
+    border.color: toastTone === "error" ? "#a44b68" : toastTone === "response" ? "#3a80c4" : "#2f566f"
+    opacity: 0.98
+
+    readonly property color accentColor: toastTone === "error" ? "#ff789f" : toastTone === "response" ? "#8ae6ff" : "#8da7ff"
+    readonly property string toneLabel: toastTone === "error" ? "Error"
+        : toastTone === "response" ? "Model"
+        : "Status"
 
     Rectangle {
         anchors.fill: parent
         radius: parent.radius
         color: "transparent"
         border.width: 1
-        border.color: root.toastTone === "response" ? "#41d5ff" : "#8db6ff"
-        opacity: root.toastTone === "response" ? 0.16 : 0.06
+        border.color: root.accentColor
+        opacity: root.toastTone === "response" ? 0.28 : 0.14
+    }
+
+    Rectangle {
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        width: 4
+        radius: 2
+        color: root.accentColor
+        opacity: 0.85
     }
 
     Column {
         id: contentColumn
         anchors.fill: parent
         anchors.margins: 14
-        spacing: 8
+        anchors.leftMargin: 16
+        spacing: 10
 
-        Rectangle {
-            width: 10
-            height: 10
-            radius: 5
-            color: root.toastTone === "error" ? "#ff8fb5" : root.toastTone === "response" ? "#8ae6ff" : "#8da7ff"
+        Row {
+            width: parent.width
+            spacing: 8
+
+            Text {
+                text: root.toneLabel
+                color: root.accentColor
+                font.pixelSize: 11
+                font.bold: true
+                elide: Text.ElideRight
+            }
+
+            Text {
+                text: root.createdAt
+                color: "#9ab7ce"
+                font.pixelSize: 10
+                elide: Text.ElideRight
+            }
         }
 
         ScrollView {
             width: parent.width
-            height: Math.min(72, toastText.implicitHeight)
+            height: Math.min(220, Math.max(36, toastText.implicitHeight))
             clip: true
 
             Text {
                 id: toastText
-                width: root.width - 56
+                width: Math.max(220, root.width - 64)
                 text: root.toastMessage
                 color: "#ecf7ff"
-                font.pixelSize: 12
+                font.pixelSize: 13
                 wrapMode: Text.Wrap
             }
         }
@@ -58,6 +90,9 @@ Rectangle {
     MouseArea {
         anchors.fill: parent
         cursorShape: Qt.PointingHandCursor
-        onClicked: root.clicked(root.taskId)
+        onClicked: function() {
+            root.dismissed(root.taskId)
+            root.clicked(root.taskId)
+        }
     }
 }

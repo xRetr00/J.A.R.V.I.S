@@ -202,6 +202,7 @@ public:
     Q_INVOKABLE void refreshModels();
     Q_INVOKABLE void submitText(const QString &text);
     Q_INVOKABLE void startListening();
+    Q_INVOKABLE void interruptSpeechAndListen();
     Q_INVOKABLE void cancelRequest();
     Q_INVOKABLE void setSelectedModel(const QString &modelId);
     Q_INVOKABLE void setSelectedIntentModelId(const QString &modelId);

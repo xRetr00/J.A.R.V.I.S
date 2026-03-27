@@ -27,6 +27,32 @@ QString collapseWhitespace(QString text)
     return text.trimmed();
 }
 
+QString canonicalSpeechKey(const QString &text)
+{
+    QString key = text.toLower();
+    key.remove(QRegularExpression(QStringLiteral("[^a-z0-9]")));
+    return key;
+}
+
+bool isStatusOnlyText(const QString &text)
+{
+    static const QStringList statusKeys = {
+        QStringLiteral("listening"),
+        QStringLiteral("processingrequest"),
+        QStringLiteral("responseready"),
+        QStringLiteral("standingby"),
+        QStringLiteral("requestcancelled"),
+        QStringLiteral("commandexecuted"),
+        QStringLiteral("loadingservices"),
+        QStringLiteral("settingssaved"),
+        QStringLiteral("unabletostartlistening"),
+        QStringLiteral("transcribedby")
+    };
+
+    const QString key = canonicalSpeechKey(text);
+    return !key.isEmpty() && statusKeys.contains(key);
+}
+
 QString trimJsonPayload(const QString &input)
 {
     const int start = input.indexOf(QChar::fromLatin1('{'));
@@ -93,6 +119,11 @@ SpokenReply parseSpokenReply(const QString &input)
     }
     if (reply.displayText.isEmpty()) {
         reply.shouldSpeak = false;
+    }
+
+    if (isStatusOnlyText(reply.spokenText) || isStatusOnlyText(reply.displayText)) {
+        reply.shouldSpeak = false;
+        reply.spokenText.clear();
     }
 
     return reply;

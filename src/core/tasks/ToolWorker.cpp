@@ -6,7 +6,10 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QJsonObject>
 #include <QProcess>
+#include <QRegularExpression>
+#include <QSet>
 #include <QTextStream>
 #include <QUrl>
 
@@ -70,6 +73,177 @@ QString latestAiLogPath()
     const QDir logDir(QDir::currentPath() + QStringLiteral("/bin/logs/AI"));
     const QFileInfoList files = logDir.entryInfoList({QStringLiteral("*.log")}, QDir::Files | QDir::Readable, QDir::Time);
     return files.isEmpty() ? QString{} : files.first().absoluteFilePath();
+}
+
+QString simplifySearchQuery(QString query)
+{
+    query = query.trimmed();
+    query.remove(QRegularExpression(QStringLiteral("^(about|regarding|tell me about|what about)\\s+"),
+                                    QRegularExpression::CaseInsensitiveOption));
+    query.remove(QRegularExpression(QStringLiteral("^(latest\\s+)?(models?|news)\\s+(made\\s+by|from|of)\\s+"),
+                                    QRegularExpression::CaseInsensitiveOption));
+    query = query.trimmed();
+    query.remove(QRegularExpression(QStringLiteral("^[\\s,.:;!?-]+|[\\s,.:;!?-]+$")));
+    return query;
+}
+
+QStringList buildSearchVariants(const QString &query)
+{
+    const QString base = simplifySearchQuery(query).isEmpty() ? query.trimmed() : simplifySearchQuery(query);
+    QStringList variants;
+    variants << base;
+    variants << (base + QStringLiteral(" official announcement"));
+    variants << (base + QStringLiteral(" latest update official source"));
+
+    const QString lowered = base.toLower();
+    if (lowered.contains(QStringLiteral("openai"))) {
+        variants << QStringLiteral("site:openai.com %1").arg(base);
+        variants << QStringLiteral("site:platform.openai.com %1").arg(base);
+    }
+
+    QStringList cleaned;
+    QSet<QString> seen;
+    for (QString variant : variants) {
+        variant = variant.simplified();
+        if (!variant.isEmpty()) {
+            const QString key = variant.toLower();
+            if (!seen.contains(key)) {
+                seen.insert(key);
+                cleaned.push_back(variant);
+            }
+        }
+    }
+    return cleaned;
+}
+
+QString hostFromUrl(const QString &url)
+{
+    const QUrl parsed(url);
+    return parsed.host().toLower();
+}
+
+bool isAuthoritativeHost(const QString &host)
+{
+    static const QStringList authoritative{
+        QStringLiteral("openai.com"),
+        QStringLiteral("platform.openai.com"),
+        QStringLiteral("developers.openai.com"),
+        QStringLiteral("learn.microsoft.com"),
+        QStringLiteral("azure.microsoft.com"),
+        QStringLiteral("anthropic.com"),
+        QStringLiteral("arxiv.org")
+    };
+    for (const QString &entry : authoritative) {
+        if (host == entry || host.endsWith(QStringLiteral(".") + entry)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool isLowSignalHost(const QString &host)
+{
+    static const QStringList lowSignal{
+        QStringLiteral("youtube.com"),
+        QStringLiteral("m.youtube.com"),
+        QStringLiteral("tiktok.com"),
+        QStringLiteral("x.com"),
+        QStringLiteral("twitter.com")
+    };
+    for (const QString &entry : lowSignal) {
+        if (host == entry || host.endsWith(QStringLiteral(".") + entry)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+QJsonArray extractBraveSources(const QString &jsonText)
+{
+    const QJsonDocument doc = QJsonDocument::fromJson(jsonText.toUtf8());
+    if (!doc.isObject()) {
+        return {};
+    }
+
+    const QJsonObject root = doc.object();
+    const QJsonArray results = root.value(QStringLiteral("web")).toObject().value(QStringLiteral("results")).toArray();
+    QJsonArray sources;
+    for (const QJsonValue &value : results) {
+        const QJsonObject row = value.toObject();
+        const QString title = row.value(QStringLiteral("title")).toString().trimmed();
+        const QString url = row.value(QStringLiteral("url")).toString().trimmed();
+        const QString description = row.value(QStringLiteral("description")).toString().trimmed();
+        if (!url.isEmpty()) {
+            sources.push_back(QJsonObject{
+                {QStringLiteral("title"), title},
+                {QStringLiteral("url"), url},
+                {QStringLiteral("snippet"), description}
+            });
+        }
+    }
+    return sources;
+}
+
+QJsonArray extractDuckSources(const QString &jsonText)
+{
+    const QJsonDocument doc = QJsonDocument::fromJson(jsonText.toUtf8());
+    if (!doc.isObject()) {
+        return {};
+    }
+
+    const QJsonObject root = doc.object();
+    QJsonArray sources;
+
+    const QString abstractUrl = root.value(QStringLiteral("AbstractURL")).toString().trimmed();
+    const QString abstractText = root.value(QStringLiteral("AbstractText")).toString().trimmed();
+    const QString heading = root.value(QStringLiteral("Heading")).toString().trimmed();
+    if (!abstractUrl.isEmpty()) {
+        sources.push_back(QJsonObject{
+            {QStringLiteral("title"), heading},
+            {QStringLiteral("url"), abstractUrl},
+            {QStringLiteral("snippet"), abstractText}
+        });
+    }
+
+    const QJsonArray topics = root.value(QStringLiteral("RelatedTopics")).toArray();
+    for (const QJsonValue &topicValue : topics) {
+        const QJsonObject topic = topicValue.toObject();
+        const QString firstUrl = topic.value(QStringLiteral("FirstURL")).toString().trimmed();
+        const QString text = topic.value(QStringLiteral("Text")).toString().trimmed();
+        if (!firstUrl.isEmpty()) {
+            sources.push_back(QJsonObject{
+                {QStringLiteral("title"), text.left(100)},
+                {QStringLiteral("url"), firstUrl},
+                {QStringLiteral("snippet"), text}
+            });
+        }
+    }
+
+    return sources;
+}
+
+QString compactSourcesContext(const QJsonArray &sources)
+{
+    QStringList lines;
+    int index = 1;
+    for (const QJsonValue &value : sources) {
+        const QJsonObject source = value.toObject();
+        const QString title = source.value(QStringLiteral("title")).toString().trimmed();
+        const QString url = source.value(QStringLiteral("url")).toString().trimmed();
+        const QString snippet = source.value(QStringLiteral("snippet")).toString().trimmed();
+        if (url.isEmpty()) {
+            continue;
+        }
+        lines << QStringLiteral("[%1] %2 | %3 | %4")
+                     .arg(index++)
+                     .arg(title.isEmpty() ? QStringLiteral("untitled") : title)
+                     .arg(url)
+                     .arg(snippet.left(260));
+        if (lines.size() >= 8) {
+            break;
+        }
+    }
+    return lines.join(QStringLiteral("\n"));
 }
 }
 
@@ -562,54 +736,118 @@ QJsonObject ToolWorker::processWebSearch(const AgentTask &task)
         }
     }
 
-    QString output;
-    bool ok = false;
+    const QStringList variants = buildSearchVariants(query);
+    QJsonArray mergedSources;
+    QSet<QString> seenUrls;
     QString providerUsed = provider;
     QString detailSuffix;
+    QString latestRawOutput;
 
-    if (provider == QStringLiteral("brave")) {
-        QString apiKey = m_settings ? m_settings->braveSearchApiKey().trimmed() : QString();
-        if (apiKey.isEmpty()) {
-            apiKey = qEnvironmentVariable("BRAVE_SEARCH_API_KEY");
+    auto appendUniqueSources = [&mergedSources, &seenUrls](const QJsonArray &sources) {
+        for (const QJsonValue &value : sources) {
+            const QJsonObject source = value.toObject();
+            const QString url = source.value(QStringLiteral("url")).toString().trimmed();
+            if (url.isEmpty()) {
+                continue;
+            }
+            const QString key = url.toLower();
+            if (seenUrls.contains(key)) {
+                continue;
+            }
+            seenUrls.insert(key);
+            mergedSources.push_back(source);
         }
+    };
 
-        if (!apiKey.isEmpty()) {
-            QString uri = QStringLiteral("https://api.search.brave.com/res/v1/web/search?q=%1")
-                              .arg(QString::fromUtf8(QUrl::toPercentEncoding(query)));
-            if (!freshness.isEmpty()) {
-                uri += QStringLiteral("&freshness=%1").arg(QString::fromUtf8(QUrl::toPercentEncoding(freshness)));
+    bool anyQuerySucceeded = false;
+    for (const QString &variant : variants) {
+        bool ok = false;
+        QString output;
+
+        if (provider == QStringLiteral("brave")) {
+            QString apiKey = m_settings ? m_settings->braveSearchApiKey().trimmed() : QString();
+            if (apiKey.isEmpty()) {
+                apiKey = qEnvironmentVariable("BRAVE_SEARCH_API_KEY");
             }
 
-            output = runPowerShell(
-                QStringLiteral("$headers=@{'Accept'='application/json';'X-Subscription-Token'=%1}; "
-                               "(Invoke-RestMethod -Headers $headers -Uri %2) | ConvertTo-Json -Depth 8")
-                    .arg(quotePowerShell(apiKey), quotePowerShell(uri)),
-                20000,
-                &ok);
+            if (!apiKey.isEmpty()) {
+                QString uri = QStringLiteral("https://api.search.brave.com/res/v1/web/search?q=%1&count=8")
+                                  .arg(QString::fromUtf8(QUrl::toPercentEncoding(variant)));
+                if (!freshness.isEmpty()) {
+                    uri += QStringLiteral("&freshness=%1").arg(QString::fromUtf8(QUrl::toPercentEncoding(freshness)));
+                }
+
+                output = runPowerShell(
+                    QStringLiteral("$headers=@{'Accept'='application/json';'X-Subscription-Token'=%1}; "
+                                   "(Invoke-RestMethod -Headers $headers -Uri %2) | ConvertTo-Json -Depth 8")
+                        .arg(quotePowerShell(apiKey), quotePowerShell(uri)),
+                    20000,
+                    &ok);
+                if (ok) {
+                    appendUniqueSources(extractBraveSources(output));
+                }
+            }
+
+            if (!ok) {
+                providerUsed = QStringLiteral("duckduckgo");
+                detailSuffix = QStringLiteral(" Brave search was unavailable for at least one query variant; fell back to DuckDuckGo where needed.");
+            }
         }
 
         if (!ok) {
-            providerUsed = QStringLiteral("duckduckgo");
-            detailSuffix = QStringLiteral(" Brave search was unavailable; fell back to DuckDuckGo instant results.");
+            output = runPowerShell(
+                QStringLiteral("(Invoke-RestMethod -Uri %1) | ConvertTo-Json -Depth 8")
+                    .arg(quotePowerShell(QStringLiteral("https://api.duckduckgo.com/?q=%1&format=json&no_html=1&skip_disambig=1")
+                                             .arg(QString::fromUtf8(QUrl::toPercentEncoding(variant))))),
+                20000,
+                &ok);
+            if (ok) {
+                appendUniqueSources(extractDuckSources(output));
+            }
+        }
+
+        if (ok) {
+            anyQuerySucceeded = true;
+            latestRawOutput = output;
         }
     }
 
-    if (!ok) {
-        output = runPowerShell(
-            QStringLiteral("(Invoke-RestMethod -Uri %1) | ConvertTo-Json -Depth 8")
-                .arg(quotePowerShell(QStringLiteral("https://api.duckduckgo.com/?q=%1&format=json&no_html=1&skip_disambig=1")
-                                         .arg(QString::fromUtf8(QUrl::toPercentEncoding(query))))),
-            20000,
-            &ok);
-    }
-
-    if (!ok) {
+    if (!anyQuerySucceeded) {
         return buildResult(task,
                            false,
                            TaskState::Finished,
                            QStringLiteral("Web search failed"),
                            QStringLiteral("I couldn't search the web right now."),
                            QStringLiteral("Search query failed: %1").arg(query));
+    }
+
+    int authoritativeCount = 0;
+    int lowSignalCount = 0;
+    int neutralCount = 0;
+    for (const QJsonValue &value : mergedSources) {
+        const QString host = hostFromUrl(value.toObject().value(QStringLiteral("url")).toString());
+        if (host.isEmpty()) {
+            continue;
+        }
+        if (isAuthoritativeHost(host)) {
+            authoritativeCount++;
+        } else if (isLowSignalHost(host)) {
+            lowSignalCount++;
+        } else {
+            neutralCount++;
+        }
+    }
+
+    const int qualityScore = authoritativeCount * 3 + neutralCount - lowSignalCount;
+    const bool reliable = mergedSources.size() >= 2 && qualityScore >= 3;
+    const QString reliabilityReason = reliable
+        ? QStringLiteral("Sufficient high-signal results found.")
+        : QStringLiteral("Search results are low confidence (weak or low-authority source mix).");
+
+    const QString compactContext = compactSourcesContext(mergedSources);
+    QString output = compactContext;
+    if (output.trimmed().isEmpty()) {
+        output = latestRawOutput;
     }
 
     QString summary = QStringLiteral("Searched the web for \"%1\"").arg(query);
@@ -622,14 +860,27 @@ QJsonObject ToolWorker::processWebSearch(const AgentTask &task)
     return buildResult(task,
                        true,
                        TaskState::Finished,
-                       QStringLiteral("Web search ready"),
+                       reliable ? QStringLiteral("Web search ready") : QStringLiteral("Web search low confidence"),
                        summary,
-                       QStringLiteral("Web search completed for %1 using %2.%3")
-                           .arg(query, providerUsed, detailSuffix),
+                       QStringLiteral("Web search completed for %1 using %2. variants=%3 results=%4 score=%5 reliable=%6.%7")
+                           .arg(query,
+                                providerUsed,
+                                QString::number(variants.size()),
+                                QString::number(mergedSources.size()),
+                                QString::number(qualityScore),
+                                reliable ? QStringLiteral("true") : QStringLiteral("false"),
+                                detailSuffix),
                        QJsonObject{
                            {QStringLiteral("query"), query},
+                           {QStringLiteral("query_rewritten"), simplifySearchQuery(query)},
+                           {QStringLiteral("query_variants"), QJsonArray::fromStringList(variants)},
                            {QStringLiteral("provider"), providerUsed},
                            {QStringLiteral("freshness"), freshness},
+                           {QStringLiteral("result_count"), static_cast<int>(mergedSources.size())},
+                           {QStringLiteral("quality_score"), qualityScore},
+                           {QStringLiteral("reliable"), reliable},
+                           {QStringLiteral("reliability_reason"), reliabilityReason},
+                           {QStringLiteral("sources"), mergedSources},
                            {QStringLiteral("content"), output}
                        });
 }

@@ -230,6 +230,47 @@ bool isLikelyNonSpeechTranscript(const QString &input)
         || normalized == QStringLiteral("inaudible");
 }
 
+bool isLikelySttArtifactTranscript(const QString &input)
+{
+    QString normalized = input.toLower();
+    normalized.replace(QRegularExpression(QStringLiteral("[^a-z0-9]+")), QStringLiteral(" "));
+    normalized = normalized.simplified();
+    if (normalized.isEmpty()) {
+        return true;
+    }
+
+    static const QStringList knownArtifacts = {
+        QStringLiteral("transcribed by"),
+        QStringLiteral("transcribe literally"),
+        QStringLiteral("transcribed literally"),
+        QStringLiteral("subtitle by"),
+        QStringLiteral("subtitles by"),
+        QStringLiteral("captions by"),
+        QStringLiteral("thanks for watching")
+    };
+
+    for (const QString &phrase : knownArtifacts) {
+        const QString escaped = QRegularExpression::escape(phrase);
+        const QString pattern = QStringLiteral("(^|\\s)%1(\\s|$)").arg(escaped).replace(QStringLiteral("\\ "), QStringLiteral("\\s+"));
+        if (QRegularExpression(pattern).match(normalized).hasMatch()) {
+            return true;
+        }
+    }
+
+    const QStringList words = normalized.split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
+    if (words.size() <= 3) {
+        for (const QString &word : words) {
+            if (word.startsWith(QStringLiteral("transcrib"))
+                || word.startsWith(QStringLiteral("subtitle"))
+                || word.startsWith(QStringLiteral("caption"))) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 QStringList transcriptWords(const QString &input)
 {
     return input.toLower().split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
@@ -448,7 +489,7 @@ QString sanitizeSimpleFileName(QString fileName)
 {
     fileName = fileName.trimmed();
     fileName.remove(QRegularExpression(QStringLiteral("[\\\\/:*?\"<>|]")));
-    fileName.remove(QRegularExpression(QStringLiteral("\s+")));
+    fileName.remove(QRegularExpression(QStringLiteral("\\s+")));
     if (fileName.isEmpty()) {
         return QStringLiteral("jarvis_note.txt");
     }
@@ -582,14 +623,70 @@ bool buildDeterministicComputerTask(const QString &input, AgentTask *task, QStri
 bool isExplicitWebSearchQuery(const QString &input)
 {
     return containsAnyNormalized(input, {
+        QStringLiteral("search"),
+        QStringLiteral("search internet"),
+        QStringLiteral("search the internet"),
         QStringLiteral("search the web"),
         QStringLiteral("search web"),
+        QStringLiteral("search for"),
+        QStringLiteral("search anything"),
+        QStringLiteral("try to search"),
+        QStringLiteral("internet search"),
+        QStringLiteral("browse internet"),
+        QStringLiteral("browse the internet"),
         QStringLiteral("browse the web"),
         QStringLiteral("web search"),
         QStringLiteral("latest news"),
         QStringLiteral("latest model"),
         QStringLiteral("reach the web")
     });
+}
+
+bool isWebSearchVerificationQuery(const QString &input)
+{
+    const QString normalized = input.toLower();
+    return (normalized.contains(QStringLiteral("search"))
+            || normalized.contains(QStringLiteral("web"))
+            || normalized.contains(QStringLiteral("internet")))
+        && (normalized.contains(QStringLiteral("working"))
+            || normalized.contains(QStringLiteral("work or not"))
+            || normalized.contains(QStringLiteral("test"))
+            || normalized.contains(QStringLiteral("try to search"))
+            || normalized.contains(QStringLiteral("search for anything")));
+}
+
+QString defaultWebSearchProbeQuery()
+{
+    return QStringLiteral("latest AI news");
+}
+
+bool isLikelyKnowledgeLookupQuery(const QString &input)
+{
+    const QString normalized = input.trimmed().toLower();
+    if (normalized.isEmpty()) {
+        return false;
+    }
+
+    static const QRegularExpression startsWithQuestionWord(
+        QStringLiteral("^(what|who|when|where|which|how many|how much|in which year|tell me)\\b"),
+        QRegularExpression::CaseInsensitiveOption);
+    if (!startsWithQuestionWord.match(normalized).hasMatch()) {
+        return false;
+    }
+
+    if (containsAnyNormalized(normalized, {
+            QStringLiteral("open "),
+            QStringLiteral("launch "),
+            QStringLiteral("start "),
+            QStringLiteral("create file"),
+            QStringLiteral("read file"),
+            QStringLiteral("show logs"),
+            QStringLiteral("set timer")
+        })) {
+        return false;
+    }
+
+    return true;
 }
 
 bool isFreshnessSensitiveQuery(const QString &input)
@@ -635,6 +732,21 @@ QString freshnessCodeForQuery(const QString &input)
     return QStringLiteral("pw");
 }
 
+bool asksForDetailedAnswer(const QString &input)
+{
+    return containsAnyNormalized(input, {
+        QStringLiteral("details"),
+        QStringLiteral("detailed"),
+        QStringLiteral("explain"),
+        QStringLiteral("why"),
+        QStringLiteral("how"),
+        QStringLiteral("breakdown"),
+        QStringLiteral("compare"),
+        QStringLiteral("sources"),
+        QStringLiteral("list")
+    });
+}
+
 QString extractWebSearchQuery(QString input)
 {
     input = input.trimmed();
@@ -642,9 +754,11 @@ QString extractWebSearchQuery(QString input)
                                     QRegularExpression::CaseInsensitiveOption));
     input.remove(QRegularExpression(QStringLiteral("^(can you|could you|would you|please)\\s+"),
                                     QRegularExpression::CaseInsensitiveOption));
-    input.remove(QRegularExpression(QStringLiteral("^(search|browse)\\s+(the\\s+)?web\\s+(for|about|on)\\s+"),
+    input.remove(QRegularExpression(QStringLiteral("^(search|browse)\\s+(the\\s+)?(web|internet)\\s+(for|about|on)\\s+"),
                                     QRegularExpression::CaseInsensitiveOption));
-    input.remove(QRegularExpression(QStringLiteral("^(search|browse)\\s+(the\\s+)?web\\s*"),
+    input.remove(QRegularExpression(QStringLiteral("^(search|browse)\\s+(the\\s+)?(web|internet)\\s*"),
+                                    QRegularExpression::CaseInsensitiveOption));
+    input.remove(QRegularExpression(QStringLiteral("^(search|find|look up)\\s+(for\\s+)?"),
                                     QRegularExpression::CaseInsensitiveOption));
     input.remove(QRegularExpression(QStringLiteral("^(what('?s| is)\\s+the\\s+latest\\s+model)"),
                                     QRegularExpression::CaseInsensitiveOption));
@@ -655,7 +769,91 @@ QString extractWebSearchQuery(QString input)
     return input.trimmed();
 }
 
-QString groundedToolInventoryText(const QList<AgentToolSpec> &tools)
+QString mcpPackageManifestPath(const QString &mcpRootPath, const QString &packageName)
+{
+    if (mcpRootPath.isEmpty() || packageName.trimmed().isEmpty()) {
+        return {};
+    }
+
+    const QStringList parts = packageName.split(QStringLiteral("/"), Qt::SkipEmptyParts);
+    if (parts.isEmpty()) {
+        return {};
+    }
+
+    if (packageName.startsWith(QStringLiteral("@")) && parts.size() >= 2) {
+        return mcpRootPath + QStringLiteral("/node_modules/") + parts[0] + QStringLiteral("/") + parts[1] + QStringLiteral("/package.json");
+    }
+
+    return mcpRootPath + QStringLiteral("/node_modules/") + parts[0] + QStringLiteral("/package.json");
+}
+
+QString mcpPackageHealthLabel(const QString &mcpRootPath, const QString &packageName)
+{
+    QFile file(mcpPackageManifestPath(mcpRootPath, packageName));
+    if (!file.exists()) {
+        return QStringLiteral("Not installed");
+    }
+    if (!file.open(QIODevice::ReadOnly)) {
+        return QStringLiteral("Installed (unreadable)");
+    }
+
+    const QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+    file.close();
+    if (!doc.isObject()) {
+        return QStringLiteral("Installed (invalid manifest)");
+    }
+
+    const QJsonObject obj = doc.object();
+    const QString version = obj.value(QStringLiteral("version")).toString();
+    const QJsonValue binValue = obj.value(QStringLiteral("bin"));
+    const bool runnable = (binValue.isString() && !binValue.toString().trimmed().isEmpty())
+        || (binValue.isObject() && !binValue.toObject().isEmpty());
+
+    if (runnable) {
+        return version.isEmpty() ? QStringLiteral("Working") : QStringLiteral("Working (%1)").arg(version);
+    }
+
+    return version.isEmpty()
+        ? QStringLiteral("Installed (entrypoint unknown)")
+        : QStringLiteral("Installed (entrypoint unknown, %1)").arg(version);
+}
+
+QString runtimeToolStatusSummary(const AppSettings *settings)
+{
+    const QString appDataRoot = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    const QString mcpRoot = appDataRoot.isEmpty() ? QString() : (appDataRoot + QStringLiteral("/tools/mcp"));
+    const bool npmAvailable = !QStandardPaths::findExecutable(QStringLiteral("npm")).isEmpty()
+        || !QStandardPaths::findExecutable(QStringLiteral("npm.cmd")).isEmpty();
+
+    const bool mcpEnabled = settings != nullptr && settings->mcpEnabled();
+    const QString mcpServer = settings != nullptr ? settings->mcpServerUrl().trimmed() : QString();
+    const QString mcpCatalog = settings != nullptr ? settings->mcpCatalogUrl().trimmed() : QString();
+
+    QStringList lines;
+    lines.push_back(QStringLiteral("mcp_enabled=%1").arg(mcpEnabled ? QStringLiteral("true") : QStringLiteral("false")));
+    lines.push_back(QStringLiteral("npm_available=%1").arg(npmAvailable ? QStringLiteral("true") : QStringLiteral("false")));
+    lines.push_back(QStringLiteral("mcp_server=%1").arg(mcpServer.isEmpty() ? QStringLiteral("unset") : mcpServer));
+    lines.push_back(QStringLiteral("mcp_catalog=%1").arg(mcpCatalog.isEmpty() ? QStringLiteral("unset") : mcpCatalog));
+    lines.push_back(QStringLiteral("@playwright/mcp=%1").arg(mcpPackageHealthLabel(mcpRoot, QStringLiteral("@playwright/mcp"))));
+    lines.push_back(QStringLiteral("@modelcontextprotocol/server-filesystem=%1").arg(mcpPackageHealthLabel(mcpRoot, QStringLiteral("@modelcontextprotocol/server-filesystem"))));
+    lines.push_back(QStringLiteral("@modelcontextprotocol/server-memory=%1").arg(mcpPackageHealthLabel(mcpRoot, QStringLiteral("@modelcontextprotocol/server-memory"))));
+    lines.push_back(QStringLiteral("@modelcontextprotocol/server-brave-search=%1").arg(mcpPackageHealthLabel(mcpRoot, QStringLiteral("@modelcontextprotocol/server-brave-search"))));
+    return lines.join(QStringLiteral("; "));
+}
+
+MemoryRecord runtimeToolStatusMemory(const AppSettings *settings)
+{
+    MemoryRecord record;
+    record.type = QStringLiteral("runtime");
+    record.key = QStringLiteral("tool_status");
+    record.value = runtimeToolStatusSummary(settings);
+    record.confidence = 1.0f;
+    record.source = QStringLiteral("local_runtime");
+    record.updatedAt = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    return record;
+}
+
+QString groundedToolInventoryText(const QList<AgentToolSpec> &tools, const AppSettings *settings)
 {
     QStringList names;
     for (const auto &tool : tools) {
@@ -664,8 +862,8 @@ QString groundedToolInventoryText(const QList<AgentToolSpec> &tools)
         }
     }
     names.removeDuplicates();
-    return QStringLiteral("I can use these tools right now: %1. File reads can access readable paths on this PC. File writes stay sandboxed to the app roots.")
-        .arg(names.join(QStringLiteral(", ")));
+    return QStringLiteral("I can use these tools right now: %1. File reads can access readable paths on this PC. File writes stay sandboxed to the app roots. Runtime MCP and tool health: %2")
+        .arg(names.join(QStringLiteral(", ")), runtimeToolStatusSummary(settings));
 }
 
 int effectiveRequestTimeoutMs(const AppSettings *settings)
@@ -891,6 +1089,13 @@ void AssistantController::initialize()
         if (transcript.isEmpty() || isLikelyNonSpeechTranscript(transcript)) {
             if (m_loggingService && isLikelyNonSpeechTranscript(transcript)) {
                 m_loggingService->info(QStringLiteral("Ignoring non-speech transcription token. text=\"%1\"").arg(transcript.left(120)));
+            }
+            handleConversationSessionMiss(QStringLiteral("No speech detected"));
+            return;
+        }
+        if (isLikelySttArtifactTranscript(transcript)) {
+            if (m_loggingService) {
+                m_loggingService->info(QStringLiteral("Ignoring STT artifact transcription. text=\"%1\"").arg(transcript.left(120)));
             }
             handleConversationSessionMiss(QStringLiteral("No speech detected"));
             return;
@@ -1246,20 +1451,19 @@ void AssistantController::submitText(const QString &text)
 
     if (isExplicitToolInventoryQuery(routedInput)) {
         deliverLocalResponse(
-            groundedToolInventoryText(m_agentToolbox->builtInTools()),
+            groundedToolInventoryText(m_agentToolbox->builtInTools(), m_settings),
             QStringLiteral("Tool inventory"),
             true);
         return;
     }
 
     if (isExplicitWebSearchQuery(routedInput)) {
-        const QString extractedQuery = extractWebSearchQuery(routedInput);
-        if (extractedQuery.isEmpty() || extractedQuery.compare(routedInput, Qt::CaseInsensitive) == 0) {
-            deliverLocalResponse(
-                QStringLiteral("Yes. Tell me what you want me to search for, and I'll show the result in the panel."),
-                QStringLiteral("Web search ready"),
-                true);
-            return;
+        QString extractedQuery = extractWebSearchQuery(routedInput);
+        if (isWebSearchVerificationQuery(routedInput)) {
+            extractedQuery = defaultWebSearchProbeQuery();
+        }
+        if (extractedQuery.isEmpty()) {
+            extractedQuery = routedInput;
         }
 
         AgentTask task;
@@ -1269,6 +1473,19 @@ void AssistantController::submitText(const QString &text)
         dispatchBackgroundTasks({task});
         deliverLocalResponse(
             QStringLiteral("All right, I'm searching the web now. The result will show up in the panel."),
+            QStringLiteral("Background task queued"),
+            true);
+        return;
+    }
+
+    if (m_settings->agentEnabled() && isLikelyKnowledgeLookupQuery(routedInput)) {
+        AgentTask task;
+        task.type = QStringLiteral("web_search");
+        task.args = QJsonObject{{QStringLiteral("query"), routedInput}};
+        task.priority = 83;
+        dispatchBackgroundTasks({task});
+        deliverLocalResponse(
+            QStringLiteral("I'll verify that on the web and summarize what I find."),
             QStringLiteral("Background task queued"),
             true);
         return;
@@ -1318,6 +1535,44 @@ void AssistantController::startListening()
     }
     pauseWakeMonitor();
     startAudioCapture(AudioCaptureMode::Direct, true);
+}
+
+void AssistantController::interruptSpeechAndListen()
+{
+    invalidateWakeMonitorResume();
+
+    // Interrupt both pending generation and speech without ending the conversation session.
+    m_aiBackendClient->cancelActiveRequest();
+    invalidateActiveTranscription();
+    m_streamAssembler->reset();
+
+    if (m_audioCaptureMode == AudioCaptureMode::Direct && !isMicrophoneBlocked()) {
+        refreshConversationSession();
+        setStatus(QStringLiteral("Listening"));
+        emit listeningRequested();
+        return;
+    }
+
+    if (m_ttsEngine->isSpeaking()) {
+        m_ttsEngine->clear();
+    }
+
+    if (!m_conversationSessionActive) {
+        activateConversationSession();
+    } else {
+        refreshConversationSession();
+    }
+
+    if (m_duplexState == DuplexState::TtsExclusive || m_duplexState == DuplexState::Cooldown) {
+        setDuplexState(DuplexState::Open);
+    }
+
+    pauseWakeMonitor();
+    if (!startAudioCapture(AudioCaptureMode::Direct, true)) {
+        setStatus(QStringLiteral("Unable to start listening"));
+        resumeWakeMonitor(shortWakeResumeDelayMs());
+        emit idleRequested();
+    }
 }
 
 void AssistantController::startWakeMonitor()
@@ -1979,7 +2234,7 @@ QString AssistantController::buildSttPrompt() const
         ? QStringLiteral("Jarvis")
         : m_settings->wakeWordPhrase().trimmed();
     return QStringLiteral(
-        "%1. Everyday English speech. Common topics include time, date, settings, files, logs, web search, memory, timers, and general conversation. Transcribe literally.")
+        "%1. Everyday English speech. Common topics include time, date, settings, files, logs, web search, memory, timers, and general conversation. Output only what the speaker says.")
         .arg(wakeWord);
 }
 
@@ -2042,7 +2297,9 @@ void AssistantController::handleConversationSessionMiss(const QString &statusTex
     }
 
     ++m_consecutiveSessionMisses;
-    if (m_consecutiveSessionMisses >= maxConversationSessionMisses()) {
+    const bool noSpeechMiss = statusText.compare(QStringLiteral("No speech detected"), Qt::CaseInsensitive) == 0;
+    const int missLimit = noSpeechMiss ? 2 : maxConversationSessionMisses();
+    if (m_consecutiveSessionMisses >= missLimit) {
         endConversationSession();
         setStatus(QStringLiteral("Standing by"));
         resumeWakeMonitor(shortWakeResumeDelayMs());
@@ -2053,7 +2310,10 @@ void AssistantController::handleConversationSessionMiss(const QString &statusTex
     refreshConversationSession();
     setStatus(QStringLiteral("Listening"));
     setDuplexState(DuplexState::Open);
-    if (!scheduleConversationSessionListening(conversationSessionRestartDelayMs())) {
+    const int restartDelayMs = noSpeechMiss
+        ? std::max(500, conversationSessionRestartDelayMs() * 3)
+        : conversationSessionRestartDelayMs();
+    if (!scheduleConversationSessionListening(restartDelayMs)) {
         endConversationSession();
         resumeWakeMonitor(shortWakeResumeDelayMs());
         emit idleRequested();
@@ -2229,10 +2489,14 @@ void AssistantController::startConversationRequest(const QString &input)
         m_loggingService->info(QStringLiteral("Starting conversation request. model=\"%1\" input=\"%2\"")
             .arg(modelId, input.left(240)));
     }
+
+    QList<MemoryRecord> requestMemory = m_memoryStore->relevantMemory(input);
+    requestMemory.push_front(runtimeToolStatusMemory(m_settings));
+
     const auto messages = m_promptAdapter->buildConversationMessages(
         input,
         m_memoryStore->recentMessages(8),
-        m_memoryStore->relevantMemory(input),
+        requestMemory,
         m_identityProfileService->identity(),
         m_identityProfileService->userProfile(),
         mode);
@@ -2281,11 +2545,14 @@ void AssistantController::startAgentConversationRequest(const QString &input, In
             .arg(modelId, input.left(240)));
     }
 
+    QList<MemoryRecord> requestMemory = m_memoryStore->relevantMemory(input);
+    requestMemory.push_front(runtimeToolStatusMemory(m_settings));
+
     if (directToolCalling) {
         const AgentRequest request{
             .model = modelId,
             .instructions = m_promptAdapter->buildAgentInstructions(
-                m_memoryStore->relevantMemory(input),
+                requestMemory,
                 m_skillStore->listSkills(),
                 relevantTools,
                 m_identityProfileService->identity(),
@@ -2307,7 +2574,7 @@ void AssistantController::startAgentConversationRequest(const QString &input, In
 
     const auto messages = m_promptAdapter->buildHybridAgentMessages(
         input,
-        m_memoryStore->relevantMemory(input),
+        requestMemory,
         m_identityProfileService->identity(),
         m_identityProfileService->userProfile(),
         QDir::currentPath(),
@@ -2341,10 +2608,14 @@ void AssistantController::continueAgentConversation(const QList<AgentToolResult>
     if (relevantTools.isEmpty()) {
         relevantTools = m_agentToolbox->builtInTools();
     }
+
+    QList<MemoryRecord> requestMemory = m_memoryStore->relevantMemory(m_lastAgentInput);
+    requestMemory.push_front(runtimeToolStatusMemory(m_settings));
+
     const AgentRequest request{
         .model = selectedModel(),
         .instructions = m_promptAdapter->buildAgentInstructions(
-            m_memoryStore->relevantMemory(m_lastAgentInput),
+            requestMemory,
             m_skillStore->listSkills(),
             relevantTools,
             m_identityProfileService->identity(),
@@ -2682,19 +2953,42 @@ void AssistantController::startWebSearchSummaryRequest(const BackgroundTaskResul
     const QString query = result.payload.value(QStringLiteral("query")).toString().trimmed();
     const QString provider = result.payload.value(QStringLiteral("provider")).toString().trimmed();
     const QString content = result.payload.value(QStringLiteral("content")).toString();
+    const bool reliable = result.payload.value(QStringLiteral("reliable")).toBool(true);
+    const QString reliabilityReason = result.payload.value(QStringLiteral("reliability_reason")).toString().trimmed();
     if (query.isEmpty() || content.trimmed().isEmpty()) {
         return;
     }
 
+    if (!reliable) {
+        deliverLocalResponse(
+            QStringLiteral("I couldn't verify reliable web sources for that yet. Please try a more specific query or ask for source details."),
+            reliabilityReason.isEmpty() ? QStringLiteral("Web search low confidence") : reliabilityReason,
+            true);
+        return;
+    }
+
     const QString clippedContent = content.left(12000);
-    const QString synthesisInput = QStringLiteral(
-        "You previously asked me to search the web. "
-        "Please provide the final answer now using only the fetched search payload below. "
-        "Be concise, mention uncertainty when needed, and do not claim hidden browsing beyond this data.\n\n"
-        "User query: %1\n"
-        "Search provider: %2\n"
-        "Fetched payload (JSON/text):\n%3")
-            .arg(query, provider.isEmpty() ? QStringLiteral("unknown") : provider, clippedContent);
+    const bool wantsDetails = asksForDetailedAnswer(query);
+
+    const QString synthesisInput = wantsDetails
+        ? QStringLiteral(
+              "You previously asked me to search the web. "
+              "Provide the final answer using only the fetched payload below. "
+              "Keep it concise, accurate, and include uncertainty only if needed. "
+              "Do not claim hidden browsing beyond this data.\n\n"
+              "User query: %1\n"
+              "Search provider: %2\n"
+              "Fetched payload (JSON/text):\n%3")
+              .arg(query, provider.isEmpty() ? QStringLiteral("unknown") : provider, clippedContent)
+        : QStringLiteral(
+              "You previously asked me to search the web. "
+              "Return ONLY the direct answer from the fetched payload below. "
+              "Do not provide explanations, context, caveats, or extra sentences unless the user asked for details. "
+              "Use one short sentence, ideally 4-12 words.\n\n"
+              "User query: %1\n"
+              "Search provider: %2\n"
+              "Fetched payload (JSON/text):\n%3")
+              .arg(query, provider.isEmpty() ? QStringLiteral("unknown") : provider, clippedContent);
 
     startConversationRequest(synthesisInput);
 }

@@ -17,6 +17,7 @@ private slots:
     void spokenReplyParsesStructuredPayload();
     void spokenReplyFallsBackToSanitizedPlainText();
     void spokenReplyStripsUnclosedThinkBlocks();
+    void spokenReplySuppressesStatusOnlySpeech();
     void streamAssemblerEmitsSentences();
 };
 
@@ -134,6 +135,15 @@ void AiServicesTests::spokenReplyStripsUnclosedThinkBlocks()
     QCOMPARE(reply.displayText, QStringLiteral("Final answer"));
     QCOMPARE(reply.spokenText, QStringLiteral("Final answer."));
     QVERIFY(reply.shouldSpeak);
+}
+
+void AiServicesTests::spokenReplySuppressesStatusOnlySpeech()
+{
+    const SpokenReply reply = parseSpokenReply(QStringLiteral("Listening."));
+
+    QCOMPARE(reply.displayText, QStringLiteral("Listening."));
+    QVERIFY(reply.spokenText.isEmpty());
+    QVERIFY(!reply.shouldSpeak);
 }
 
 void AiServicesTests::streamAssemblerEmitsSentences()

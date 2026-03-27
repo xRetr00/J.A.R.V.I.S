@@ -46,6 +46,7 @@ public:
     Q_INVOKABLE void toggleOverlay();
     Q_INVOKABLE void submitText(const QString &text);
     Q_INVOKABLE void startListening();
+    Q_INVOKABLE void interruptSpeechAndListen();
     Q_INVOKABLE void cancelRequest();
 
 signals:

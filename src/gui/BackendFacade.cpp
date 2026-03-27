@@ -289,6 +289,14 @@ const QList<McpQuickServerPreset> &mcpQuickServerPresets()
             QStringLiteral("@modelcontextprotocol/server-memory"),
             QStringLiteral("latest"),
             QStringLiteral("https://registry.modelcontextprotocol.io/")
+        },
+        {
+            QStringLiteral("brave-search"),
+            QStringLiteral("Brave Search"),
+            QStringLiteral("Official MCP Brave Search server for web-search fallback when direct web tools fail."),
+            QStringLiteral("@modelcontextprotocol/server-brave-search"),
+            QStringLiteral("latest"),
+            QStringLiteral("https://registry.modelcontextprotocol.io/")
         }
     };
 
@@ -1148,6 +1156,7 @@ void BackendFacade::toggleOverlay() { m_overlayController->toggleOverlay(); }
 void BackendFacade::refreshModels() { m_assistantController->refreshModels(); }
 void BackendFacade::submitText(const QString &text) { m_assistantController->submitText(text); }
 void BackendFacade::startListening() { m_assistantController->startListening(); }
+void BackendFacade::interruptSpeechAndListen() { m_assistantController->interruptSpeechAndListen(); }
 void BackendFacade::cancelRequest() { m_assistantController->cancelActiveRequest(); }
 void BackendFacade::setSelectedModel(const QString &modelId) { m_assistantController->setSelectedModel(modelId); }
 void BackendFacade::openToolsHub() { emit toolsWindowRequested(); }

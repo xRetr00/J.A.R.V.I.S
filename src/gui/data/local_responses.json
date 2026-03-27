@@ -15,9 +15,9 @@
     "How can I help, {user_name}?"
   ],
   "wakeword_ready": [
-    "Yes?",
-    "Go ahead.",
-    "Listening."
+    "Yes sir.",
+    "I'm Here Sir.",
+    "Ready To Launch Sir."
   ],
   "time_status": [
     "It is {current_time} based on quantum sand in my dusty brain sir.",

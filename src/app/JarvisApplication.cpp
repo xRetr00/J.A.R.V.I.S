@@ -3,6 +3,7 @@
 #include <QAbstractNativeEventFilter>
 #include <QApplication>
 #include <QSharedPointer>
+#include <QDateTime>
 #include <QDebug>
 #include <QCoreApplication>
 #include <QMenu>
@@ -234,10 +235,14 @@ bool JarvisApplication::initialize()
 
     auto startupAnnouncementSent = QSharedPointer<bool>::create(false);
     auto lastStartupIssue = QSharedPointer<QString>::create(QString());
-    const auto updateStartupPresentation = [this, startupAnnouncementSent, lastStartupIssue]() {
+    auto lastBlockedIssueNotified = QSharedPointer<QString>::create(QString());
+    auto lastBlockedNotificationAtMs = QSharedPointer<qint64>::create(0);
+    const auto updateStartupPresentation = [this, startupAnnouncementSent, lastStartupIssue, lastBlockedIssueNotified, lastBlockedNotificationAtMs]() {
         if (!m_settings->initialSetupCompleted()) {
             return;
         }
+
+        constexpr qint64 kBlockedNotificationCooldownMs = 15000;
 
         const QString issue = m_assistantController->startupBlockingIssue().trimmed();
         if (m_assistantController->startupReady()) {
@@ -257,21 +262,27 @@ bool JarvisApplication::initialize()
             return;
         }
 
+        // Once startup is complete, avoid re-entering startup-pending/startup-blocked UX
+        // for transient backend health fluctuations.
+        if (*startupAnnouncementSent) {
+            return;
+        }
+
         if (m_assistantController->startupBlocked()) {
-            if (*lastStartupIssue != issue) {
+            const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+            const bool issueChanged = (*lastBlockedIssueNotified != issue);
+            const bool cooldownElapsed = (nowMs - *lastBlockedNotificationAtMs) >= kBlockedNotificationCooldownMs;
+            if (issueChanged || cooldownElapsed) {
                 qWarning() << "Startup blocked:" << issue;
                 m_trayIcon->showMessage(
                     QStringLiteral("J.A.R.V.I.S"),
                     issue.isEmpty() ? QStringLiteral("Startup is blocked. Open setup to fix the missing components.") : issue,
                     QSystemTrayIcon::Warning,
                     7000);
-                *lastStartupIssue = issue;
+                *lastBlockedIssueNotified = issue;
+                *lastBlockedNotificationAtMs = nowMs;
             }
-            if (m_setupWindow) {
-                m_setupWindow->show();
-                m_setupWindow->raise();
-                m_setupWindow->requestActivate();
-            }
+            *lastStartupIssue = issue;
             return;
         }
 

@@ -28,6 +28,40 @@ QString collapseWhitespace(const QString &text)
     return normalized.trimmed();
 }
 
+QString canonicalSpeechKey(const QString &text)
+{
+    QString key = text.toLower();
+    key.remove(QRegularExpression(QStringLiteral("[^a-z0-9]")));
+    return key;
+}
+
+bool isStatusOnlyUtterance(const QString &text)
+{
+    static const QStringList statusKeys = {
+        QStringLiteral("listening"),
+        QStringLiteral("processingrequest"),
+        QStringLiteral("responseready"),
+        QStringLiteral("standingby"),
+        QStringLiteral("requestcancelled"),
+        QStringLiteral("commandexecuted"),
+        QStringLiteral("loadingservices"),
+        QStringLiteral("settingssaved"),
+        QStringLiteral("unabletostartlistening"),
+        QStringLiteral("transcribedby")
+    };
+
+    const QString key = canonicalSpeechKey(text);
+    return !key.isEmpty() && statusKeys.contains(key);
+}
+
+QString rewriteDotForSpeech(QString text)
+{
+    // Preserve decimal and identifier pronunciation so `5.4` and `model.v1` are not spoken as long pauses.
+    text.replace(QRegularExpression(QStringLiteral("(?<=\\d)\\.(?=\\d)")), QStringLiteral(" point "));
+    text.replace(QRegularExpression(QStringLiteral("(?<=[A-Za-z0-9_])\\.(?=[A-Za-z_][A-Za-z0-9_]*)")), QStringLiteral(" dot "));
+    return text;
+}
+
 QString stripHiddenReasoning(const QString &text)
 {
     QString cleaned = text;
@@ -73,6 +107,7 @@ QString normalizeSpeechText(QString text)
     QString cleaned = stripHiddenReasoning(text);
     cleaned.replace(QRegularExpression(QStringLiteral("\\s*\\n+\\s*")), QStringLiteral(". "));
     cleaned.replace(QRegularExpression(QStringLiteral("(?<=[A-Za-z0-9])[-_/](?=[A-Za-z0-9])")), QStringLiteral(" "));
+    cleaned = rewriteDotForSpeech(cleaned);
     cleaned = removeNonSpeechArtifacts(cleaned);
     cleaned.replace(QRegularExpression(QStringLiteral("\\s*([,.;:!?])\\s*")), QStringLiteral("\\1 "));
     cleaned.replace(QRegularExpression(QStringLiteral("\\s*\\.\\.\\.\\s*")), QStringLiteral("... "));
@@ -278,7 +313,7 @@ PiperTtsEngine::PiperTtsEngine(AppSettings *settings, QObject *parent)
 void PiperTtsEngine::speakText(const QString &text)
 {
     const QString prepared = applyVoicePipeline(text);
-    if (prepared.isEmpty()) {
+    if (prepared.isEmpty() || isStatusOnlyUtterance(prepared)) {
         return;
     }
 

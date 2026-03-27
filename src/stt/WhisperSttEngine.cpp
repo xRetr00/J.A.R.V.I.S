@@ -152,7 +152,8 @@ quint64 WhisperSttEngine::transcribePcm(const QByteArray &pcmData, const QString
         QStringLiteral("-m"), m_settings->whisperModelPath(),
         QStringLiteral("-f"), waveFile,
         QStringLiteral("-nt"),
-        QStringLiteral("-l"), QStringLiteral("en")
+        QStringLiteral("-l"), QStringLiteral("en"),
+        QStringLiteral("-ng")
     };
 
     if (suppressNonSpeechTokens) {

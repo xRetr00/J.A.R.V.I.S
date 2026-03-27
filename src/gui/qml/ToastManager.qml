@@ -5,9 +5,13 @@ Item {
     id: root
 
     signal toastClicked(int taskId)
+    z: 9999
 
-    width: 300
-    height: 320
+    width: Math.max(320, Math.min(parent ? parent.width * 0.36 : 460, 540))
+    height: Math.max(240, Math.min(parent ? parent.height * 0.6 : 440, 520))
+
+    property string latestUserPrompt: ""
+    property int displayDurationMs: 180000
 
     ListModel {
         id: toastModel
@@ -18,11 +22,41 @@ Item {
             return ""
         }
 
-        let cleaned = message.toString().replace(/\s+/g, " ").trim()
-        if (cleaned.length > 90) {
-            cleaned = cleaned.slice(0, 87) + "..."
+        return message.toString().replace(/\r/g, "").trim()
+    }
+
+    function normalizedForComparison(message) {
+        return normalizeMessage(message).replace(/\s+/g, " ").toLowerCase()
+    }
+
+    function shouldIgnoreToast(message, tone) {
+        const normalized = normalizedForComparison(message)
+        if (normalized.length === 0) {
+            return true
         }
-        return cleaned
+
+        const prompt = normalizedForComparison(root.latestUserPrompt)
+        if (tone !== "response" && prompt.length > 0 && normalized === prompt) {
+            return true
+        }
+
+        if (tone === "status") {
+            const lowValue = normalized
+            if (lowValue === "processing request"
+                    || lowValue === "listening"
+                    || lowValue === "thinking"
+                    || lowValue === "executing"
+                    || lowValue === "idle") {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    function timestampLabel() {
+        const now = new Date()
+        return Qt.formatDateTime(now, "hh:mm:ss")
     }
 
     function indexOfTaskType(taskType) {
@@ -36,8 +70,14 @@ Item {
     }
 
     function trimQueue() {
-        while (toastModel.count > 3) {
+        while (toastModel.count > 4) {
             toastModel.remove(toastModel.count - 1, 1)
+        }
+    }
+
+    function dismissAt(index) {
+        if (index >= 0 && index < toastModel.count) {
+            toastModel.remove(index, 1)
         }
     }
 
@@ -52,21 +92,24 @@ Item {
 
     function pushToast(message, tone, taskId, taskType) {
         const cleaned = normalizeMessage(message)
-        if (cleaned.length === 0) {
+        const effectiveTone = tone || "info"
+        if (shouldIgnoreToast(cleaned, effectiveTone)) {
             return
         }
 
         const typeKey = (taskType || "general").toString()
-        const expiresAt = Date.now() + 5200
+        const expiresAt = Date.now() + displayDurationMs
+        const createdAt = timestampLabel()
         const existingIndex = indexOfTaskType(typeKey)
 
         if (existingIndex >= 0) {
             toastModel.set(existingIndex, {
                 "message": cleaned,
-                "tone": tone || "info",
+                "tone": effectiveTone,
                 "taskId": taskId === undefined ? -1 : taskId,
                 "taskType": typeKey,
-                "expiresAt": expiresAt
+                "expiresAt": expiresAt,
+                "createdAt": createdAt
             })
 
             if (existingIndex > 0) {
@@ -75,10 +118,11 @@ Item {
         } else {
             toastModel.insert(0, {
                 "message": cleaned,
-                "tone": tone || "info",
+                "tone": effectiveTone,
                 "taskId": taskId === undefined ? -1 : taskId,
                 "taskType": typeKey,
-                "expiresAt": expiresAt
+                "expiresAt": expiresAt,
+                "createdAt": createdAt
             })
         }
 
@@ -86,7 +130,7 @@ Item {
     }
 
     Timer {
-        interval: 250
+        interval: 600
         repeat: true
         running: toastModel.count > 0
         onTriggered: root.removeExpiredToasts()
@@ -95,6 +139,8 @@ Item {
     Column {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
+        width: root.width
+        height: implicitHeight
         spacing: 12
 
         Repeater {
@@ -105,14 +151,19 @@ Item {
                 required property string message
                 required property string tone
                 required property string taskType
+                required property string createdAt
                 property int modelTaskId: taskId
 
-                width: 300
+                width: root.width
                 toastMessage: message
                 toastTone: tone
+                createdAt: createdAt
                 taskId: modelTaskId
                 onClicked: function(clickedTaskId) {
                     root.toastClicked(clickedTaskId)
+                }
+                onDismissed: function() {
+                    root.dismissAt(index)
                 }
 
                 Behavior on y { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }

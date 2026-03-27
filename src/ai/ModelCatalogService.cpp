@@ -14,17 +14,21 @@ ModelCatalogService::ModelCatalogService(AppSettings *settings, AiBackendClient 
             m_settings->setChatBackendModel(m_models.first().id);
             m_settings->save();
         }
-        m_availability.online = true;
-        m_availability.modelAvailable = selectedModelValid();
-        const bool hasConfiguredModel = !m_settings->chatBackendModel().trimmed().isEmpty();
-        if (m_models.isEmpty()) {
-            m_availability.status = hasConfiguredModel
-                ? QStringLiteral("Ready (using configured model)")
-                : QStringLiteral("No models exposed by the provider");
-        } else {
-            m_availability.status = m_availability.modelAvailable
-                ? QStringLiteral("Ready")
-                : QStringLiteral("Selected model unavailable");
+        // modelsReady can arrive after an offline availability update; do not force online=true here.
+        m_availability.modelAvailable = m_availability.online && selectedModelValid();
+        if (m_availability.online) {
+            const bool hasConfiguredModel = !m_settings->chatBackendModel().trimmed().isEmpty();
+            if (m_models.isEmpty()) {
+                m_availability.status = hasConfiguredModel
+                    ? QStringLiteral("Ready (using configured model)")
+                    : QStringLiteral("No models exposed by the provider");
+            } else {
+                m_availability.status = m_availability.modelAvailable
+                    ? QStringLiteral("Ready")
+                    : QStringLiteral("Selected model unavailable");
+            }
+        } else if (m_availability.status.trimmed().isEmpty()) {
+            m_availability.status = QStringLiteral("Local AI backend offline");
         }
         emit modelsChanged();
         emit availabilityChanged();
@@ -32,7 +36,7 @@ ModelCatalogService::ModelCatalogService(AppSettings *settings, AiBackendClient 
 
     connect(m_client, &AiBackendClient::availabilityChanged, this, [this](const AiAvailability &availability) {
         m_availability = availability;
-        m_availability.modelAvailable = selectedModelValid();
+        m_availability.modelAvailable = m_availability.online && selectedModelValid();
         if (m_availability.online && !m_models.isEmpty() && !m_availability.modelAvailable) {
             m_availability.status = QStringLiteral("Selected model unavailable");
         }

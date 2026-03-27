@@ -97,7 +97,7 @@ QString toolUseGuidance(const QString &toolName)
         return QStringLiteral("the user asks about the latest AI exchange log");
     }
     if (toolName == QStringLiteral("web_search")) {
-        return QStringLiteral("the user asks you to search the web");
+        return QStringLiteral("the user asks you to search the web, asks for latest/current facts, or when you are unsure and must verify facts");
     }
     if (toolName == QStringLiteral("web_fetch")) {
         return QStringLiteral("you already have a URL and need its contents");
@@ -432,6 +432,8 @@ QString PromptAdapter::buildAgentInstructions(
     instructions += buildAgentWorldContext(intent, availableTools, memory, workspaceRoot);
     instructions += QStringLiteral("\n<agent_mode>");
     instructions += QStringLiteral("\nUse tool calls instead of guessing when the request depends on files, logs, memory, skills, or the web.");
+    instructions += QStringLiteral("\nFor web requests and factual/current questions, call web_search before giving a factual final answer.");
+    instructions += QStringLiteral("\nIf you do not know a fact with confidence, run web_search and then answer from that result.");
     instructions += QStringLiteral("\nNever claim you opened, wrote, searched, installed, or verified something unless a tool result confirms it.");
     instructions += QStringLiteral("\nIf a tool fails, say what failed and either recover with another tool or explain the blocker briefly.");
     instructions += QStringLiteral("\nKeep the final answer user-facing; detailed tool activity belongs in the trace.");
@@ -574,6 +576,8 @@ QString PromptAdapter::buildCapabilityRulesContext(IntentType intent) const
                        "- If the user asks to open an app, launch a site, create a file on the computer, or set a timer, you must use a matching computer tool.\n"
                        "- If the request involves memory writes, you must use a memory tool.\n"
                        "- Prefer tools over natural-language guesses whenever a tool can verify the answer.\n"
+                       "- For web/factual/current events queries, you must queue web_search before claiming an answer.\n"
+                       "- If you are uncertain about a factual answer, queue web_search instead of guessing.\n"
                        "- Never claim that a background task already finished.\n"
                        "- Never hallucinate file contents, log lines, tool results, or paths.\n"
                        "- If the request is normal conversation, keep background_tasks empty.\n"
@@ -597,6 +601,8 @@ QString PromptAdapter::buildFewShotExamples(IntentType intent) const
                        "Assistant: {\"intent\":\"READ_FILE\",\"message\":\"Okay, I'm opening the logs now. You'll see them in the panel.\",\"background_tasks\":[{\"type\":\"file_read\",\"args\":{\"path\":\"D:/J.A.R.V.I.S/bin/logs/jarvis.log\"},\"priority\":95}]}\n"
                        "User: search the web for the latest AI news\n"
                        "Assistant: {\"intent\":\"GENERAL_CHAT\",\"message\":\"All right, I'm searching the web now. The results will appear in the panel.\",\"background_tasks\":[{\"type\":\"web_search\",\"args\":{\"query\":\"latest AI news\"},\"priority\":85}]}\n"
+                       "User: search the internet for OpenAI release updates\n"
+                       "Assistant: {\"intent\":\"GENERAL_CHAT\",\"message\":\"All right, I'm searching the web now. The results will appear in the panel.\",\"background_tasks\":[{\"type\":\"web_search\",\"args\":{\"query\":\"OpenAI release updates\"},\"priority\":85}]}\n"
                        "User: open YouTube\n"
                        "Assistant: {\"intent\":\"GENERAL_CHAT\",\"message\":\"All right, I'm opening YouTube now.\",\"background_tasks\":[{\"type\":\"computer_open_url\",\"args\":{\"url\":\"https://www.youtube.com/\"},\"priority\":90}]}\n"
                        "User: set a timer for 10 minutes\n"
