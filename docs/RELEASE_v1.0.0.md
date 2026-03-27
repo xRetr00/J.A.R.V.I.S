@@ -30,7 +30,7 @@ v1.0.0 establishes a stable local-first desktop assistant baseline with:
 
 ### Audio and Wake
 
-- Mycroft Precise wake stabilization using moving-average and frame consistency checks
+- Wake detection tuning now targets the Sherpa keyword spotter path only
 - Tunable threshold and cooldown with practical defaults
 - Expanded wake probability/detection logs
 

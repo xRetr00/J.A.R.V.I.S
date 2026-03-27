@@ -38,8 +38,8 @@ class SettingsViewModel : public QObject
     Q_PROPERTY(QString ttsEngineKind READ ttsEngineKind NOTIFY settingsChanged)
     Q_PROPERTY(QString piperExecutable READ piperExecutable NOTIFY settingsChanged)
     Q_PROPERTY(QString piperVoiceModel READ piperVoiceModel NOTIFY settingsChanged)
-    Q_PROPERTY(double preciseTriggerThreshold READ preciseTriggerThreshold NOTIFY settingsChanged)
-    Q_PROPERTY(int preciseTriggerCooldownMs READ preciseTriggerCooldownMs NOTIFY settingsChanged)
+    Q_PROPERTY(double wakeTriggerThreshold READ wakeTriggerThreshold NOTIFY settingsChanged)
+    Q_PROPERTY(int wakeTriggerCooldownMs READ wakeTriggerCooldownMs NOTIFY settingsChanged)
     Q_PROPERTY(QString ffmpegExecutable READ ffmpegExecutable NOTIFY settingsChanged)
     Q_PROPERTY(double voiceSpeed READ voiceSpeed NOTIFY settingsChanged)
     Q_PROPERTY(double voicePitch READ voicePitch NOTIFY settingsChanged)
@@ -109,8 +109,8 @@ public:
     QString ttsEngineKind() const;
     QString piperExecutable() const;
     QString piperVoiceModel() const;
-    double preciseTriggerThreshold() const;
-    int preciseTriggerCooldownMs() const;
+    double wakeTriggerThreshold() const;
+    int wakeTriggerCooldownMs() const;
     QString ffmpegExecutable() const;
     double voiceSpeed() const;
     double voicePitch() const;
@@ -153,8 +153,6 @@ public:
                                                       const QString &modelId,
                                                       const QString &whisperPath,
                                                       const QString &whisperModelPath,
-                                                      const QString &preciseEnginePath,
-                                                      const QString &preciseModelPath,
                                                       const QString &piperPath,
                                                       const QString &voicePath,
                                                       const QString &ffmpegPath);
@@ -189,10 +187,8 @@ public:
                                   const QString &wakeEngineKind,
                                   const QString &whisperPath,
                                   const QString &whisperModelPath,
-                                  const QString &preciseEnginePath,
-                                  const QString &preciseModelPath,
-                                  double preciseThreshold,
-                                  int preciseCooldownMs,
+                                  double wakeThreshold,
+                                  int wakeCooldownMs,
                                   const QString &ttsEngineKind,
                                   const QString &piperPath,
                                   const QString &voicePath,
@@ -224,10 +220,8 @@ public:
                                       const QString &modelId,
                                       const QString &whisperPath,
                                       const QString &whisperModelPath,
-                                      const QString &preciseEnginePath,
-                                      const QString &preciseModelPath,
-                                      double preciseThreshold,
-                                      int preciseCooldownMs,
+                                      double wakeThreshold,
+                                      int wakeCooldownMs,
                                       const QString &piperPath,
                                       const QString &voicePath,
                                       const QString &ffmpegPath,
@@ -240,10 +234,8 @@ public:
                                           const QString &modelId,
                                           const QString &whisperPath,
                                           const QString &whisperModelPath,
-                                          const QString &preciseEnginePath,
-                                          const QString &preciseModelPath,
-                                          double preciseThreshold,
-                                          int preciseCooldownMs,
+                                          double wakeThreshold,
+                                          int wakeCooldownMs,
                                           const QString &piperPath,
                                           const QString &voicePath,
                                           const QString &ffmpegPath,

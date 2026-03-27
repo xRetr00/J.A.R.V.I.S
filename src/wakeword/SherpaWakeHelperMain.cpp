@@ -8,6 +8,7 @@
 #include <QIODevice>
 #include <QMediaDevices>
 #include <QScopedPointer>
+#include <QThread>
 #include <QTextStream>
 
 #if JARVIS_HAS_SHERPA_ONNX
@@ -30,9 +31,9 @@ public:
         QString tokensPath;
         QString keywordsFilePath;
         QString deviceId;
-        float threshold = 0.25f;
-        int cooldownMs = 900;
-        int warmupMs = 1500;
+        float threshold = 0.18f;
+        int cooldownMs = 450;
+        int warmupMs = 250;
     };
 
     explicit SherpaWakeHelper(const Config &config, QObject *parent = nullptr)
@@ -58,12 +59,18 @@ public:
         config.model_config.transducer.joiner = m_config.joinerPath.toStdString();
         config.model_config.tokens = m_config.tokensPath.toStdString();
         config.model_config.provider = "cpu";
-        config.model_config.num_threads = 1;
+        int numThreads = QThread::idealThreadCount();
+        if (numThreads < 1) {
+            numThreads = 1;
+        } else if (numThreads > 4) {
+            numThreads = 4;
+        }
+        config.model_config.num_threads = numThreads;
         config.model_config.model_type = "";
         config.keywords_file = m_config.keywordsFilePath.toStdString();
         config.keywords_threshold = m_config.threshold;
         config.keywords_score = 1.0f;
-        config.max_active_paths = 4;
+        config.max_active_paths = 8;
         config.num_trailing_blanks = 1;
 
         try {
@@ -104,7 +111,7 @@ public:
         }
 
         m_audioSource.reset(new QAudioSource(device, m_format, this));
-        m_audioSource->setBufferSize(kFrameBytes * 8);
+        m_audioSource->setBufferSize(kFrameBytes * 2);
         m_audioIoDevice = m_audioSource->start();
         if (!m_audioIoDevice) {
             QTextStream(stderr) << "ERROR: Failed to start microphone capture for wake detection" << Qt::endl;
@@ -194,9 +201,9 @@ int main(int argc, char *argv[])
     QCommandLineOption tokens(QStringLiteral("tokens"), QStringLiteral("Path to tokens.txt"), QStringLiteral("path"));
     QCommandLineOption keywords(QStringLiteral("keywords-file"), QStringLiteral("Path to sherpa keywords file"), QStringLiteral("path"));
     QCommandLineOption deviceId(QStringLiteral("device-id"), QStringLiteral("Preferred microphone device id"), QStringLiteral("id"));
-    QCommandLineOption threshold(QStringLiteral("threshold"), QStringLiteral("Wake threshold"), QStringLiteral("value"), QStringLiteral("0.25"));
-    QCommandLineOption cooldown(QStringLiteral("cooldown-ms"), QStringLiteral("Wake cooldown in milliseconds"), QStringLiteral("value"), QStringLiteral("900"));
-    QCommandLineOption warmup(QStringLiteral("warmup-ms"), QStringLiteral("Wake warmup in milliseconds"), QStringLiteral("value"), QStringLiteral("1500"));
+    QCommandLineOption threshold(QStringLiteral("threshold"), QStringLiteral("Wake threshold"), QStringLiteral("value"), QStringLiteral("0.18"));
+    QCommandLineOption cooldown(QStringLiteral("cooldown-ms"), QStringLiteral("Wake cooldown in milliseconds"), QStringLiteral("value"), QStringLiteral("450"));
+    QCommandLineOption warmup(QStringLiteral("warmup-ms"), QStringLiteral("Wake warmup in milliseconds"), QStringLiteral("value"), QStringLiteral("250"));
 
     parser.addOption(encoder);
     parser.addOption(decoder);
@@ -231,7 +238,7 @@ int main(int argc, char *argv[])
         .keywordsFilePath = parser.value(keywords),
         .deviceId = parser.value(deviceId),
         .threshold = qBound(0.10f, parser.value(threshold).toFloat(), 0.85f),
-        .cooldownMs = qMax(700, parser.value(cooldown).toInt()),
+        .cooldownMs = qMax(250, parser.value(cooldown).toInt()),
         .warmupMs = qMax(250, parser.value(warmup).toInt())
     });
     const int startCode = helper.start();

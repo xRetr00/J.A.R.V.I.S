@@ -109,10 +109,8 @@ public slots:
         const QString &wakeEngineKind,
         const QString &whisperPath,
         const QString &whisperModelPath,
-        const QString &preciseEnginePath,
-        const QString &preciseModelPath,
-        double preciseThreshold,
-        int preciseCooldownMs,
+        double wakeThreshold,
+        int wakeCooldownMs,
         const QString &ttsEngineKind,
         const QString &piperPath,
         const QString &voicePath,
@@ -180,6 +178,7 @@ private:
     void ignoreWakeTriggersFor(int delayMs);
     int shortWakeResumeDelayMs() const;
     int postSpeechWakeResumeDelayMs() const;
+    int postSpeechWakeEngineStartDelayMs() const;
     int followUpListeningDelayMs() const;
     int conversationSessionTimeoutMs() const;
     int conversationSessionRestartDelayMs() const;

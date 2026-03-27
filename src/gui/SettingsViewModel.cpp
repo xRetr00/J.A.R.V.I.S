@@ -162,14 +162,14 @@ QString SettingsViewModel::piperVoiceModel() const
     return m_backend ? m_backend->piperVoiceModel() : QString();
 }
 
-double SettingsViewModel::preciseTriggerThreshold() const
+double SettingsViewModel::wakeTriggerThreshold() const
 {
-    return m_backend ? m_backend->preciseTriggerThreshold() : 0.0;
+    return m_backend ? m_backend->wakeTriggerThreshold() : 0.18;
 }
 
-int SettingsViewModel::preciseTriggerCooldownMs() const
+int SettingsViewModel::wakeTriggerCooldownMs() const
 {
-    return m_backend ? m_backend->preciseTriggerCooldownMs() : 0;
+    return m_backend ? m_backend->wakeTriggerCooldownMs() : 450;
 }
 
 QString SettingsViewModel::ffmpegExecutable() const
@@ -361,22 +361,18 @@ QVariantMap SettingsViewModel::evaluateSetupRequirements(const QString &endpoint
                                                          const QString &modelId,
                                                          const QString &whisperPath,
                                                          const QString &whisperModelPath,
-                                                         const QString &preciseEnginePath,
-                                                         const QString &preciseModelPath,
                                                          const QString &piperPath,
                                                          const QString &voicePath,
                                                          const QString &ffmpegPath)
 {
     return m_backend
         ? m_backend->evaluateSetupRequirements(endpoint,
-                                              modelId,
-                                              whisperPath,
-                                              whisperModelPath,
-                                              preciseEnginePath,
-                                              preciseModelPath,
-                                              piperPath,
-                                              voicePath,
-                                              ffmpegPath)
+                                               modelId,
+                                               whisperPath,
+                                               whisperModelPath,
+                                               piperPath,
+                                               voicePath,
+                                               ffmpegPath)
         : QVariantMap();
 }
 
@@ -480,10 +476,8 @@ void SettingsViewModel::saveSettings(const QString &endpoint,
                                      const QString &wakeEngineKind,
                                      const QString &whisperPath,
                                      const QString &whisperModelPath,
-                                     const QString &preciseEnginePath,
-                                     const QString &preciseModelPath,
-                                     double preciseThreshold,
-                                     int preciseCooldownMs,
+                                     double wakeThreshold,
+                                     int wakeCooldownMs,
                                      const QString &ttsEngineKind,
                                      const QString &piperPath,
                                      const QString &voicePath,
@@ -508,10 +502,8 @@ void SettingsViewModel::saveSettings(const QString &endpoint,
                                 wakeEngineKind,
                                 whisperPath,
                                 whisperModelPath,
-                                preciseEnginePath,
-                                preciseModelPath,
-                                preciseThreshold,
-                                preciseCooldownMs,
+                                wakeThreshold,
+                                wakeCooldownMs,
                                 ttsEngineKind,
                                 piperPath,
                                 voicePath,
@@ -610,10 +602,8 @@ bool SettingsViewModel::runSetupScenario(const QString &userName,
                                          const QString &modelId,
                                          const QString &whisperPath,
                                          const QString &whisperModelPath,
-                                         const QString &preciseEnginePath,
-                                         const QString &preciseModelPath,
-                                         double preciseThreshold,
-                                         int preciseCooldownMs,
+                                         double wakeThreshold,
+                                         int wakeCooldownMs,
                                          const QString &piperPath,
                                          const QString &voicePath,
                                          const QString &ffmpegPath,
@@ -627,10 +617,8 @@ bool SettingsViewModel::runSetupScenario(const QString &userName,
                                                     modelId,
                                                     whisperPath,
                                                     whisperModelPath,
-                                                    preciseEnginePath,
-                                                    preciseModelPath,
-                                                    preciseThreshold,
-                                                    preciseCooldownMs,
+                                                    wakeThreshold,
+                                                    wakeCooldownMs,
                                                     piperPath,
                                                     voicePath,
                                                     ffmpegPath,
@@ -645,10 +633,8 @@ bool SettingsViewModel::completeInitialSetup(const QString &userName,
                                              const QString &modelId,
                                              const QString &whisperPath,
                                              const QString &whisperModelPath,
-                                             const QString &preciseEnginePath,
-                                             const QString &preciseModelPath,
-                                             double preciseThreshold,
-                                             int preciseCooldownMs,
+                                             double wakeThreshold,
+                                             int wakeCooldownMs,
                                              const QString &piperPath,
                                              const QString &voicePath,
                                              const QString &ffmpegPath,
@@ -661,10 +647,8 @@ bool SettingsViewModel::completeInitialSetup(const QString &userName,
                                                         modelId,
                                                         whisperPath,
                                                         whisperModelPath,
-                                                        preciseEnginePath,
-                                                        preciseModelPath,
-                                                        preciseThreshold,
-                                                        preciseCooldownMs,
+                                                        wakeThreshold,
+                                                        wakeCooldownMs,
                                                         piperPath,
                                                         voicePath,
                                                         ffmpegPath,

@@ -164,7 +164,6 @@ set(JARVIS_SOURCES
     src/tts/PiperTtsEngine.cpp
     src/tts/WorkerTtsEngine.cpp
     src/wakeword/SherpaWakeWordEngine.cpp
-    src/wakeword/WakeWordEnginePrecise.cpp
     src/workers/AiBackendWorker.cpp
     src/workers/SpeechInputWorker.cpp
     src/workers/SpeechIoWorker.cpp
@@ -218,7 +217,6 @@ set(JARVIS_HEADERS
     src/tts/WorkerTtsEngine.h
     src/wakeword/SherpaWakeWordEngine.h
     src/wakeword/WakeWordEngine.h
-    src/wakeword/WakeWordEnginePrecise.h
     src/workers/AiBackendWorker.h
     src/workers/SpeechInputWorker.h
     src/workers/SpeechIoWorker.h

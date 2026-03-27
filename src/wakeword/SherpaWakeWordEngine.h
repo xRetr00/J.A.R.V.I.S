@@ -41,13 +41,13 @@ private:
 
     AppSettings *m_settings = nullptr;
     LoggingService *m_loggingService = nullptr;
-    float m_threshold = 0.25f;
-    int m_cooldownMs = 900;
+    float m_threshold = 0.18f;
+    int m_cooldownMs = 450;
     QString m_preferredDeviceId;
     bool m_paused = false;
     bool m_ready = false;
     bool m_stopRequested = false;
-    int m_activationWarmupMs = 1500;
+    int m_activationWarmupMs = 250;
     QString m_runtimeRoot;
     QString m_modelRoot;
     QString m_keywordsFilePath;

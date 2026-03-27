@@ -42,7 +42,6 @@
 #include "tts/WorkerTtsEngine.h"
 #include "wakeword/SherpaWakeWordEngine.h"
 #include "wakeword/WakeWordEngine.h"
-#include "wakeword/WakeWordEnginePrecise.h"
 #include "workers/VoicePipelineRuntime.h"
 
 namespace {
@@ -783,7 +782,7 @@ void AssistantController::initialize()
             return;
         }
         endConversationSession();
-        resumeWakeMonitor(postSpeechWakeResumeDelayMs());
+        resumeWakeMonitor(postSpeechWakeEngineStartDelayMs());
         emit idleRequested();
     });
     connect(m_ttsEngine, &TtsEngine::playbackFailed, this, [this](const QString &errorText) {
@@ -984,7 +983,7 @@ void AssistantController::submitText(const QString &text)
 
     if (shouldEndConversationSession(effectiveInput)) {
         endConversationSession();
-        deliverLocalResponse(QStringLiteral("All right. See You Soon Sir."), QStringLiteral("Conversation ended"), true);
+        deliverLocalResponse(QStringLiteral("Standing by."), QStringLiteral("Conversation ended"), true);
         return;
     }
 
@@ -1138,8 +1137,8 @@ void AssistantController::startWakeMonitor()
     if (!m_wakeWordEngine->start(
             resolveWakeEngineRuntimePath(),
             resolveWakeEngineModelPath(),
-            static_cast<float>(m_settings->preciseTriggerThreshold()),
-            m_settings->preciseTriggerCooldownMs(),
+            static_cast<float>(m_settings->wakeTriggerThreshold()),
+            m_settings->wakeTriggerCooldownMs(),
             m_settings->selectedAudioInputDeviceId())) {
         m_wakeEngineReady = false;
         if (m_loggingService) {
@@ -1289,10 +1288,8 @@ void AssistantController::saveSettings(
     const QString &wakeEngineKind,
     const QString &whisperPath,
     const QString &whisperModelPath,
-    const QString &preciseEnginePath,
-    const QString &preciseModelPath,
-    double preciseThreshold,
-    int preciseCooldownMs,
+    double wakeThreshold,
+    int wakeCooldownMs,
     const QString &ttsEngineKind,
     const QString &piperPath,
     const QString &voicePath,
@@ -1317,10 +1314,8 @@ void AssistantController::saveSettings(
     m_settings->setWakeEngineKind(wakeEngineKind);
     m_settings->setWhisperExecutable(whisperPath);
     m_settings->setWhisperModelPath(whisperModelPath);
-    m_settings->setPreciseEngineExecutable(preciseEnginePath);
-    m_settings->setPreciseModelPath(preciseModelPath);
-    m_settings->setPreciseTriggerThreshold(preciseThreshold);
-    m_settings->setPreciseTriggerCooldownMs(preciseCooldownMs);
+    m_settings->setWakeTriggerThreshold(wakeThreshold);
+    m_settings->setWakeTriggerCooldownMs(wakeCooldownMs);
     m_settings->setTtsEngineKind(ttsEngineKind);
     m_settings->setPiperExecutable(piperPath);
     m_settings->setPiperVoiceModel(voicePath);
@@ -1377,11 +1372,7 @@ void AssistantController::createWakeWordEngine()
         m_wakeWordEngine = nullptr;
     }
 
-    if (m_settings->wakeEngineKind() == QStringLiteral("sherpa-onnx")) {
-        m_wakeWordEngine = new SherpaWakeWordEngine(m_settings, m_loggingService, this);
-    } else {
-        m_wakeWordEngine = new WakeWordEnginePrecise(m_loggingService, this);
-    }
+    m_wakeWordEngine = new SherpaWakeWordEngine(m_settings, m_loggingService, this);
 }
 
 void AssistantController::bindWakeWordEngineSignals()
@@ -1734,12 +1725,17 @@ void AssistantController::ignoreWakeTriggersFor(int delayMs)
 
 int AssistantController::shortWakeResumeDelayMs() const
 {
-    return std::max(350, m_settings->preciseTriggerCooldownMs() / 2);
+    return std::max(250, m_settings->wakeTriggerCooldownMs() / 2);
 }
 
 int AssistantController::postSpeechWakeResumeDelayMs() const
 {
-    return std::max(1200, m_settings->preciseTriggerCooldownMs());
+    return std::max(450, m_settings->wakeTriggerCooldownMs());
+}
+
+int AssistantController::postSpeechWakeEngineStartDelayMs() const
+{
+    return std::min(120, postSpeechWakeResumeDelayMs());
 }
 
 int AssistantController::followUpListeningDelayMs() const
@@ -1875,39 +1871,29 @@ bool AssistantController::canStartWakeMonitor() const
 
 QString AssistantController::resolveWakeEngineRuntimePath() const
 {
-    if (m_settings->wakeEngineKind() == QStringLiteral("sherpa-onnx")) {
-        return firstExistingPath({
-            QStringLiteral(JARVIS_SOURCE_DIR) + QStringLiteral("/third_party/sherpa-onnx/sherpa-onnx-v1.12.33-win-x64-shared-MD-Release-no-tts"),
-            QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
-                + QStringLiteral("/third_party/sherpa-onnx/sherpa-onnx-v1.12.33-win-x64-shared-MD-Release-no-tts"),
-            QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
-                + QStringLiteral("/third_party/sherpa-onnx")
-        });
-    }
-
-    return m_settings->preciseEngineExecutable();
+    return firstExistingPath({
+        QStringLiteral(JARVIS_SOURCE_DIR) + QStringLiteral("/third_party/sherpa-onnx/sherpa-onnx-v1.12.33-win-x64-shared-MD-Release-no-tts"),
+        QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+            + QStringLiteral("/third_party/sherpa-onnx/sherpa-onnx-v1.12.33-win-x64-shared-MD-Release-no-tts"),
+        QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+            + QStringLiteral("/third_party/sherpa-onnx")
+    });
 }
 
 QString AssistantController::resolveWakeEngineModelPath() const
 {
-    if (m_settings->wakeEngineKind() == QStringLiteral("sherpa-onnx")) {
-        return firstExistingPath({
-            QStringLiteral(JARVIS_SOURCE_DIR) + QStringLiteral("/third_party/sherpa-kws-model/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"),
-            QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
-                + QStringLiteral("/third_party/sherpa-kws-model/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"),
-            QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
-                + QStringLiteral("/third_party/models/sherpa-kws/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01")
-        });
-    }
-
-    return m_settings->preciseModelPath();
+    return firstExistingPath({
+        QStringLiteral(JARVIS_SOURCE_DIR) + QStringLiteral("/third_party/sherpa-kws-model/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"),
+        QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+            + QStringLiteral("/third_party/sherpa-kws-model/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"),
+        QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+            + QStringLiteral("/third_party/models/sherpa-kws/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01")
+    });
 }
 
 QString AssistantController::wakeEngineDisplayName() const
 {
-    return m_settings->wakeEngineKind() == QStringLiteral("sherpa-onnx")
-        ? QStringLiteral("sherpa-onnx")
-        : QStringLiteral("Precise");
+    return QStringLiteral("sherpa-onnx");
 }
 
 bool AssistantController::startAudioCapture(AudioCaptureMode mode, bool announceListening)

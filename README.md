@@ -12,7 +12,7 @@ Jarvis runs in the system tray, listens for a wake phrase, transcribes speech lo
 ## Highlights
 
 - Local-first voice pipeline:
-  - Wake word detection with Sherpa ONNX keyword spotting (default) or Mycroft Precise
+  - Wake word detection with Sherpa ONNX keyword spotting
   - STT via whisper.cpp (runtime worker path)
   - TTS via Piper with worker-based playback
 - OpenAI-compatible AI backend support (LM Studio style endpoint)
@@ -47,7 +47,7 @@ Jarvis runs in the system tray, listens for a wake phrase, transcribes speech lo
 - src/audio: microphone capture, processing chain, VAD integration surface
 - src/stt: speech recognizer interfaces and runtime recognizer
 - src/tts: speech synthesis engines and worker TTS integration
-- src/wakeword: wake phrase engines (Sherpa + Precise)
+- src/wakeword: wake phrase engine (Sherpa)
 - src/workers: threaded runtime workers for speech I/O and AI backend
 - src/gui: Qt/QML facade and overlay/settings/setup windows
 - src/settings: runtime settings and identity/profile persistence
@@ -98,10 +98,9 @@ On first launch, the Setup wizard opens automatically.
    - piper executable + voice model
    - ffmpeg path
 4. Wake Word:
-  - wake engine kind (sherpa-onnx or precise)
-  - precise-engine executable + wake model path (.pb) when using Precise
-  - sherpa keyword-spotting model root when using sherpa-onnx
-   - threshold and cooldown tuning
+  - wake engine kind (`sherpa-onnx`)
+  - sherpa keyword-spotting model root
+  - wake threshold and cooldown tuning
 5. Final Check:
    - run setup tests and complete setup
 

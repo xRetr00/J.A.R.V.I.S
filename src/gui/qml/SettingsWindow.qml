@@ -38,8 +38,6 @@ Window {
             modelCombo.currentText,
             whisperPathField.text,
             whisperModelPathField.text,
-            "",
-            "",
             piperPathField.text,
             voicePathField.text,
             ffmpegPathField.text
@@ -780,7 +778,7 @@ Window {
                     }
 
                     Text {
-                        text: "The app now uses sherpa-onnx for wake detection. Precise has been removed from the active setup flow."
+                        text: "The app uses sherpa-onnx only for wake detection."
                         color: "#9ab0ca"
                         font.pixelSize: 12
                         wrapMode: Text.Wrap
@@ -903,10 +901,8 @@ Window {
                                         wakeEngineCombo.currentText,
                                         whisperPathField.text,
                                         whisperModelPathField.text,
-                                        "",
-                                        "",
-                                        settingsVm.preciseTriggerThreshold,
-                                        settingsVm.preciseTriggerCooldownMs,
+                                        settingsVm.wakeTriggerThreshold,
+                                        settingsVm.wakeTriggerCooldownMs,
                                         ttsEngineCombo.currentText,
                                         piperPathField.text,
                                         voicePathField.text,

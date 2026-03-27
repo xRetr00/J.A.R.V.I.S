@@ -57,7 +57,7 @@ src/
   - Piper synthesis/playback.
 - Wake detection supports both:
   - `sherpa-onnx` via `SherpaWakeWordEngine` + helper process,
-  - `precise` via `WakeWordEnginePrecise`.
+  - `sherpa-onnx` via `SherpaWakeWordEngine`.
 - `AudioProcessingChain` currently uses:
   - far-end subtraction placeholder for AEC,
   - threshold-based suppression,

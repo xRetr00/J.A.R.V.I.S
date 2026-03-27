@@ -82,8 +82,8 @@ Core orchestration starts in src/app/JarvisApplication.cpp and wires all service
 - SherpaWakeWordEngine:
   - Default wake engine path
   - Starts jarvis_sherpa_wake_helper and consumes detection events
-- WakeWordEnginePrecise:
-  - Alternate wake path based on precise-engine
+- SherpaWakeWordEngine:
+  - Only wake path used by the application
   - Uses moving average + consecutive frame gating for stable detection
 - AudioInputService:
   - Captures PCM audio for transcription with VAD framing

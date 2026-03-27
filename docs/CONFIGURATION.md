@@ -76,10 +76,8 @@ Wake and audio processing:
 
 - wakeEngineKind
 - wakeWordPhrase
-- preciseEngineExecutable
-- preciseModelPath
-- preciseTriggerThreshold
-- preciseTriggerCooldownMs
+- wakeTriggerThreshold
+- wakeTriggerCooldownMs
 - aecEnabled
 - rnnoiseEnabled
 - vadSensitivity
@@ -95,8 +93,8 @@ Devices and UI:
 
 Current clamps in code:
 
-- preciseTriggerThreshold: 0.30 to 0.85
-- preciseTriggerCooldownMs: 600 to 900 ms
+- wakeTriggerThreshold: 0.10 to 0.85
+- wakeTriggerCooldownMs: 250 to 1600 ms
 - vadSensitivity: 0.05 to 0.95
 - conversationTemperature: 0.0 to 2.0
 - toolUseTemperature: 0.0 to 2.0

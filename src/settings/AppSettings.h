@@ -102,12 +102,6 @@ public:
     QString selectedVoicePresetId() const;
     void setSelectedVoicePresetId(const QString &voicePresetId);
 
-    QString preciseEngineExecutable() const;
-    void setPreciseEngineExecutable(const QString &path);
-
-    QString preciseModelPath() const;
-    void setPreciseModelPath(const QString &path);
-
     bool aecEnabled() const;
     void setAecEnabled(bool enabled);
 
@@ -117,11 +111,11 @@ public:
     double vadSensitivity() const;
     void setVadSensitivity(double sensitivity);
 
-    double preciseTriggerThreshold() const;
-    void setPreciseTriggerThreshold(double threshold);
+    double wakeTriggerThreshold() const;
+    void setWakeTriggerThreshold(double threshold);
 
-    int preciseTriggerCooldownMs() const;
-    void setPreciseTriggerCooldownMs(int cooldownMs);
+    int wakeTriggerCooldownMs() const;
+    void setWakeTriggerCooldownMs(int cooldownMs);
 
     QString ffmpegExecutable() const;
     void setFfmpegExecutable(const QString &path);
@@ -191,13 +185,11 @@ private:
     QString m_piperExecutable;
     QString m_piperVoiceModel;
     QString m_selectedVoicePresetId = QStringLiteral("en_GB-alba-medium");
-    QString m_preciseEngineExecutable;
-    QString m_preciseModelPath;
     bool m_aecEnabled = true;
     bool m_rnnoiseEnabled = false;
     double m_vadSensitivity = 0.55;
-    double m_preciseTriggerThreshold = 0.30;
-    int m_preciseTriggerCooldownMs = 750;
+    double m_wakeTriggerThreshold = 0.18;
+    int m_wakeTriggerCooldownMs = 450;
     QString m_ffmpegExecutable;
     QString m_ttsEngineKind = QStringLiteral("piper");
     double m_voiceSpeed = 0.89;

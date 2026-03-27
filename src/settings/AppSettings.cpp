@@ -1,6 +1,7 @@
 #include "settings/AppSettings.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include <QDir>
 #include <QFile>
@@ -15,6 +16,10 @@ constexpr double kDefaultVoiceSpeed = 0.89;
 constexpr double kMinVoicePitch = 0.90;
 constexpr double kMaxVoicePitch = 0.97;
 constexpr double kDefaultVoicePitch = 0.93;
+constexpr double kLegacyPreciseThresholdDefault = 0.30;
+constexpr int kLegacyPreciseCooldownDefault = 750;
+constexpr double kSherpaWakeThresholdDefault = 0.18;
+constexpr int kSherpaWakeCooldownDefault = 450;
 
 QString settingsFilePath()
 {
@@ -60,9 +65,9 @@ double clampVoicePitch(double value)
     return std::clamp(value, kMinVoicePitch, kMaxVoicePitch);
 }
 
-double clampPreciseTriggerThreshold(double value)
+double clampWakeTriggerThreshold(double value)
 {
-    return std::clamp(value, 0.30, 0.85);
+    return std::clamp(value, 0.10, 0.85);
 }
 
 double clampTemperature(double value)
@@ -80,9 +85,9 @@ double clampVadSensitivity(double value)
     return std::clamp(value, 0.05, 0.95);
 }
 
-int clampPreciseTriggerCooldownMs(int value)
+int clampWakeTriggerCooldownMs(int value)
 {
-    return std::clamp(value, 600, 900);
+    return std::clamp(value, 250, 1600);
 }
 }
 
@@ -152,13 +157,31 @@ bool AppSettings::load()
     m_piperExecutable = QString::fromStdString(parsed.value("piperExecutable", std::string{}));
     m_piperVoiceModel = QString::fromStdString(parsed.value("piperVoiceModel", std::string{}));
     m_selectedVoicePresetId = QString::fromStdString(parsed.value("selectedVoicePresetId", m_selectedVoicePresetId.toStdString()));
-    m_preciseEngineExecutable = QString::fromStdString(parsed.value("preciseEngineExecutable", std::string{}));
-    m_preciseModelPath = QString::fromStdString(parsed.value("preciseModelPath", std::string{}));
     m_aecEnabled = parsed.value("aecEnabled", true);
     m_rnnoiseEnabled = parsed.value("rnnoiseEnabled", false);
     m_vadSensitivity = clampVadSensitivity(parsed.value("vadSensitivity", 0.55));
-    m_preciseTriggerThreshold = clampPreciseTriggerThreshold(parsed.value("preciseTriggerThreshold", 0.30));
-    m_preciseTriggerCooldownMs = clampPreciseTriggerCooldownMs(parsed.value("preciseTriggerCooldownMs", 750));
+    const bool hasWakeTriggerThreshold = parsed.contains("wakeTriggerThreshold");
+    const bool hasWakeTriggerCooldown = parsed.contains("wakeTriggerCooldownMs");
+    const bool hasLegacyWakeSettings = (!hasWakeTriggerThreshold && parsed.contains("preciseTriggerThreshold"))
+        || (!hasWakeTriggerCooldown && parsed.contains("preciseTriggerCooldownMs"))
+        || parsed.contains("preciseEngineExecutable")
+        || parsed.contains("preciseModelPath");
+    double wakeTriggerThreshold = parsed.value("wakeTriggerThreshold", kSherpaWakeThresholdDefault);
+    if (!hasWakeTriggerThreshold && parsed.contains("preciseTriggerThreshold")) {
+        const double legacyThreshold = parsed.value("preciseTriggerThreshold", kLegacyPreciseThresholdDefault);
+        wakeTriggerThreshold = std::abs(legacyThreshold - kLegacyPreciseThresholdDefault) < 0.0001
+            ? kSherpaWakeThresholdDefault
+            : legacyThreshold;
+    }
+    int wakeTriggerCooldownMs = parsed.value("wakeTriggerCooldownMs", kSherpaWakeCooldownDefault);
+    if (!hasWakeTriggerCooldown && parsed.contains("preciseTriggerCooldownMs")) {
+        const int legacyCooldownMs = parsed.value("preciseTriggerCooldownMs", kLegacyPreciseCooldownDefault);
+        wakeTriggerCooldownMs = legacyCooldownMs == kLegacyPreciseCooldownDefault
+            ? kSherpaWakeCooldownDefault
+            : legacyCooldownMs;
+    }
+    m_wakeTriggerThreshold = clampWakeTriggerThreshold(wakeTriggerThreshold);
+    m_wakeTriggerCooldownMs = clampWakeTriggerCooldownMs(wakeTriggerCooldownMs);
     m_ffmpegExecutable = QString::fromStdString(parsed.value("ffmpegExecutable", std::string{}));
     m_ttsEngineKind = QString::fromStdString(parsed.value("ttsEngineKind", m_ttsEngineKind.toStdString()));
     m_voiceSpeed = clampVoiceSpeed(parsed.value("voiceSpeed", kDefaultVoiceSpeed));
@@ -171,6 +194,9 @@ bool AppSettings::load()
     m_wakeWordPhrase = QString::fromStdString(parsed.value("wakeWordPhrase", m_wakeWordPhrase.toStdString()));
     m_wakeEngineKind = QString::fromStdString(parsed.value("wakeEngineKind", m_wakeEngineKind.toStdString()));
     emit settingsChanged();
+    if (hasLegacyWakeSettings) {
+        (void)save();
+    }
     return true;
 }
 
@@ -206,13 +232,11 @@ bool AppSettings::save() const
         {"piperExecutable", m_piperExecutable.toStdString()},
         {"piperVoiceModel", m_piperVoiceModel.toStdString()},
         {"selectedVoicePresetId", m_selectedVoicePresetId.toStdString()},
-        {"preciseEngineExecutable", m_preciseEngineExecutable.toStdString()},
-        {"preciseModelPath", m_preciseModelPath.toStdString()},
         {"aecEnabled", m_aecEnabled},
         {"rnnoiseEnabled", m_rnnoiseEnabled},
         {"vadSensitivity", m_vadSensitivity},
-        {"preciseTriggerThreshold", m_preciseTriggerThreshold},
-        {"preciseTriggerCooldownMs", m_preciseTriggerCooldownMs},
+        {"wakeTriggerThreshold", m_wakeTriggerThreshold},
+        {"wakeTriggerCooldownMs", m_wakeTriggerCooldownMs},
         {"ffmpegExecutable", m_ffmpegExecutable.toStdString()},
         {"ttsEngineKind", m_ttsEngineKind.toStdString()},
         {"voiceSpeed", m_voiceSpeed},
@@ -357,20 +381,16 @@ QString AppSettings::piperVoiceModel() const { return m_piperVoiceModel; }
 void AppSettings::setPiperVoiceModel(const QString &path) { m_piperVoiceModel = path; emit settingsChanged(); }
 QString AppSettings::selectedVoicePresetId() const { return m_selectedVoicePresetId; }
 void AppSettings::setSelectedVoicePresetId(const QString &voicePresetId) { m_selectedVoicePresetId = voicePresetId; emit settingsChanged(); }
-QString AppSettings::preciseEngineExecutable() const { return m_preciseEngineExecutable; }
-void AppSettings::setPreciseEngineExecutable(const QString &path) { m_preciseEngineExecutable = path; emit settingsChanged(); }
-QString AppSettings::preciseModelPath() const { return m_preciseModelPath; }
-void AppSettings::setPreciseModelPath(const QString &path) { m_preciseModelPath = path; emit settingsChanged(); }
 bool AppSettings::aecEnabled() const { return m_aecEnabled; }
 void AppSettings::setAecEnabled(bool enabled) { m_aecEnabled = enabled; emit settingsChanged(); }
 bool AppSettings::rnnoiseEnabled() const { return m_rnnoiseEnabled; }
 void AppSettings::setRnnoiseEnabled(bool enabled) { m_rnnoiseEnabled = enabled; emit settingsChanged(); }
 double AppSettings::vadSensitivity() const { return m_vadSensitivity; }
 void AppSettings::setVadSensitivity(double sensitivity) { m_vadSensitivity = clampVadSensitivity(sensitivity); emit settingsChanged(); }
-double AppSettings::preciseTriggerThreshold() const { return m_preciseTriggerThreshold; }
-void AppSettings::setPreciseTriggerThreshold(double threshold) { m_preciseTriggerThreshold = clampPreciseTriggerThreshold(threshold); emit settingsChanged(); }
-int AppSettings::preciseTriggerCooldownMs() const { return m_preciseTriggerCooldownMs; }
-void AppSettings::setPreciseTriggerCooldownMs(int cooldownMs) { m_preciseTriggerCooldownMs = clampPreciseTriggerCooldownMs(cooldownMs); emit settingsChanged(); }
+double AppSettings::wakeTriggerThreshold() const { return m_wakeTriggerThreshold; }
+void AppSettings::setWakeTriggerThreshold(double threshold) { m_wakeTriggerThreshold = clampWakeTriggerThreshold(threshold); emit settingsChanged(); }
+int AppSettings::wakeTriggerCooldownMs() const { return m_wakeTriggerCooldownMs; }
+void AppSettings::setWakeTriggerCooldownMs(int cooldownMs) { m_wakeTriggerCooldownMs = clampWakeTriggerCooldownMs(cooldownMs); emit settingsChanged(); }
 QString AppSettings::ffmpegExecutable() const { return m_ffmpegExecutable; }
 void AppSettings::setFfmpegExecutable(const QString &path) { m_ffmpegExecutable = path; emit settingsChanged(); }
 QString AppSettings::ttsEngineKind() const { return m_ttsEngineKind; }

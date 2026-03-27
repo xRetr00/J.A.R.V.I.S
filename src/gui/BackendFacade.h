@@ -49,13 +49,8 @@ class BackendFacade : public QObject
     Q_PROPERTY(QString ttsEngineKind READ ttsEngineKind NOTIFY settingsChanged)
     Q_PROPERTY(QString piperExecutable READ piperExecutable NOTIFY settingsChanged)
     Q_PROPERTY(QString piperVoiceModel READ piperVoiceModel NOTIFY settingsChanged)
-    Q_PROPERTY(QString preciseEngineExecutable READ preciseEngineExecutable NOTIFY settingsChanged)
-    Q_PROPERTY(QString preciseModelPath READ preciseModelPath NOTIFY settingsChanged)
-    Q_PROPERTY(double preciseTriggerThreshold READ preciseTriggerThreshold NOTIFY settingsChanged)
-    Q_PROPERTY(int preciseTriggerCooldownMs READ preciseTriggerCooldownMs NOTIFY settingsChanged)
-    Q_PROPERTY(QString preciseRuntimeRoot READ preciseRuntimeRoot CONSTANT)
-    Q_PROPERTY(QString preciseTrainingRoot READ preciseTrainingRoot CONSTANT)
-    Q_PROPERTY(QString preciseTrainScriptPath READ preciseTrainScriptPath CONSTANT)
+    Q_PROPERTY(double wakeTriggerThreshold READ wakeTriggerThreshold NOTIFY settingsChanged)
+    Q_PROPERTY(int wakeTriggerCooldownMs READ wakeTriggerCooldownMs NOTIFY settingsChanged)
     Q_PROPERTY(QString ffmpegExecutable READ ffmpegExecutable NOTIFY settingsChanged)
     Q_PROPERTY(double voiceSpeed READ voiceSpeed NOTIFY settingsChanged)
     Q_PROPERTY(double voicePitch READ voicePitch NOTIFY settingsChanged)
@@ -147,13 +142,8 @@ public:
     QString ttsEngineKind() const;
     QString piperExecutable() const;
     QString piperVoiceModel() const;
-    QString preciseEngineExecutable() const;
-    QString preciseModelPath() const;
-    double preciseTriggerThreshold() const;
-    int preciseTriggerCooldownMs() const;
-    QString preciseRuntimeRoot() const;
-    QString preciseTrainingRoot() const;
-    QString preciseTrainScriptPath() const;
+    double wakeTriggerThreshold() const;
+    int wakeTriggerCooldownMs() const;
     QString ffmpegExecutable() const;
     double voiceSpeed() const;
     double voicePitch() const;
@@ -226,7 +216,6 @@ public:
     Q_INVOKABLE void setWakeEngineKind(const QString &kind);
     Q_INVOKABLE void setTtsEngineKind(const QString &kind);
     Q_INVOKABLE void saveAudioProcessing(bool aecEnabled, bool rnnoiseEnabled, double vadSensitivity);
-    Q_INVOKABLE void saveWakeDetectionTuning(double preciseThreshold, int preciseCooldownMs);
     Q_INVOKABLE void saveSettings(
         const QString &endpoint,
         const QString &modelId,
@@ -240,10 +229,8 @@ public:
         const QString &wakeEngineKind,
         const QString &whisperPath,
         const QString &whisperModelPath,
-        const QString &preciseEnginePath,
-        const QString &preciseModelPath,
-        double preciseThreshold,
-        int preciseCooldownMs,
+        double wakeThreshold,
+        int wakeCooldownMs,
         const QString &ttsEngineKind,
         const QString &piperPath,
         const QString &voicePath,
@@ -262,10 +249,8 @@ public:
         const QString &modelId,
         const QString &whisperPath,
         const QString &whisperModelPath,
-        const QString &preciseEnginePath,
-        const QString &preciseModelPath,
-        double preciseThreshold,
-        int preciseCooldownMs,
+        double wakeThreshold,
+        int wakeCooldownMs,
         const QString &piperPath,
         const QString &voicePath,
         const QString &ffmpegPath,
@@ -278,10 +263,8 @@ public:
         const QString &modelId,
         const QString &whisperPath,
         const QString &whisperModelPath,
-        const QString &preciseEnginePath,
-        const QString &preciseModelPath,
-        double preciseThreshold,
-        int preciseCooldownMs,
+        double wakeThreshold,
+        int wakeCooldownMs,
         const QString &piperPath,
         const QString &voicePath,
         const QString &ffmpegPath,
@@ -294,8 +277,6 @@ public:
         const QString &modelId,
         const QString &whisperPath,
         const QString &whisperModelPath,
-        const QString &preciseEnginePath,
-        const QString &preciseModelPath,
         const QString &piperPath,
         const QString &voicePath,
         const QString &ffmpegPath);
@@ -306,7 +287,6 @@ public:
     Q_INVOKABLE void installAllTools();
     Q_INVOKABLE bool autoDetectVoiceTools();
     Q_INVOKABLE bool setUserName(const QString &userName);
-    Q_INVOKABLE bool startTrainingSetup();
     Q_INVOKABLE void refreshAudioDevices();
     Q_INVOKABLE bool installSkill(const QString &url);
     Q_INVOKABLE bool createSkill(const QString &id, const QString &name, const QString &description);

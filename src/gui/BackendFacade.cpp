@@ -514,71 +514,6 @@ QString detectWhisperModel(const QString &appDataRoot)
     return {};
 }
 
-QString preciseRuntimeRootPath()
-{
-    return QStringLiteral("C:/JarvisRuntime/precise");
-}
-
-QString preciseTrainingRootPath()
-{
-    return preciseRuntimeRootPath() + QStringLiteral("/training");
-}
-
-QString preciseModelsRootPath()
-{
-    return preciseRuntimeRootPath() + QStringLiteral("/models");
-}
-
-QString preciseTrainScriptPathValue()
-{
-    return preciseTrainingRootPath() + QStringLiteral("/train_wake_word.bat");
-}
-
-QString preciseSetupScriptPathValue()
-{
-    return preciseTrainingRootPath() + QStringLiteral("/setup_training_env.bat");
-}
-
-QString preciseInstructionsPathValue()
-{
-    return preciseTrainingRootPath() + QStringLiteral("/README.txt");
-}
-
-bool writeTextFile(const QString &path, const QString &content)
-{
-    QFileInfo info(path);
-    QDir().mkpath(info.absolutePath());
-    QFile file(path);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
-        return false;
-    }
-    file.write(content.toUtf8());
-    return true;
-}
-
-QString detectPreciseEngine()
-{
-    const QString runtimeRoot = preciseRuntimeRootPath();
-    const QStringList candidates = {
-        runtimeRoot + QStringLiteral("/precise-engine.exe"),
-        runtimeRoot + QStringLiteral("/precise-engine"),
-        runtimeRoot + QStringLiteral("/bin/precise-engine.exe"),
-        runtimeRoot + QStringLiteral("/bin/precise-engine")
-    };
-    return firstValidPath(candidates);
-}
-
-QString detectPreciseModel(const QString &wakeWord)
-{
-    const QString normalizedWakeWord = wakeWord.trimmed().isEmpty() ? QStringLiteral("jarvis") : wakeWord.trimmed().toLower();
-    const QString modelsRoot = preciseModelsRootPath();
-    const QString preferred = findFileRecursive(modelsRoot, normalizedWakeWord + QStringLiteral(".pb"));
-    if (!preferred.isEmpty()) {
-        return preferred;
-    }
-    return findFirstMatchingFileRecursive(modelsRoot, {QStringLiteral("*.pb")});
-}
-
 QString resolveExecutableFromDirectory(const QString &directoryPath, const QStringList &candidateNames)
 {
     QDir directory(directoryPath);
@@ -921,13 +856,8 @@ QString BackendFacade::whisperModelPath() const { return m_settings->whisperMode
 QString BackendFacade::ttsEngineKind() const { return QStringLiteral("piper"); }
 QString BackendFacade::piperExecutable() const { return m_settings->piperExecutable(); }
 QString BackendFacade::piperVoiceModel() const { return m_settings->piperVoiceModel(); }
-QString BackendFacade::preciseEngineExecutable() const { return m_settings->preciseEngineExecutable(); }
-QString BackendFacade::preciseModelPath() const { return m_settings->preciseModelPath(); }
-double BackendFacade::preciseTriggerThreshold() const { return m_settings->preciseTriggerThreshold(); }
-int BackendFacade::preciseTriggerCooldownMs() const { return m_settings->preciseTriggerCooldownMs(); }
-QString BackendFacade::preciseRuntimeRoot() const { return preciseRuntimeRootPath(); }
-QString BackendFacade::preciseTrainingRoot() const { return preciseTrainingRootPath(); }
-QString BackendFacade::preciseTrainScriptPath() const { return preciseTrainScriptPathValue(); }
+double BackendFacade::wakeTriggerThreshold() const { return m_settings->wakeTriggerThreshold(); }
+int BackendFacade::wakeTriggerCooldownMs() const { return m_settings->wakeTriggerCooldownMs(); }
 QString BackendFacade::ffmpegExecutable() const { return m_settings->ffmpegExecutable(); }
 double BackendFacade::voiceSpeed() const { return m_settings->voiceSpeed(); }
 double BackendFacade::voicePitch() const { return m_settings->voicePitch(); }
@@ -1126,14 +1056,6 @@ void BackendFacade::setSelectedVoicePresetId(const QString &voiceId)
     emit settingsChanged();
 }
 
-void BackendFacade::saveWakeDetectionTuning(double preciseThreshold, int preciseCooldownMs)
-{
-    m_settings->setPreciseTriggerThreshold(preciseThreshold);
-    m_settings->setPreciseTriggerCooldownMs(preciseCooldownMs);
-    m_settings->save();
-    emit settingsChanged();
-}
-
 void BackendFacade::refreshAudioDevices()
 {
     emit audioDevicesChanged();
@@ -1153,10 +1075,8 @@ void BackendFacade::saveSettings(
     const QString &wakeEngineKind,
     const QString &whisperPath,
     const QString &whisperModelPath,
-    const QString &preciseEnginePath,
-    const QString &preciseModelPath,
-    double preciseThreshold,
-    int preciseCooldownMs,
+    double wakeThreshold,
+    int wakeCooldownMs,
     const QString &ttsEngineKind,
     const QString &piperPath,
     const QString &voicePath,
@@ -1169,8 +1089,6 @@ void BackendFacade::saveSettings(
     bool clickThrough)
 {
     Q_UNUSED(wakeEngineKind);
-    Q_UNUSED(preciseEnginePath);
-    Q_UNUSED(preciseModelPath);
 
     const QString detectedVoicePresetId = detectVoicePresetIdFromPath(voicePath);
     if (!detectedVoicePresetId.isEmpty()) {
@@ -1185,10 +1103,8 @@ void BackendFacade::saveSettings(
         QStringLiteral("sherpa-onnx"),
         whisperPath,
         whisperModelPath,
-        m_settings->preciseEngineExecutable(),
-        m_settings->preciseModelPath(),
-        preciseThreshold,
-        preciseCooldownMs,
+        wakeThreshold,
+        wakeCooldownMs,
         QStringLiteral("piper"),
         piperPath,
         voicePath,
@@ -1273,10 +1189,8 @@ bool BackendFacade::completeInitialSetup(
     const QString &modelId,
     const QString &whisperPath,
     const QString &whisperModelPath,
-    const QString &preciseEnginePath,
-    const QString &preciseModelPath,
-    double preciseThreshold,
-    int preciseCooldownMs,
+    double wakeThreshold,
+    int wakeCooldownMs,
     const QString &piperPath,
     const QString &voicePath,
     const QString &ffmpegPath,
@@ -1285,8 +1199,6 @@ bool BackendFacade::completeInitialSetup(
     bool clickThrough)
 {
     const QString normalizedEndpoint = endpoint.trimmed();
-    Q_UNUSED(preciseEnginePath);
-    Q_UNUSED(preciseModelPath);
     if (normalizedEndpoint.isEmpty()) {
         setToolInstallStatus(QStringLiteral("Local AI backend endpoint is required."));
         return false;
@@ -1372,10 +1284,8 @@ bool BackendFacade::completeInitialSetup(
         QStringLiteral("sherpa-onnx"),
         resolvedWhisper,
         resolvedWhisperModel,
-        m_settings->preciseEngineExecutable(),
-        m_settings->preciseModelPath(),
-        preciseThreshold,
-        preciseCooldownMs,
+        wakeThreshold,
+        wakeCooldownMs,
         QStringLiteral("piper"),
         resolvedPiper,
         resolvedVoiceModel,
@@ -1403,10 +1313,8 @@ bool BackendFacade::runSetupScenario(
     const QString &modelId,
     const QString &whisperPath,
     const QString &whisperModelPath,
-    const QString &preciseEnginePath,
-    const QString &preciseModelPath,
-    double preciseThreshold,
-    int preciseCooldownMs,
+    double wakeThreshold,
+    int wakeCooldownMs,
     const QString &piperPath,
     const QString &voicePath,
     const QString &ffmpegPath,
@@ -1416,8 +1324,6 @@ bool BackendFacade::runSetupScenario(
     const QString &scenarioId)
 {
     const QString normalizedEndpoint = endpoint.trimmed();
-    Q_UNUSED(preciseEnginePath);
-    Q_UNUSED(preciseModelPath);
     if (normalizedEndpoint.isEmpty()) {
         setToolInstallStatus(QStringLiteral("Local AI backend endpoint is required before running a setup scenario."));
         return false;
@@ -1503,10 +1409,8 @@ bool BackendFacade::runSetupScenario(
         QStringLiteral("sherpa-onnx"),
         resolvedWhisper,
         resolvedWhisperModel,
-        m_settings->preciseEngineExecutable(),
-        m_settings->preciseModelPath(),
-        preciseThreshold,
-        preciseCooldownMs,
+        wakeThreshold,
+        wakeCooldownMs,
         QStringLiteral("piper"),
         resolvedPiper,
         resolvedVoiceModel,
@@ -1539,8 +1443,6 @@ QVariantMap BackendFacade::evaluateSetupRequirements(
     const QString &modelId,
     const QString &whisperPath,
     const QString &whisperModelPath,
-    const QString &preciseEnginePath,
-    const QString &preciseModelPath,
     const QString &piperPath,
     const QString &voicePath,
     const QString &ffmpegPath)
@@ -1558,13 +1460,6 @@ QVariantMap BackendFacade::evaluateSetupRequirements(
             QStringLiteral("whisper.exe")
         });
     const QString resolvedWhisperModel = resolveWhisperModelSelection(whisperModelPath);
-    const QString resolvedPreciseEngine = resolveExecutableSelection(
-        preciseEnginePath,
-        { QStringLiteral("precise-engine.exe"), QStringLiteral("precise-engine") });
-    const QString resolvedPreciseModel = resolveExistingFileSelection(
-        preciseModelPath,
-        {},
-        { QStringLiteral("*.pb") });
     const QString resolvedPiper = resolveExecutableSelection(
         piperPath,
         {
@@ -1579,8 +1474,6 @@ QVariantMap BackendFacade::evaluateSetupRequirements(
 
     const bool whisperOk = !resolvedWhisper.isEmpty();
     const bool whisperModelOk = !resolvedWhisperModel.isEmpty();
-    const bool preciseEngineOk = !resolvedPreciseEngine.isEmpty();
-    const bool preciseModelOk = !resolvedPreciseModel.isEmpty();
     const bool piperOk = !resolvedPiper.isEmpty();
     const bool ffmpegOk = !resolvedFfmpeg.isEmpty();
     const bool voiceOk = !resolvedVoice.isEmpty();
@@ -1599,9 +1492,6 @@ QVariantMap BackendFacade::evaluateSetupRequirements(
     result.insert(QStringLiteral("modelOk"), modelOk);
     result.insert(QStringLiteral("whisperOk"), whisperOk);
     result.insert(QStringLiteral("whisperModelOk"), whisperModelOk);
-    result.insert(QStringLiteral("preciseEngineOk"), preciseEngineOk);
-    result.insert(QStringLiteral("preciseModelOk"), preciseModelOk);
-    result.insert(QStringLiteral("preciseReady"), preciseEngineOk && preciseModelOk);
     result.insert(QStringLiteral("piperOk"), piperOk);
     result.insert(QStringLiteral("voiceOk"), voiceOk);
     result.insert(QStringLiteral("ffmpegOk"), ffmpegOk);
@@ -1612,8 +1502,6 @@ QVariantMap BackendFacade::evaluateSetupRequirements(
 
     result.insert(QStringLiteral("whisperPathResolved"), resolvedWhisper);
     result.insert(QStringLiteral("whisperModelPathResolved"), resolvedWhisperModel);
-    result.insert(QStringLiteral("preciseEnginePathResolved"), resolvedPreciseEngine);
-    result.insert(QStringLiteral("preciseModelPathResolved"), resolvedPreciseModel);
     result.insert(QStringLiteral("piperPathResolved"), resolvedPiper);
     result.insert(QStringLiteral("voicePathResolved"), resolvedVoice);
     result.insert(QStringLiteral("ffmpegPathResolved"), resolvedFfmpeg);
@@ -1815,99 +1703,6 @@ bool BackendFacade::setUserName(const QString &userName)
         emit profileChanged();
     }
     return updated;
-}
-
-bool BackendFacade::startTrainingSetup()
-{
-    QDir().mkpath(preciseTrainingRootPath() + QStringLiteral("/wake-word"));
-    QDir().mkpath(preciseTrainingRootPath() + QStringLiteral("/not-wake-word"));
-    QDir().mkpath(preciseTrainingRootPath() + QStringLiteral("/test/wake-word"));
-    QDir().mkpath(preciseTrainingRootPath() + QStringLiteral("/test/not-wake-word"));
-    QDir().mkpath(preciseModelsRootPath());
-    QDir().mkpath(preciseRuntimeRootPath());
-
-    const QString setupScript = QStringLiteral(R"BAT(@echo off
-setlocal
-echo Setting up Mycroft Precise training environment...
-echo Recommended: create and activate a dedicated Python environment first.
-echo Example:
-echo   py -3.8 -m venv venv
-echo   call venv\Scripts\activate
-echo   python -m pip install --upgrade pip
-echo   pip install mycroft-precise precise-runner tensorflow==1.13.1 keras==2.1.5
-echo.
-echo After installation, place precise-engine.exe in:
-echo   %~dp0..
-echo Then record your samples and run train_wake_word.bat.
-pause
-)BAT");
-
-    const QString trainScript = QStringLiteral(R"BAT(@echo off
-setlocal
-set RUNTIME_ROOT=%~dp0..
-set TRAINING_ROOT=%~dp0
-set MODEL_ROOT=%RUNTIME_ROOT%\models
-set MODEL_NAME=jarvis
-
-if not exist "%TRAINING_ROOT%wake-word" (
-  echo Missing wake-word samples folder.
-  exit /b 1
-)
-
-if not exist "%TRAINING_ROOT%not-wake-word" (
-  echo Missing not-wake-word samples folder.
-  exit /b 1
-)
-
-echo Training wake word model...
-precise-train "%MODEL_ROOT%\%MODEL_NAME%.net" "%TRAINING_ROOT%"
-if errorlevel 1 exit /b 1
-
-echo Converting model...
-precise-convert "%MODEL_ROOT%\%MODEL_NAME%.net" -o "%MODEL_ROOT%\%MODEL_NAME%.pb"
-if errorlevel 1 exit /b 1
-
-echo Training complete.
-echo Model: %MODEL_ROOT%\%MODEL_NAME%.pb
-echo Params: %MODEL_ROOT%\%MODEL_NAME%.pb.params
-pause
-)BAT");
-
-    const QString instructions = QStringLiteral(
-        "Wake word model not trained yet.\n\n"
-        "1. Record your voice saying \"Jarvis\" 20-40 times into training/wake-word/\n"
-        "2. Record 20-40 negative samples with noise or other words into training/not-wake-word/\n"
-        "3. Optional: place extra validation clips into training/test/wake-word/ and training/test/not-wake-word/\n"
-        "4. Run train_wake_word.bat\n"
-        "5. Restart JARVIS\n\n"
-        "Runtime root:\n%1\n\n"
-        "Expected runtime files:\n"
-        "- precise-engine.exe (or compiled precise-engine binary)\n"
-        "- models/jarvis.pb\n"
-        "- models/jarvis.pb.params\n").arg(preciseRuntimeRootPath());
-
-    const bool ok = writeTextFile(preciseSetupScriptPathValue(), setupScript)
-        && writeTextFile(preciseTrainScriptPathValue(), trainScript)
-        && writeTextFile(preciseInstructionsPathValue(), instructions);
-
-    if (!ok) {
-        setToolInstallStatus(QStringLiteral("Failed to create the Precise training setup files."));
-        return false;
-    }
-
-    const QString detectedEngine = detectPreciseEngine();
-    const QString detectedModel = detectPreciseModel(m_settings->wakeWordPhrase());
-    if (!detectedEngine.isEmpty()) {
-        m_settings->setPreciseEngineExecutable(detectedEngine);
-    }
-    if (!detectedModel.isEmpty()) {
-        m_settings->setPreciseModelPath(detectedModel);
-    }
-    m_settings->save();
-    emit settingsChanged();
-
-    setToolInstallStatus(QStringLiteral("Training setup created in C:/JarvisRuntime/precise/training. Record samples next, then run train_wake_word.bat."));
-    return true;
 }
 
 bool BackendFacade::installSkill(const QString &url)

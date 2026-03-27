@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QSet>
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <QStringList>
@@ -16,8 +17,9 @@
 #endif
 
 namespace {
-constexpr int kMinCooldownMs = 700;
+constexpr int kMinCooldownMs = 250;
 constexpr int kMaxCooldownMs = 1600;
+constexpr int kKeywordSegmentationCandidates = 6;
 
 QString firstExisting(const QStringList &candidates)
 {
@@ -429,9 +431,11 @@ bool SherpaWakeWordEngine::writeKeywordsFile(const QString &modelPath, QString *
         : QStringLiteral("Jarvis");
 
     QStringList lines;
+    QSet<QString> emittedLines;
     for (const QString &variant : wakePhraseVariants(displayPhrase)) {
+        const std::string variantUtf8 = variant.toStdString();
         std::vector<std::string> pieces;
-        const auto encodeStatus = processor.Encode(variant.toStdString(), &pieces);
+        const auto encodeStatus = processor.Encode(variantUtf8, &pieces);
         if (!encodeStatus.ok() || pieces.empty()) {
             if (errorText) {
                 *errorText = QStringLiteral("Failed to encode wake phrase \"%1\": %2")
@@ -440,12 +444,40 @@ bool SherpaWakeWordEngine::writeKeywordsFile(const QString &modelPath, QString *
             return false;
         }
 
-        QStringList linePieces;
-        linePieces.reserve(static_cast<qsizetype>(pieces.size()));
-        for (const std::string &piece : pieces) {
-            linePieces.push_back(QString::fromStdString(piece));
+        auto addKeywordPieces = [&](const std::vector<std::string> &keywordPieces) {
+            if (keywordPieces.empty()) {
+                return;
+            }
+
+            QStringList linePieces;
+            linePieces.reserve(static_cast<qsizetype>(keywordPieces.size()));
+            for (const std::string &piece : keywordPieces) {
+                linePieces.push_back(QString::fromStdString(piece));
+            }
+
+            const QString line = QStringLiteral("%1 @%2").arg(linePieces.join(QChar::fromLatin1(' ')), displayPhrase);
+            if (!emittedLines.contains(line)) {
+                emittedLines.insert(line);
+                lines.push_back(line);
+            }
+        };
+
+        addKeywordPieces(pieces);
+
+        std::vector<std::vector<std::string>> nbestPieces;
+        const auto nbestStatus = processor.NBestEncode(variantUtf8, kKeywordSegmentationCandidates, &nbestPieces);
+        if (nbestStatus.ok()) {
+            for (const auto &candidate : nbestPieces) {
+                addKeywordPieces(candidate);
+            }
         }
-        lines.push_back(QStringLiteral("%1 @%2").arg(linePieces.join(QChar::fromLatin1(' ')), displayPhrase));
+    }
+
+    if (lines.isEmpty()) {
+        if (errorText) {
+            *errorText = QStringLiteral("No encoded keyword variants were generated for the wake phrase");
+        }
+        return false;
     }
 
     const QString wakeDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/wake");
