@@ -103,6 +103,11 @@ if(EXISTS "${JARVIS_SPEEXDSP_ROOT}/include/speex/speex_echo.h")
     file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/third_party/speexdsp/include/speex")
     configure_file(
         "${JARVIS_SPEEXDSP_ROOT}/include/speex/speexdsp_config_types.h.in"
+        "${CMAKE_BINARY_DIR}/third_party/speexdsp/include/speexdsp_config_types.h"
+        @ONLY
+    )
+    configure_file(
+        "${JARVIS_SPEEXDSP_ROOT}/include/speex/speexdsp_config_types.h.in"
         "${CMAKE_BINARY_DIR}/third_party/speexdsp/include/speex/speexdsp_config_types.h"
         @ONLY
     )

@@ -557,7 +557,7 @@ QString ffmpegExecutableValidationMessage()
 
 QString autoInstallUnavailableMessage()
 {
-    return QStringLiteral("Automatic downloads are only available on Windows. On Linux, select existing binaries and model files manually.");
+    return QStringLiteral("Automatic downloads are not supported on this platform.");
 }
 
 QString quotePowerShell(const QString &value)
@@ -569,6 +569,9 @@ QString quotePowerShell(const QString &value)
 
 bool downloadFileWithPowerShell(const QString &url, const QString &destinationPath, int timeoutMs, QString *error)
 {
+    QDir().mkpath(QFileInfo(destinationPath).absolutePath());
+
+#ifdef Q_OS_WIN
     QProcess process;
     const QString script = QStringLiteral(
         "$ProgressPreference='SilentlyContinue'; "
@@ -609,6 +612,55 @@ bool downloadFileWithPowerShell(const QString &url, const QString &destinationPa
     }
 
     return QFileInfo::exists(destinationPath);
+#else
+    QProcess process;
+    QString program = QStringLiteral("curl");
+    QStringList args = {
+        QStringLiteral("-L"),
+        QStringLiteral("--fail"),
+        QStringLiteral("--silent"),
+        QStringLiteral("--show-error"),
+        QStringLiteral("-o"),
+        destinationPath,
+        url
+    };
+
+    process.start(program, args);
+    if (!process.waitForStarted(3000)) {
+        program = QStringLiteral("wget");
+        args = {
+            QStringLiteral("-q"),
+            QStringLiteral("-O"),
+            destinationPath,
+            url
+        };
+        process.start(program, args);
+    }
+
+    if (!process.waitForFinished(timeoutMs)) {
+        process.kill();
+        process.waitForFinished(2000);
+        if (error) {
+            *error = QStringLiteral("Download timed out.");
+        }
+        return false;
+    }
+
+    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+        if (error) {
+            *error = QString::fromUtf8(process.readAllStandardError()).trimmed();
+            if (error->isEmpty()) {
+                *error = QString::fromUtf8(process.readAllStandardOutput()).trimmed();
+            }
+            if (error->isEmpty()) {
+                *error = QStringLiteral("Download failed. Ensure curl or wget is installed.");
+            }
+        }
+        return false;
+    }
+
+    return QFileInfo::exists(destinationPath);
+#endif
 }
 
 NetworkFetchResult httpGet(const QUrl &url,
@@ -2031,7 +2083,7 @@ bool BackendFacade::autoDetectVoiceTools()
             ? QStringLiteral("Voice tools detected and fields populated.")
             : PlatformRuntime::currentCapabilities().supportsAutoToolInstall
                 ? QStringLiteral("Some voice tools are still missing.")
-                : QStringLiteral("Some voice tools are still missing. On Linux, point JARVIS to existing binaries and model files."));
+                : QStringLiteral("Some voice tools are still missing. Point JARVIS to existing binaries and model files."));
 
     m_settings->save();
     emit settingsChanged();

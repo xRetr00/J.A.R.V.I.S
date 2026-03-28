@@ -29,7 +29,7 @@ void PlatformRuntimeTests::reportsExpectedCapabilities()
     QVERIFY(!capabilities.supportsAppListing);
     QVERIFY(!capabilities.supportsAppLaunch);
     QVERIFY(!capabilities.supportsTimerNotification);
-    QVERIFY(!capabilities.supportsAutoToolInstall);
+    QVERIFY(capabilities.supportsAutoToolInstall);
 #else
     QVERIFY(!capabilities.platformId.isEmpty());
 #endif

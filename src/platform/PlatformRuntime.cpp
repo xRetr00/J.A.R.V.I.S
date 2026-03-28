@@ -35,7 +35,7 @@ PlatformCapabilities detectCapabilities()
     capabilities.supportsAppListing = false;
     capabilities.supportsAppLaunch = false;
     capabilities.supportsTimerNotification = false;
-    capabilities.supportsAutoToolInstall = false;
+    capabilities.supportsAutoToolInstall = true;
 #else
     capabilities.platformId = QStringLiteral("unknown");
     capabilities.platformLabel = QStringLiteral("Unknown");

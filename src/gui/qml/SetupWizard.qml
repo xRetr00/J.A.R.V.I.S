@@ -597,7 +597,7 @@ Window {
                         Text {
                             text: settingsVm.supportsAutoToolInstall
                                   ? "The wake engine is managed automatically from the installed local tool stack."
-                                  : "On Linux, wake support stays optional until `sherpa-onnx` and the wake model files are configured manually."
+                                  : "Wake support stays optional until `sherpa-onnx` and the wake model files are configured manually."
                             color: "#7f97b7"
                             font.pixelSize: 13
                             wrapMode: Text.Wrap
@@ -609,7 +609,7 @@ Window {
                                   ? settingsVm.toolInstallStatus
                                   : (settingsVm.supportsAutoToolInstall
                                       ? "Use Auto Detect after installing tools so the current local paths are populated."
-                                      : "Use Auto Detect after installing tools so JARVIS can resolve the current Linux paths.")
+                                      : "Use Auto Detect after installing tools so JARVIS can resolve the current local paths.")
                             color: "#9ab0ca"
                             font.pixelSize: 12
                             wrapMode: Text.Wrap

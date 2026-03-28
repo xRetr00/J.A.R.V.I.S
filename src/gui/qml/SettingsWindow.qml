@@ -673,7 +673,7 @@ Window {
                     Text {
                         text: settingsVm.supportsAutoToolInstall
                               ? "Local binaries, voice model, and speech tuning."
-                              : "Local binaries, voice model, and speech tuning. Linux uses manual tool and model selection."
+                              : "Local binaries, voice model, and speech tuning. Configure tools and models manually on this platform."
                         color: "#8099b8"
                         font.pixelSize: 14
                     }
@@ -936,7 +936,7 @@ Window {
                     Text {
                         text: settingsVm.supportsAutoToolInstall
                               ? "The app uses sherpa-onnx only for wake detection."
-                              : "The app uses sherpa-onnx only for wake detection. On Linux, configure wake assets manually if you want wake-word support."
+                              : "The app uses sherpa-onnx only for wake detection. Configure wake assets manually if you want wake-word support."
                         color: "#9ab0ca"
                         font.pixelSize: 12
                         wrapMode: Text.Wrap
@@ -1253,7 +1253,7 @@ Window {
                     Text {
                         text: settingsVm.supportsAutoToolInstall
                               ? "Auto-detected runtimes, models, and downloadable assets."
-                              : "Detected runtimes and models. Automatic downloads stay Windows-only in this release."
+                              : "Detected runtimes and models. Automatic downloads are not available on this platform."
                         color: "#8099b8"
                         font.pixelSize: 14
                     }

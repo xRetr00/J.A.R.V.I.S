@@ -133,7 +133,7 @@ ctest --test-dir build-linux-release --output-on-failure
 - Voice generation starts only when sentence boundaries are detected from streamed output
 - The application builds and deploys `jarvis_sherpa_wake_helper` next to the main `jarvis` executable, using the platform's executable suffix when applicable
 - `windeployqt` runs as a post-build step on Windows to stage Qt runtime files
-- On Linux, automatic tool downloads are disabled in v1; configure existing `whisper`, `piper`, `ffmpeg`, and optional wake assets manually
+- Automatic tool downloads are supported on managed platforms; if unavailable in your environment, configure existing `whisper`, `piper`, `ffmpeg`, and optional wake assets manually
 - The default premium voice profile targets a calm English delivery:
   - preferred Piper voice families: `en_GB-*` medium voices, especially `en_GB-alba-medium`
   - enforced speed range: `0.85` to `0.92`

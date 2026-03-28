@@ -213,7 +213,7 @@ void ToolManager::rescan()
 void ToolManager::downloadTool(const QString &name)
 {
     if (!PlatformRuntime::currentCapabilities().supportsAutoToolInstall) {
-        emit downloadFinished(name, false, QStringLiteral("Automatic tool downloads are only available on Windows. On Linux, configure existing binaries manually."));
+        emit downloadFinished(name, false, QStringLiteral("Automatic tool downloads are not supported on this platform."));
         return;
     }
     beginDownload(descriptorForName(name));
@@ -222,7 +222,7 @@ void ToolManager::downloadTool(const QString &name)
 void ToolManager::downloadModel(const QString &name)
 {
     if (!PlatformRuntime::currentCapabilities().supportsAutoToolInstall) {
-        emit downloadFinished(name, false, QStringLiteral("Automatic model downloads are only available on Windows. On Linux, configure existing model files manually."));
+        emit downloadFinished(name, false, QStringLiteral("Automatic model downloads are not supported on this platform."));
         return;
     }
     beginDownload(descriptorForName(name));
@@ -231,7 +231,7 @@ void ToolManager::downloadModel(const QString &name)
 void ToolManager::installAll()
 {
     if (!PlatformRuntime::currentCapabilities().supportsAutoToolInstall) {
-        emit downloadFinished(QStringLiteral("all"), false, QStringLiteral("Automatic tool installation is only available on Windows. On Linux, configure existing binaries manually."));
+        emit downloadFinished(QStringLiteral("all"), false, QStringLiteral("Automatic tool installation is not supported on this platform."));
         return;
     }
     for (const ToolInfo &tool : scan()) {
@@ -280,6 +280,9 @@ QString ToolManager::probeVersion(const QString &path, const QStringList &args) 
 
 ToolManager::DownloadDescriptor ToolManager::descriptorForName(const QString &name) const
 {
+    const bool isWindows = PlatformRuntime::isWindows();
+    const bool isLinux = PlatformRuntime::isLinux();
+
     if (name == QStringLiteral("silero-vad-model")) {
         return {
             .name = name,
@@ -289,13 +292,28 @@ ToolManager::DownloadDescriptor ToolManager::descriptorForName(const QString &na
         };
     }
     if (name == QStringLiteral("onnxruntime")) {
+        if (isWindows) {
+            return {
+                .name = name,
+                .category = QStringLiteral("runtime"),
+                .url = QStringLiteral("https://github.com/microsoft/onnxruntime/releases/download/v1.23.2/onnxruntime-win-x64-1.23.2.zip"),
+                .relativeTargetPath = QStringLiteral("archives/onnxruntime-win-x64-1.23.2.zip"),
+                .extractArchive = true,
+                .extractDestinationDir = QStringLiteral("onnxruntime")
+            };
+        }
+        if (isLinux) {
+            return {
+                .name = name,
+                .category = QStringLiteral("runtime"),
+                .url = QStringLiteral("https://github.com/microsoft/onnxruntime/releases/download/v1.23.2/onnxruntime-linux-x64-1.23.2.tgz"),
+                .relativeTargetPath = QStringLiteral("archives/onnxruntime-linux-x64-1.23.2.tgz"),
+                .extractArchive = true,
+                .extractDestinationDir = QStringLiteral("onnxruntime")
+            };
+        }
         return {
-            .name = name,
-            .category = QStringLiteral("runtime"),
-            .url = QStringLiteral("https://github.com/microsoft/onnxruntime/releases/download/v1.23.2/onnxruntime-win-x64-1.23.2.zip"),
-            .relativeTargetPath = QStringLiteral("archives/onnxruntime-win-x64-1.23.2.zip"),
-            .extractArchive = true,
-            .extractDestinationDir = QStringLiteral("onnxruntime")
+            .name = name
         };
     }
     if (name == QStringLiteral("intent-minilm-int8")) {
@@ -343,13 +361,28 @@ ToolManager::DownloadDescriptor ToolManager::descriptorForName(const QString &na
         };
     }
     if (name == QStringLiteral("sherpa-onnx-source") || name == QStringLiteral("sherpa-onnx")) {
+        if (isWindows) {
+            return {
+                .name = name,
+                .category = QStringLiteral("wake"),
+                .url = QStringLiteral("https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.12.33/sherpa-onnx-v1.12.33-win-x64-shared-MD-Release-no-tts.tar.bz2"),
+                .relativeTargetPath = QStringLiteral("archives/sherpa-onnx-v1.12.33-win-x64-shared-MD-Release-no-tts.tar.bz2"),
+                .extractArchive = true,
+                .extractDestinationDir = QStringLiteral("sherpa-onnx")
+            };
+        }
+        if (isLinux) {
+            return {
+                .name = name,
+                .category = QStringLiteral("wake"),
+                .url = QStringLiteral("https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.12.33/sherpa-onnx-v1.12.33-linux-x64-shared.tar.bz2"),
+                .relativeTargetPath = QStringLiteral("archives/sherpa-onnx-v1.12.33-linux-x64-shared.tar.bz2"),
+                .extractArchive = true,
+                .extractDestinationDir = QStringLiteral("sherpa-onnx")
+            };
+        }
         return {
-            .name = name,
-            .category = QStringLiteral("wake"),
-            .url = QStringLiteral("https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.12.33/sherpa-onnx-v1.12.33-win-x64-shared-MD-Release-no-tts.tar.bz2"),
-            .relativeTargetPath = QStringLiteral("archives/sherpa-onnx-v1.12.33-win-x64-shared-MD-Release-no-tts.tar.bz2"),
-            .extractArchive = true,
-            .extractDestinationDir = QStringLiteral("sherpa-onnx")
+            .name = name
         };
     }
     if (name == QStringLiteral("sherpa-kws-model")) {
@@ -462,15 +495,25 @@ void ToolManager::finalizeDownload(QNetworkReply *reply)
             : toolsRoot() + QStringLiteral("/") + extractDestinationDir;
         QDir().mkpath(destinationDir);
         QProcess extractor;
-        QString program = QStringLiteral("powershell");
+        QString program;
         QStringList args;
-        if (targetPath.endsWith(QStringLiteral(".zip"), Qt::CaseInsensitive)) {
+        const bool isZip = targetPath.endsWith(QStringLiteral(".zip"), Qt::CaseInsensitive);
+        if (isZip && PlatformRuntime::isWindows()) {
+            program = QStringLiteral("powershell");
             args = {
                 QStringLiteral("-NoProfile"),
                 QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
                 QStringLiteral("-Command"),
                 QStringLiteral("Expand-Archive -Path '%1' -DestinationPath '%2' -Force")
                     .arg(targetPath, destinationDir)
+            };
+        } else if (isZip) {
+            program = QStringLiteral("unzip");
+            args = {
+                QStringLiteral("-o"),
+                targetPath,
+                QStringLiteral("-d"),
+                destinationDir
             };
         } else {
             program = QStringLiteral("tar");
@@ -489,7 +532,11 @@ void ToolManager::finalizeDownload(QNetworkReply *reply)
             }
             m_activeDownloadName.clear();
             m_activeDownloadPercent = -1;
-            emit downloadFinished(toolName, false, QStringLiteral("Downloaded archive but extraction failed."));
+            const QString stderrText = QString::fromUtf8(extractor.readAllStandardError()).trimmed();
+            emit downloadFinished(toolName, false,
+                                  stderrText.isEmpty()
+                                      ? QStringLiteral("Downloaded archive but extraction failed.")
+                                      : QStringLiteral("Downloaded archive but extraction failed: %1").arg(stderrText));
             reply->deleteLater();
             return;
         }

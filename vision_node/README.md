@@ -19,6 +19,8 @@ pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
 pip install -r requirements.txt
 ```
 
+The vision node intentionally uses a CPU-only PyTorch install by default, and `requirements.txt` pins MediaPipe to a legacy-solutions-compatible version for the current hand-tracking code path.
+
 ## Run
 
 ```bash
@@ -65,5 +67,5 @@ Useful flags:
 - The laptop node reconnects automatically if the network drops or the main PC restarts.
 - Semantic snapshots are confidence-filtered, delta-filtered, and rate-limited before send; this node does not stream raw frames.
 - The debug UI is optional and headless mode remains the default.
-- `run_vision_node.sh` installs a CPU-only PyTorch stack by default before `ultralytics`, so Linux laptops do not pull CUDA wheels unless you explicitly override the torch index.
+- `run_vision_node.sh` installs a CPU-only PyTorch stack by default before `ultralytics`, even if CUDA is present on the machine. Override `--torch-index-url` only if you explicitly want a GPU build.
 - `run_vision_node.sh` can create a local virtualenv, install missing requirements, retry failed installs with a safer PyPI fallback, and prompt for missing required inputs such as the server URL.
