@@ -228,6 +228,66 @@ ensure_linux_voice_tool() {
   fi
 }
 
+ensure_linux_whisper_source_build() {
+  if has_any_executable whisper-cli whisper main; then
+    return
+  fi
+
+  if ! need_cmd cmake; then
+    log_warn "Skipping whisper.cpp source bootstrap because cmake is unavailable."
+    return
+  fi
+
+  if ! need_cmd make && ! need_cmd ninja; then
+    log_warn "Skipping whisper.cpp source bootstrap because no build tool (make/ninja) is available."
+    return
+  fi
+
+  local whisper_version="v1.8.4"
+  local whisper_tools_root="${HOME}/.local/share/jarvis/tools/whisper"
+  local whisper_src_root="${whisper_tools_root}/src"
+  local whisper_archive="${whisper_tools_root}/whisper-${whisper_version}.tar.gz"
+  local whisper_build_dir=""
+  local whisper_src_dir=""
+  local whisper_bin=""
+
+  mkdir -p "${whisper_tools_root}" "${whisper_src_root}"
+
+  log_info "Bootstrapping whisper.cpp from source (${whisper_version})..."
+  curl -fL "https://github.com/ggml-org/whisper.cpp/archive/refs/tags/${whisper_version}.tar.gz" -o "${whisper_archive}"
+  rm -rf "${whisper_src_root:?}"/*
+  tar -xf "${whisper_archive}" -C "${whisper_src_root}"
+
+  whisper_src_dir="$(find "${whisper_src_root}" -maxdepth 2 -type f -name CMakeLists.txt -printf '%h\n' | head -n1)"
+  if [[ -z "${whisper_src_dir}" ]]; then
+    log_warn "whisper.cpp source extracted, but CMakeLists.txt was not found."
+    return
+  fi
+
+  whisper_build_dir="${whisper_src_dir}/build-jarvis"
+  cmake -S "${whisper_src_dir}" -B "${whisper_build_dir}" -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON
+
+  if ! cmake --build "${whisper_build_dir}" --parallel --target whisper-cli; then
+    if ! cmake --build "${whisper_build_dir}" --parallel --target main; then
+      if ! cmake --build "${whisper_build_dir}" --parallel; then
+        log_warn "whisper.cpp source build failed."
+        return
+      fi
+    fi
+  fi
+
+  whisper_bin="$(find "${whisper_build_dir}" -type f \( -name whisper-cli -o -name main \) | head -n1)"
+  if [[ -z "${whisper_bin}" ]]; then
+    log_warn "whisper.cpp built but no executable (whisper-cli/main) was found."
+    return
+  fi
+
+  mkdir -p "${whisper_tools_root}/bin"
+  install -m 0755 "${whisper_bin}" "${whisper_tools_root}/bin/whisper-cli"
+  export PATH="${whisper_tools_root}/bin:${PATH}"
+  log_info "whisper.cpp installed at ${whisper_tools_root}/bin/whisper-cli"
+}
+
 install_linux_dependencies() {
   local manager="$1"
 
@@ -673,6 +733,7 @@ ensure_dependencies() {
   ensure_linux_voice_tool "${manager}" "whisper.cpp" \
     whisper-cli whisper main -- \
     whisper.cpp whisper-cpp
+  ensure_linux_whisper_source_build
 
   ensure_linux_voice_tool "${manager}" "piper" \
     piper -- \

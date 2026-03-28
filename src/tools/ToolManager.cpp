@@ -594,7 +594,7 @@ void ToolManager::finalizeDownload(QNetworkReply *reply)
                 QStringLiteral("-DWHISPER_BUILD_TESTS=OFF"),
                 QStringLiteral("-DWHISPER_BUILD_EXAMPLES=ON")
             });
-            if (!configure.waitForFinished(300000) || configure.exitCode() != 0) {
+            if (!configure.waitForFinished(600000) || configure.exitCode() != 0) {
                 const QString stderrText = QString::fromUtf8(configure.readAllStandardError()).trimmed();
                 m_activeDownloadName.clear();
                 m_activeDownloadPercent = -1;
@@ -610,12 +610,15 @@ void ToolManager::finalizeDownload(QNetworkReply *reply)
 
             auto buildWhisperTarget = [&buildDir](const QString &target) {
                 QProcess build;
-                build.start(QStringLiteral("cmake"), {
+                QStringList args = {
                     QStringLiteral("--build"), buildDir,
-                    QStringLiteral("--parallel"),
-                    QStringLiteral("--target"), target
-                });
-                if (!build.waitForFinished(300000) || build.exitCode() != 0) {
+                    QStringLiteral("--parallel")
+                };
+                if (!target.isEmpty()) {
+                    args << QStringLiteral("--target") << target;
+                }
+                build.start(QStringLiteral("cmake"), args);
+                if (!build.waitForFinished(900000) || build.exitCode() != 0) {
                     const QString stderrText = QString::fromUtf8(build.readAllStandardError()).trimmed();
                     return stderrText.isEmpty() ? QStringLiteral("build failed") : stderrText;
                 }
@@ -625,6 +628,9 @@ void ToolManager::finalizeDownload(QNetworkReply *reply)
             QString buildError = buildWhisperTarget(QStringLiteral("whisper-cli"));
             if (!buildError.isEmpty()) {
                 buildError = buildWhisperTarget(QStringLiteral("main"));
+            }
+            if (!buildError.isEmpty()) {
+                buildError = buildWhisperTarget(QString());
             }
             if (!buildError.isEmpty()) {
                 m_activeDownloadName.clear();
