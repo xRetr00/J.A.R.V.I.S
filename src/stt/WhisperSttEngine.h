@@ -1,9 +1,12 @@
 #pragma once
 
+#include <QSet>
+
 #include "stt/SpeechRecognizer.h"
 
 class AppSettings;
 class LoggingService;
+class QProcess;
 
 class WhisperSttEngine : public SpeechRecognizer
 {
@@ -11,6 +14,7 @@ class WhisperSttEngine : public SpeechRecognizer
 
 public:
     explicit WhisperSttEngine(AppSettings *settings, LoggingService *loggingService, QObject *parent = nullptr);
+    ~WhisperSttEngine() override;
 
     quint64 transcribePcm(
         const QByteArray &pcmData,
@@ -27,4 +31,5 @@ private:
     AppSettings *m_settings = nullptr;
     LoggingService *m_loggingService = nullptr;
     quint64 m_requestCounter = 0;
+    QSet<QProcess *> m_activeProcesses;
 };

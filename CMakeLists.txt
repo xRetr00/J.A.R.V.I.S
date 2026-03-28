@@ -95,6 +95,18 @@ target_include_directories(fvad
 )
 
 if(EXISTS "${JARVIS_SPEEXDSP_ROOT}/include/speex/speex_echo.h")
+    set(INCLUDE_STDINT "#include <stdint.h>")
+    set(SIZE16 "int16_t")
+    set(USIZE16 "uint16_t")
+    set(SIZE32 "int32_t")
+    set(USIZE32 "uint32_t")
+    file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/third_party/speexdsp/include/speex")
+    configure_file(
+        "${JARVIS_SPEEXDSP_ROOT}/include/speex/speexdsp_config_types.h.in"
+        "${CMAKE_BINARY_DIR}/third_party/speexdsp/include/speex/speexdsp_config_types.h"
+        @ONLY
+    )
+
     add_library(speexdsp STATIC
         ${JARVIS_SPEEXDSP_ROOT}/libspeexdsp/fftwrap.c
         ${JARVIS_SPEEXDSP_ROOT}/libspeexdsp/filterbank.c
@@ -107,6 +119,7 @@ if(EXISTS "${JARVIS_SPEEXDSP_ROOT}/include/speex/speex_echo.h")
     )
     target_include_directories(speexdsp
         PUBLIC
+            ${CMAKE_BINARY_DIR}/third_party/speexdsp/include
             ${JARVIS_SPEEXDSP_ROOT}/include
         PRIVATE
             ${JARVIS_SPEEXDSP_ROOT}/libspeexdsp
@@ -538,6 +551,7 @@ if(WIN32)
     add_custom_command(TARGET jarvis PRE_BUILD
         COMMAND "${CMAKE_COMMAND}"
             -DDEPLOY_DIR="$<TARGET_FILE_DIR:jarvis>"
+            -DPRESERVE_ENTRIES="$<TARGET_FILE_NAME:jarvis_sherpa_wake_helper>"
             -P "${CMAKE_SOURCE_DIR}/cmake/CleanDeployDir.cmake"
         COMMENT "Cleaning deployed runtime directory"
     )

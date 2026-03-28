@@ -46,6 +46,22 @@ WhisperSttEngine::WhisperSttEngine(AppSettings *settings, LoggingService *loggin
 {
 }
 
+WhisperSttEngine::~WhisperSttEngine()
+{
+    const auto activeProcesses = m_activeProcesses;
+    for (QProcess *process : activeProcesses) {
+        if (!process) {
+            continue;
+        }
+
+        process->terminate();
+        if (!process->waitForFinished(1000)) {
+            process->kill();
+            process->waitForFinished(1000);
+        }
+    }
+}
+
 quint64 WhisperSttEngine::transcribePcm(const QByteArray &pcmData, const QString &initialPrompt, bool suppressNonSpeechTokens)
 {
     const quint64 requestId = ++m_requestCounter;
@@ -96,6 +112,10 @@ quint64 WhisperSttEngine::transcribePcm(const QByteArray &pcmData, const QString
     }
 
     auto *process = new QProcess(this);
+    m_activeProcesses.insert(process);
+    connect(process, &QObject::destroyed, this, [this, process]() {
+        m_activeProcesses.remove(process);
+    });
     connect(process, &QProcess::errorOccurred, this, [this, process, waveFile](QProcess::ProcessError error) {
             const QString message = QStringLiteral("whisper.cpp process error (%1). executable=\"%2\" model=\"%3\" input=\"%4\" stderr=\"%5\"")
                                     .arg(static_cast<int>(error))
@@ -109,7 +129,10 @@ quint64 WhisperSttEngine::transcribePcm(const QByteArray &pcmData, const QString
     });
 
     connect(process, &QProcess::finished, this, [this, process, waveFile, requestId](int exitCode, QProcess::ExitStatus status) {
-        const auto cleanup = qScopeGuard([process]() { process->deleteLater(); });
+        const auto cleanup = qScopeGuard([this, process]() {
+            m_activeProcesses.remove(process);
+            process->deleteLater();
+        });
         const QString stdoutText = QString::fromUtf8(process->readAllStandardOutput()).trimmed();
         const QString stderrText = QString::fromUtf8(process->readAllStandardError()).trimmed();
 

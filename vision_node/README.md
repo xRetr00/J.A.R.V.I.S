@@ -15,6 +15,7 @@ Standalone laptop-side Python service for distributed JARVIS vision ingestion.
 ```bash
 python -m venv .venv
 source .venv/bin/activate
+pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
 pip install -r requirements.txt
 ```
 
@@ -54,6 +55,7 @@ Useful flags:
 - `--gestures-min-confidence 0.70`
 - `--delta-threshold 0.12`
 - `--pip-index-url https://pypi.org/simple`
+- `--torch-index-url https://download.pytorch.org/whl/cpu`
 - `--debug-ui`
 - `./run_vision_node.sh --non-interactive --server-url ws://MAIN-PC-IP:8765/vision`
 
@@ -63,4 +65,5 @@ Useful flags:
 - The laptop node reconnects automatically if the network drops or the main PC restarts.
 - Semantic snapshots are confidence-filtered, delta-filtered, and rate-limited before send; this node does not stream raw frames.
 - The debug UI is optional and headless mode remains the default.
+- `run_vision_node.sh` installs a CPU-only PyTorch stack by default before `ultralytics`, so Linux laptops do not pull CUDA wheels unless you explicitly override the torch index.
 - `run_vision_node.sh` can create a local virtualenv, install missing requirements, retry failed installs with a safer PyPI fallback, and prompt for missing required inputs such as the server URL.

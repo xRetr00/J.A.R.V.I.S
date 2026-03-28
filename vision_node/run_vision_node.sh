@@ -16,9 +16,11 @@ OBJECTS_MIN_CONFIDENCE="${OBJECTS_MIN_CONFIDENCE:-0.60}"
 GESTURES_MIN_CONFIDENCE="${GESTURES_MIN_CONFIDENCE:-0.70}"
 DELTA_THRESHOLD="${DELTA_THRESHOLD:-0.12}"
 PIP_INDEX_URL="${PIP_INDEX_URL:-}"
+TORCH_INDEX_URL="${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}"
 DEBUG_UI=0
 SKIP_INSTALL=0
 NON_INTERACTIVE=0
+ENV_CHECK_MESSAGE=""
 
 log_info() {
   echo "[INFO] $*"
@@ -30,6 +32,12 @@ log_warn() {
 
 log_error() {
   echo "[ERROR] $*" >&2
+}
+
+sanitize_value() {
+  local value="${1-}"
+  value="${value//$'\r'/}"
+  printf '%s' "${value}"
 }
 
 need_cmd() {
@@ -54,6 +62,7 @@ Options:
   --gestures-min-confidence N      Gesture threshold (default: 0.70)
   --delta-threshold N              Resend delta threshold (default: 0.12)
   --pip-index-url URL              Override pip package index for dependency install
+  --torch-index-url URL            PyTorch wheel index (default: CPU-only PyTorch wheels)
   --debug-ui                       Enable OpenCV debug window
   --python PATH                    Python interpreter to use
   --skip-install                   Do not offer dependency install
@@ -74,10 +83,10 @@ prompt_value() {
 
   if [[ -n "${default_value}" ]]; then
     read -r -p "${prompt_text} [${default_value}]: " result
-    echo "${result:-${default_value}}"
+    sanitize_value "${result:-${default_value}}"
   else
     read -r -p "${prompt_text}: " result
-    echo "${result}"
+    sanitize_value "${result}"
   fi
 }
 
@@ -128,6 +137,74 @@ ensure_virtualenv() {
   fi
 }
 
+check_python_environment() {
+  local active_python="$1"
+  local output=""
+  local status=0
+
+  set +e
+  output="$("${active_python}" - <<'EOF'
+import importlib.util
+import sys
+
+modules = ("cv2", "mediapipe", "ultralytics", "websockets", "torch", "torchvision")
+missing = [name for name in modules if importlib.util.find_spec(name) is None]
+if missing:
+    print("missing:" + ",".join(missing))
+    raise SystemExit(1)
+
+import torch
+cuda_version = getattr(getattr(torch, "version", None), "cuda", None)
+if cuda_version:
+    print(f"torch_cuda:{cuda_version}")
+    raise SystemExit(2)
+
+print("ok")
+EOF
+)"
+  status=$?
+  set -e
+
+  ENV_CHECK_MESSAGE="$(sanitize_value "${output}")"
+  return ${status}
+}
+
+install_torch_cpu_stack() {
+  local active_python="$1"
+  local install_attempt=1
+  local max_attempts=3
+  local -a install_cmd=(
+    "${active_python}"
+    -m pip install
+    --no-cache-dir
+    --prefer-binary
+    --upgrade
+    --force-reinstall
+    --retries 5
+    --timeout 60
+    --index-url "${TORCH_INDEX_URL}"
+    torch
+    torchvision
+  )
+
+  while [[ ${install_attempt} -le ${max_attempts} ]]; do
+    log_info "Installing CPU-only PyTorch stack (attempt ${install_attempt}/${max_attempts})..."
+    log_info "Using PyTorch index: ${TORCH_INDEX_URL}"
+
+    if env PIP_DISABLE_PIP_VERSION_CHECK=1 "${install_cmd[@]}"; then
+      return 0
+    fi
+
+    log_warn "CPU-only PyTorch install attempt ${install_attempt} failed."
+    install_attempt=$((install_attempt + 1))
+    if [[ ${install_attempt} -le ${max_attempts} ]]; then
+      sleep 2
+    fi
+  done
+
+  return 1
+}
+
 install_requirements() {
   local active_python="$1"
   local install_attempt=1
@@ -174,28 +251,42 @@ install_requirements() {
 
 ensure_requirements() {
   local active_python="${PYTHON_BIN}"
+  local env_check_status=0
   if [[ -x "${VENV_DIR}/bin/python" ]]; then
     active_python="${VENV_DIR}/bin/python"
   fi
 
-  if "${active_python}" - <<'EOF' >/dev/null 2>&1
-import importlib.util
-modules = ("cv2", "mediapipe", "ultralytics", "websockets")
-missing = [name for name in modules if importlib.util.find_spec(name) is None]
-raise SystemExit(1 if missing else 0)
-EOF
-  then
+  if check_python_environment "${active_python}"; then
     PYTHON_BIN="${active_python}"
     return
+  else
+    env_check_status=$?
   fi
 
   if [[ "${SKIP_INSTALL}" -eq 1 ]]; then
-    log_warn "Python dependencies appear to be missing and --skip-install was set."
+    if [[ ${env_check_status} -eq 2 ]]; then
+      log_warn "Current Python environment uses a CUDA-enabled torch build (${ENV_CHECK_MESSAGE}). --skip-install left it unchanged."
+    else
+      log_warn "Python dependencies appear to be missing and --skip-install was set."
+    fi
     PYTHON_BIN="${active_python}"
     return
   fi
 
+  if [[ ${env_check_status} -eq 2 ]]; then
+    log_warn "Detected CUDA-enabled torch in the vision node environment (${ENV_CHECK_MESSAGE}). Replacing it with a CPU-only build."
+  elif [[ -n "${ENV_CHECK_MESSAGE}" && "${ENV_CHECK_MESSAGE}" != "ok" ]]; then
+    log_info "Python environment needs setup: ${ENV_CHECK_MESSAGE}"
+  fi
+
   if prompt_yes_no "Install vision node Python dependencies from requirements.txt?" "y"; then
+    if ! install_torch_cpu_stack "${active_python}"; then
+      log_error "Unable to install the CPU-only PyTorch stack."
+      log_error "You can retry later with:"
+      log_error "  ${active_python} -m pip install --no-cache-dir --prefer-binary --upgrade --force-reinstall --index-url ${TORCH_INDEX_URL} torch torchvision"
+      exit 1
+    fi
+
     if ! install_requirements "${active_python}"; then
       if [[ "${NON_INTERACTIVE}" -eq 0 ]] && prompt_yes_no "Dependency install failed. Retry with a custom pip index URL?" "n"; then
         PIP_INDEX_URL="$(prompt_value "Enter pip index URL" "https://pypi.org/simple")"
@@ -215,14 +306,11 @@ EOF
       fi
     fi
 
-    if ! "${active_python}" - <<'EOF' >/dev/null 2>&1
-import importlib.util
-modules = ("cv2", "mediapipe", "ultralytics", "websockets")
-missing = [name for name in modules if importlib.util.find_spec(name) is None]
-raise SystemExit(1 if missing else 0)
-EOF
-    then
+    if ! check_python_environment "${active_python}"; then
       log_error "Dependency installation completed but required modules are still missing."
+      if [[ -n "${ENV_CHECK_MESSAGE}" ]]; then
+        log_error "Environment check: ${ENV_CHECK_MESSAGE}"
+      fi
       exit 1
     fi
   fi
@@ -234,51 +322,55 @@ parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --server-url)
-        SERVER_URL="${2:-}"
+        SERVER_URL="$(sanitize_value "${2:-}")"
         shift 2
         ;;
       --node-id)
-        NODE_ID="${2:-}"
+        NODE_ID="$(sanitize_value "${2:-}")"
         shift 2
         ;;
       --camera-index)
-        CAMERA_INDEX="${2:-}"
+        CAMERA_INDEX="$(sanitize_value "${2:-}")"
         shift 2
         ;;
       --fps)
-        FPS="${2:-}"
+        FPS="$(sanitize_value "${2:-}")"
         shift 2
         ;;
       --send-interval-ms)
-        SEND_INTERVAL_MS="${2:-}"
+        SEND_INTERVAL_MS="$(sanitize_value "${2:-}")"
         shift 2
         ;;
       --max-snapshots-per-second)
-        MAX_SNAPSHOTS_PER_SECOND="${2:-}"
+        MAX_SNAPSHOTS_PER_SECOND="$(sanitize_value "${2:-}")"
         shift 2
         ;;
       --yolo-every-n-frames)
-        YOLO_EVERY_N_FRAMES="${2:-}"
+        YOLO_EVERY_N_FRAMES="$(sanitize_value "${2:-}")"
         shift 2
         ;;
       --model-name)
-        MODEL_NAME="${2:-}"
+        MODEL_NAME="$(sanitize_value "${2:-}")"
         shift 2
         ;;
       --objects-min-confidence)
-        OBJECTS_MIN_CONFIDENCE="${2:-}"
+        OBJECTS_MIN_CONFIDENCE="$(sanitize_value "${2:-}")"
         shift 2
         ;;
       --gestures-min-confidence)
-        GESTURES_MIN_CONFIDENCE="${2:-}"
+        GESTURES_MIN_CONFIDENCE="$(sanitize_value "${2:-}")"
         shift 2
         ;;
       --delta-threshold)
-        DELTA_THRESHOLD="${2:-}"
+        DELTA_THRESHOLD="$(sanitize_value "${2:-}")"
         shift 2
         ;;
       --pip-index-url)
-        PIP_INDEX_URL="${2:-}"
+        PIP_INDEX_URL="$(sanitize_value "${2:-}")"
+        shift 2
+        ;;
+      --torch-index-url)
+        TORCH_INDEX_URL="$(sanitize_value "${2:-}")"
         shift 2
         ;;
       --debug-ui)
@@ -286,7 +378,7 @@ parse_args() {
         shift
         ;;
       --python)
-        PYTHON_BIN="${2:-}"
+        PYTHON_BIN="$(sanitize_value "${2:-}")"
         shift 2
         ;;
       --skip-install)
@@ -335,6 +427,7 @@ print_summary() {
   Objects min confidence:  ${OBJECTS_MIN_CONFIDENCE}
   Gestures min confidence: ${GESTURES_MIN_CONFIDENCE}
   Delta threshold:         ${DELTA_THRESHOLD}
+  Torch index URL:         ${TORCH_INDEX_URL}
   Debug UI:                $( [[ "${DEBUG_UI}" -eq 1 ]] && echo "enabled" || echo "disabled" )
 EOF
 }

@@ -157,7 +157,7 @@ Item {
                 width: root.width
                 toastMessage: message
                 toastTone: tone
-                createdAt: createdAt
+                timestampLabel: createdAt
                 taskId: modelTaskId
                 onClicked: function(clickedTaskId) {
                     root.toastClicked(clickedTaskId)

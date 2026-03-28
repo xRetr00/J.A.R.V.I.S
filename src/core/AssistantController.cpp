@@ -2095,6 +2095,9 @@ QString AssistantController::resolveStartupBlockingIssue(bool *blocked) const
 
 void AssistantController::setStatus(const QString &status)
 {
+    if (m_statusText == status) {
+        return;
+    }
     m_statusText = status;
     if (m_loggingService) {
         m_loggingService->info(status);

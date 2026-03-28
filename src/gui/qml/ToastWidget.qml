@@ -6,7 +6,7 @@ Rectangle {
 
     required property string toastMessage
     required property string toastTone
-    required property string createdAt
+    required property string timestampLabel
     property int taskId: -1
     signal clicked(int taskId)
     signal dismissed(int taskId)
@@ -64,7 +64,7 @@ Rectangle {
             }
 
             Text {
-                text: root.createdAt
+                text: root.timestampLabel
                 color: "#9ab7ce"
                 font.pixelSize: 10
                 elide: Text.ElideRight

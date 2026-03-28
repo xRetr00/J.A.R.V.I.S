@@ -21,6 +21,17 @@ LOGGER = logging.getLogger("jarvis.vision_node")
 
 DEBUG_WINDOW_NAME = "JARVIS Vision Debug"
 
+try:
+    MP_SOLUTIONS = mp.solutions
+except AttributeError:
+    try:
+        from mediapipe.python import solutions as MP_SOLUTIONS
+    except ImportError as exc:  # pragma: no cover - environment-specific dependency path
+        raise RuntimeError(
+            "Installed mediapipe package does not expose the Hands solutions API. "
+            "Use a mediapipe build that includes solutions or reinstall the vision node dependencies."
+        ) from exc
+
 
 @dataclass(slots=True)
 class DebugDetection:
@@ -59,13 +70,13 @@ def render_debug_frame(frame,
                     2,
                     cv2.LINE_AA)
 
-    drawing_utils = mp.solutions.drawing_utils
-    drawing_styles = mp.solutions.drawing_styles
+    drawing_utils = MP_SOLUTIONS.drawing_utils
+    drawing_styles = MP_SOLUTIONS.drawing_styles
     for landmarks in hand_landmarks or []:
         drawing_utils.draw_landmarks(
             output,
             landmarks,
-            mp.solutions.hands.HAND_CONNECTIONS,
+            MP_SOLUTIONS.hands.HAND_CONNECTIONS,
             drawing_styles.get_default_hand_landmarks_style(),
             drawing_styles.get_default_hand_connections_style(),
         )
@@ -133,7 +144,7 @@ class VisionNodeService:
     def __init__(self, config: VisionNodeConfig) -> None:
         self.config = config
         self._stop_event = asyncio.Event()
-        self._hands = mp.solutions.hands.Hands(
+        self._hands = MP_SOLUTIONS.hands.Hands(
             static_image_mode=False,
             max_num_hands=2,
             min_detection_confidence=config.min_detection_confidence,
