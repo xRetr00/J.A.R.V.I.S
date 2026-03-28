@@ -476,7 +476,7 @@ void PiperTtsEngine::playFile(const QString &path)
         if (state == QAudio::IdleState) {
             stopPlayback();
             processNext();
-        } else if (state == QAudio::StoppedState && m_audioSink != nullptr && m_audioSink->error() != QtAudio::NoError) {
+        } else if (state == QAudio::StoppedState && m_audioSink != nullptr && m_audioSink->error() != QAudio::NoError) {
             stopPlayback();
             m_processing = false;
             emit playbackFailed(QStringLiteral("Audio playback failed"));

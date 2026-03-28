@@ -201,7 +201,11 @@ class VisionNodeService:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # pragma: no cover - defensive runtime path
-                LOGGER.exception("Vision session failed: %s", exc)
+                # Connection outages are expected in distributed setups; keep logs concise.
+                if isinstance(exc, (RuntimeError, TimeoutError, OSError, ConnectionClosed)):
+                    LOGGER.error("Vision session failed: %s", exc)
+                else:
+                    LOGGER.exception("Vision session failed: %s", exc)
 
             if self._stop_event.is_set():
                 break

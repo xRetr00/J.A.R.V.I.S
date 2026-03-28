@@ -18,6 +18,7 @@ struct TtsSynthesisResult
 
 class AppSettings;
 class QAudioSink;
+class QTimer;
 
 class PiperTtsEngine : public TtsEngine
 {
