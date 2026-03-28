@@ -341,8 +341,24 @@ rnnoise_model_data_ready() {
   [[ -f "${rnnoise_root}/src/rnnoise_data.h" && -f "${rnnoise_root}/src/rnnoise_data.c" ]]
 }
 
+normalize_rnnoise_model_data() {
+  local rnnoise_root="$1"
+
+  if [[ -f "${rnnoise_root}/src/rnnoise_data.h" && -f "${rnnoise_root}/src/rnnoise_data.c" ]]; then
+    return
+  fi
+
+  # Some rnnoise model archives may extract data files at repository root.
+  if [[ -f "${rnnoise_root}/rnnoise_data.h" && -f "${rnnoise_root}/rnnoise_data.c" ]]; then
+    mv -f "${rnnoise_root}/rnnoise_data.h" "${rnnoise_root}/src/rnnoise_data.h"
+    mv -f "${rnnoise_root}/rnnoise_data.c" "${rnnoise_root}/src/rnnoise_data.c"
+  fi
+}
+
 ensure_rnnoise_model_data() {
   local rnnoise_root="$1"
+
+  normalize_rnnoise_model_data "${rnnoise_root}"
 
   if rnnoise_model_data_ready "${rnnoise_root}"; then
     return
@@ -384,6 +400,8 @@ EOF
     (cd "${rnnoise_root}" && sh ./download_model.sh)
   fi
 
+  normalize_rnnoise_model_data "${rnnoise_root}"
+
   if ! rnnoise_model_data_ready "${rnnoise_root}"; then
     log_error "RNNoise model bootstrap ran, but rnnoise_data.h/.c are still missing."
     exit 1
@@ -400,6 +418,7 @@ ensure_rnnoise_source() {
   rnnoise_root="$(rnnoise_root_dir)"
 
   if rnnoise_source_ready "${rnnoise_root}"; then
+    ensure_rnnoise_model_data "${rnnoise_root}"
     log_info "RNNoise source ready at ${rnnoise_root}"
     return
   fi
