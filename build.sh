@@ -12,6 +12,7 @@ AUTO_INSTALL_DEPS=1
 INSTALL_ONLY=0
 AUTO_INSTALL_QT=1
 AUTO_INSTALL_RNNOISE=1
+AUTO_INSTALL_SPEEXDSP=1
 REQUIRED_QT_VERSION="6.6.0"
 DEFAULT_AQT_QT_VERSION="6.6.3"
 
@@ -465,6 +466,60 @@ ensure_rnnoise_source() {
   log_info "RNNoise source ready at ${rnnoise_root}"
 }
 
+speexdsp_root_dir() {
+  echo "${JARVIS_SPEEXDSP_ROOT:-${ROOT}/third_party/speexdsp}"
+}
+
+speexdsp_source_ready() {
+  local speex_root="$1"
+  [[ -f "${speex_root}/include/speex/speex_echo.h" && -f "${speex_root}/libspeexdsp/mdf.c" ]]
+}
+
+ensure_speexdsp_source() {
+  if [[ "${AUTO_INSTALL_SPEEXDSP}" -eq 0 ]]; then
+    log_info "Skipping SpeexDSP source bootstrap (nospeex)."
+    return
+  fi
+
+  local speex_root
+  speex_root="$(speexdsp_root_dir)"
+
+  if speexdsp_source_ready "${speex_root}"; then
+    log_info "SpeexDSP source ready at ${speex_root}"
+    return
+  fi
+
+  if [[ -d "${speex_root}" && ! -d "${speex_root}/.git" ]]; then
+    log_error "SpeexDSP directory exists but is incomplete: ${speex_root}"
+    log_error "Remove it manually, then rerun ./build.sh so SpeexDSP can be re-downloaded."
+    exit 1
+  fi
+
+  if ! need_cmd git; then
+    log_error "git is required to bootstrap SpeexDSP source."
+    exit 1
+  fi
+
+  mkdir -p "$(dirname "${speex_root}")"
+
+  if [[ -d "${speex_root}/.git" ]]; then
+    log_info "Updating SpeexDSP source in ${speex_root}"
+    git -C "${speex_root}" fetch --depth 1 origin
+    git -C "${speex_root}" reset --hard FETCH_HEAD
+  else
+    log_info "Cloning SpeexDSP source into ${speex_root}"
+    git clone --depth 1 https://github.com/xiph/speexdsp "${speex_root}"
+  fi
+
+  if ! speexdsp_source_ready "${speex_root}"; then
+    log_error "SpeexDSP source bootstrap completed but required files are still missing."
+    log_error "Expected: ${speex_root}/include/speex/speex_echo.h and ${speex_root}/libspeexdsp/mdf.c"
+    exit 1
+  fi
+
+  log_info "SpeexDSP source ready at ${speex_root}"
+}
+
 ensure_dependencies() {
   if [[ "${AUTO_INSTALL_DEPS}" -eq 0 ]]; then
     log_info "Skipping dependency installation (nodeps)."
@@ -514,9 +569,12 @@ for arg in "$@"; do
     nornnoise)
       AUTO_INSTALL_RNNOISE=0
       ;;
+    nospeex)
+      AUTO_INSTALL_SPEEXDSP=0
+      ;;
     *)
       log_error "Unknown argument: ${arg}"
-      echo "Usage: ./build.sh [debug|release] [clean] [notest] [nodeps] [bootstrap] [noqt] [nornnoise]" >&2
+      echo "Usage: ./build.sh [debug|release] [clean] [notest] [nodeps] [bootstrap] [noqt] [nornnoise] [nospeex]" >&2
       exit 1
       ;;
   esac
@@ -525,6 +583,7 @@ done
 ensure_dependencies
 ensure_qt_kit
 ensure_rnnoise_source
+ensure_speexdsp_source
 
 if [[ ${INSTALL_ONLY} -eq 1 ]]; then
   echo

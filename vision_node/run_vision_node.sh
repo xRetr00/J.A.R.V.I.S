@@ -128,6 +128,8 @@ ensure_virtualenv() {
 
 ensure_requirements() {
   local active_python="${PYTHON_BIN}"
+  local install_attempt=1
+  local install_success=0
   if [[ -x "${VENV_DIR}/bin/python" ]]; then
     active_python="${VENV_DIR}/bin/python"
   fi
@@ -150,8 +152,28 @@ EOF
   fi
 
   if prompt_yes_no "Install vision node Python dependencies from requirements.txt?" "y"; then
-    "${active_python}" -m pip install --upgrade pip
-    "${active_python}" -m pip install -r "${ROOT_DIR}/requirements.txt"
+    while [[ ${install_attempt} -le 3 ]]; do
+      log_info "Installing Python dependencies (attempt ${install_attempt}/3)..."
+      if PIP_DISABLE_PIP_VERSION_CHECK=1 \
+        "${active_python}" -m pip install --no-cache-dir --retries 3 --timeout 60 \
+        -r "${ROOT_DIR}/requirements.txt"; then
+        install_success=1
+        break
+      fi
+
+      log_warn "Dependency installation attempt ${install_attempt} failed."
+      install_attempt=$((install_attempt + 1))
+      if [[ ${install_attempt} -le 3 ]]; then
+        sleep 2
+      fi
+    done
+
+    if [[ ${install_success} -ne 1 ]]; then
+      log_error "Unable to install Python dependencies after multiple attempts."
+      log_error "You can retry later with:"
+      log_error "  ${active_python} -m pip install --no-cache-dir -r ${ROOT_DIR}/requirements.txt"
+      exit 1
+    fi
   fi
 
   PYTHON_BIN="${active_python}"
