@@ -14,9 +14,6 @@ GestureActionRouter::GestureActionRouter(LoggingService *loggingService, QObject
     : QObject(parent)
     , m_loggingService(loggingService)
 {
-    m_holdTimer.setSingleShot(true);
-    m_holdTimer.setInterval(kGestureHoldResetMs);
-    connect(&m_holdTimer, &QTimer::timeout, this, &GestureActionRouter::handleGestureEnd);
 }
 
 void GestureActionRouter::configure(bool enabled, int cooldownMs)
@@ -26,7 +23,7 @@ void GestureActionRouter::configure(bool enabled, int cooldownMs)
     if (!m_enabled) {
         transitionTo(State::Idle);
         m_activeGesture.clear();
-        m_holdTimer.stop();
+        m_lastActiveSeenAtMs = 0;
     }
 }
 
@@ -47,11 +44,12 @@ void GestureActionRouter::routeGesture(const QString &actionName,
     }
 
     const qint64 nowMs = timestampMs > 0 ? timestampMs : QDateTime::currentMSecsSinceEpoch();
+    advanceActiveHold(nowMs);
     advanceCooldown(nowMs);
     logGestureEvent(QStringLiteral("gesture_detected"), sourceGesture, confidence);
 
     if (m_state == State::Active) {
-        m_holdTimer.start();
+        m_lastActiveSeenAtMs = nowMs;
         logGestureEvent(QStringLiteral("gesture_ignored"), sourceGesture, confidence, QStringLiteral("duplicate"));
         return;
     }
@@ -63,23 +61,13 @@ void GestureActionRouter::routeGesture(const QString &actionName,
 
     m_activeGesture = sourceGesture;
     m_lastTriggeredAtMs = nowMs;
+    m_lastActiveSeenAtMs = nowMs;
     transitionTo(State::Active);
-    m_holdTimer.start();
 
     logGestureEvent(QStringLiteral("gesture_triggered"), sourceGesture, confidence);
     emit gestureTriggered(sourceGesture, nowMs);
     emit stopSpeakingRequested();
     emit cancelCurrentRequestRequested();
-}
-
-void GestureActionRouter::handleGestureEnd()
-{
-    if (m_state != State::Active) {
-        return;
-    }
-
-    m_activeGesture.clear();
-    transitionTo(State::Cooldown);
 }
 
 void GestureActionRouter::transitionTo(State state)
@@ -117,6 +105,21 @@ bool GestureActionRouter::isCancelGesture(const QString &actionName, const QStri
         || normalizedGesture == QStringLiteral("open_palm")
         || normalizedGesture == QStringLiteral("palm")
         || normalizedGesture == QStringLiteral("stop");
+}
+
+void GestureActionRouter::advanceActiveHold(qint64 nowMs)
+{
+    if (m_state != State::Active) {
+        return;
+    }
+
+    if (m_lastActiveSeenAtMs <= 0 || (nowMs - m_lastActiveSeenAtMs) < kGestureHoldResetMs) {
+        return;
+    }
+
+    m_activeGesture.clear();
+    m_lastActiveSeenAtMs = 0;
+    transitionTo(State::Cooldown);
 }
 
 void GestureActionRouter::advanceCooldown(qint64 nowMs)

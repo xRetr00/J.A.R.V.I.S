@@ -115,7 +115,8 @@ if(EXISTS "${JARVIS_SPEEXDSP_ROOT}/include/speex/speex_echo.h")
 endif()
 
 if(EXISTS "${JARVIS_RNNOISE_ROOT}/include/rnnoise.h"
-    AND EXISTS "${JARVIS_RNNOISE_ROOT}/src/denoise.c")
+    AND EXISTS "${JARVIS_RNNOISE_ROOT}/src/denoise.c"
+    AND EXISTS "${JARVIS_RNNOISE_ROOT}/src/rnnoise_data.h")
     set(JARVIS_RNNOISE_SOURCES
         ${JARVIS_RNNOISE_ROOT}/src/celt_lpc.c
         ${JARVIS_RNNOISE_ROOT}/src/denoise.c

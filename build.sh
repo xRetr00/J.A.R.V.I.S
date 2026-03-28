@@ -336,6 +336,60 @@ rnnoise_source_ready() {
   [[ -f "${rnnoise_root}/include/rnnoise.h" && -f "${rnnoise_root}/src/denoise.c" ]]
 }
 
+rnnoise_model_data_ready() {
+  local rnnoise_root="$1"
+  [[ -f "${rnnoise_root}/src/rnnoise_data.h" && -f "${rnnoise_root}/src/rnnoise_data.c" ]]
+}
+
+ensure_rnnoise_model_data() {
+  local rnnoise_root="$1"
+
+  if rnnoise_model_data_ready "${rnnoise_root}"; then
+    return
+  fi
+
+  if [[ ! -f "${rnnoise_root}/download_model.sh" ]]; then
+    log_error "RNNoise model data is missing and download_model.sh is not available."
+    exit 1
+  fi
+
+  if ! need_cmd tar; then
+    log_error "tar is required to extract RNNoise model data archives."
+    exit 1
+  fi
+
+  if ! need_cmd wget && ! need_cmd curl; then
+    log_error "Either wget or curl is required to fetch RNNoise model data."
+    exit 1
+  fi
+
+  if ! need_cmd wget && need_cmd curl; then
+    log_info "wget not found; using curl wrapper for RNNoise model download."
+    local curl_wrapper="${rnnoise_root}/wget"
+    cat >"${curl_wrapper}" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+url="${1:-}"
+if [[ -z "${url}" ]]; then
+  echo "wget shim requires a URL" >&2
+  exit 1
+fi
+outfile="$(basename "${url}")"
+curl -fL --retry 3 --connect-timeout 15 -o "${outfile}" "${url}"
+EOF
+    chmod +x "${curl_wrapper}"
+    PATH="${rnnoise_root}:$PATH" sh "${rnnoise_root}/download_model.sh"
+    rm -f "${curl_wrapper}"
+  else
+    (cd "${rnnoise_root}" && sh ./download_model.sh)
+  fi
+
+  if ! rnnoise_model_data_ready "${rnnoise_root}"; then
+    log_error "RNNoise model bootstrap ran, but rnnoise_data.h/.c are still missing."
+    exit 1
+  fi
+}
+
 ensure_rnnoise_source() {
   if [[ "${AUTO_INSTALL_RNNOISE}" -eq 0 ]]; then
     log_info "Skipping RNNoise source bootstrap (nornnoise)."
@@ -377,6 +431,8 @@ ensure_rnnoise_source() {
     log_error "Expected: ${rnnoise_root}/include/rnnoise.h and ${rnnoise_root}/src/denoise.c"
     exit 1
   fi
+
+  ensure_rnnoise_model_data "${rnnoise_root}"
 
   log_info "RNNoise source ready at ${rnnoise_root}"
 }

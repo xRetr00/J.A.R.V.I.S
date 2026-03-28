@@ -1,7 +1,6 @@
 #pragma once
 
 #include <QObject>
-#include <QTimer>
 
 class LoggingService;
 
@@ -26,9 +25,6 @@ signals:
     void cancelCurrentRequestRequested();
 
 private slots:
-    void handleGestureEnd();
-
-private:
     enum class State {
         Idle,
         Active,
@@ -42,13 +38,14 @@ private:
                          const QString &reason = QString(),
                          int intervalMs = 700) const;
     bool isCancelGesture(const QString &actionName, const QString &sourceGesture) const;
+    void advanceActiveHold(qint64 nowMs);
     void advanceCooldown(qint64 nowMs);
 
     LoggingService *m_loggingService = nullptr;
-    QTimer m_holdTimer;
     State m_state = State::Idle;
     bool m_enabled = false;
     int m_cooldownMs = 500;
     QString m_activeGesture;
     qint64 m_lastTriggeredAtMs = 0;
+    qint64 m_lastActiveSeenAtMs = 0;
 };
