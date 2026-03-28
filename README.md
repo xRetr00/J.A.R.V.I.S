@@ -23,6 +23,7 @@ Jarvis runs in the system tray, listens for a wake phrase, transcribes speech lo
 - Runtime settings window with live requirement checks
 - Per-exchange AI logs in bin/logs/AI
 - Windows global hotkey: Ctrl+Alt+J
+- Linux tray-first workflow with manual runtime/tool selection
 
 ## Tech Stack
 
@@ -58,13 +59,25 @@ Jarvis runs in the system tray, listens for a wake phrase, transcribes speech lo
 - docs: build and architecture documentation
 
 
+## Platform Support
+
+- Windows 10/11:
+  - full current feature set
+  - global hotkey: `Ctrl+Alt+J`
+  - in-app runtime/model download flow supported
+- Ubuntu 24.04 x86_64:
+  - core assistant supported: UI, tray workflow, AI, STT/TTS, settings, logs, optional wake support
+  - desktop automation is limited in v1
+  - runtime/tool paths are configured manually in Settings
+
 ## Requirements
 
-- Windows 10/11
+- Windows 10/11 or Ubuntu 24.04 x86_64
 - Qt 6.6+ (tested with Qt 6.10.2 msvc2022_64)
 - CMake 3.27+
 - Ninja
-- Visual Studio 2022 Build Tools (MSVC x64)
+- Visual Studio 2022 Build Tools (MSVC x64) on Windows
+- GCC/Clang toolchain on Linux
 
 For full build details, see docs/BUILD.md.
 
@@ -84,6 +97,22 @@ build.bat
 - Executable: bin/jarvis.exe
 - Logs: bin/logs
 
+## Quick Start (Linux)
+
+1. Configure environment:
+   - Set `QT_DIR` or `CMAKE_PREFIX_PATH` to your Qt 6 kit if CMake cannot find Qt automatically.
+   - Install `whisper`, `piper`, `ffmpeg`, and any optional wake assets separately.
+2. Build and test:
+
+```bash
+./build.sh
+```
+
+3. Run:
+
+- Executable: `bin/jarvis`
+- Logs: `bin/logs`
+
 ## First Run
 
 On first launch, the Setup wizard opens automatically.
@@ -97,6 +126,7 @@ On first launch, the Setup wizard opens automatically.
    - whisper executable + model
    - piper executable + voice model
    - ffmpeg path
+   - Linux: select existing binaries and model files manually
 4. Wake Word:
   - wake engine kind (`sherpa-onnx`)
   - sherpa keyword-spotting model root
@@ -107,11 +137,11 @@ On first launch, the Setup wizard opens automatically.
 ## Runtime Data and Paths
 
 - Settings file:
-  - %APPDATA%/../Local/<Org>/<App>/settings.json (Qt AppDataLocation)
+  - Qt `AppDataLocation` `settings.json` path on the current platform
 - Local tools root:
-  - %APPDATA%/../Local/<Org>/<App>/third_party
+  - Qt `AppDataLocation` `third_party`
 - Download cache root:
-  - %APPDATA%/../Local/<Org>/<App>/tools
+  - Qt `AppDataLocation` `tools`
 - Identity:
   - config/identity.json
 - User profile:
@@ -143,6 +173,7 @@ Current test suites:
 - tests/AiServicesTests.cpp
 - tests/IdentityProfileTests.cpp
 - tests/LocalResponseEngineTests.cpp
+- tests/PlatformRuntimeTests.cpp
 
 ## Current Defaults
 

@@ -16,6 +16,7 @@ struct ToolInfo
     QString path;
     bool downloadable = false;
     bool critical = false;
+    bool autoInstallSupported = false;
 };
 
 Q_DECLARE_METATYPE(ToolInfo)

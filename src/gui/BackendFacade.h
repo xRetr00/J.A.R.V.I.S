@@ -99,6 +99,9 @@ class BackendFacade : public QObject
     Q_PROPERTY(QString latestTaskToastTone READ latestTaskToastTone NOTIFY latestTaskToastChanged)
     Q_PROPERTY(int latestTaskToastTaskId READ latestTaskToastTaskId NOTIFY latestTaskToastChanged)
     Q_PROPERTY(QString latestTaskToastType READ latestTaskToastType NOTIFY latestTaskToastChanged)
+    Q_PROPERTY(QString platformName READ platformName CONSTANT)
+    Q_PROPERTY(QVariantMap platformCapabilities READ platformCapabilities CONSTANT)
+    Q_PROPERTY(bool supportsAutoToolInstall READ supportsAutoToolInstall CONSTANT)
     Q_PROPERTY(QString skillsRoot READ skillsRoot CONSTANT)
 
 public:
@@ -196,6 +199,9 @@ public:
     QString latestTaskToastTone() const;
     int latestTaskToastTaskId() const;
     QString latestTaskToastType() const;
+    QString platformName() const;
+    QVariantMap platformCapabilities() const;
+    bool supportsAutoToolInstall() const;
     QString skillsRoot() const;
 
     Q_INVOKABLE void toggleOverlay();

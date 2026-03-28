@@ -160,7 +160,9 @@ Window {
                     }
 
                     Text {
-                        text: "External binaries and model packages detected by the runtime."
+                        text: settingsVm.supportsAutoToolInstall
+                              ? "External binaries and model packages detected by the runtime."
+                              : "External binaries and model packages detected by the runtime. Linux uses manual tool/model setup in this release."
                         color: "#8da6c7"
                         font.pixelSize: 13
                     }
@@ -646,4 +648,3 @@ Window {
         }
     }
 }
-

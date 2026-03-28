@@ -2,15 +2,20 @@
 
 #include <QDateTime>
 #include <QDir>
+#include <QDirIterator>
+#include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QProcess>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QRegularExpression>
 #include <QSet>
 #include <QTextStream>
+#include <QTimer>
 #include <QUrl>
 
 #include "core/ComputerControl.h"
@@ -21,6 +26,14 @@
 namespace {
 constexpr qint64 kDirListCooldownMs = 2000;
 constexpr qint64 kDirListCacheMs = 2500;
+
+struct NetworkFetchResult
+{
+    bool ok = false;
+    int statusCode = 0;
+    QString error;
+    QByteArray body;
+};
 
 QString readText(const QString &path, int maxChars = 16000)
 {
@@ -37,35 +50,50 @@ QString readText(const QString &path, int maxChars = 16000)
     return text;
 }
 
-QString quotePowerShell(QString value)
+NetworkFetchResult httpGet(const QUrl &url,
+                           const QList<QPair<QByteArray, QByteArray>> &headers = {},
+                           int timeoutMs = 20000)
 {
-    value.replace(QStringLiteral("'"), QStringLiteral("''"));
-    return QStringLiteral("'%1'").arg(value);
-}
-
-QString runPowerShell(const QString &command, int timeoutMs, bool *ok = nullptr)
-{
-    QProcess process;
-    process.start(QStringLiteral("powershell"),
-                  {QStringLiteral("-NoProfile"),
-                   QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
-                   QStringLiteral("-Command"),
-                   command});
-    if (!process.waitForFinished(timeoutMs)) {
-        process.kill();
-        process.waitForFinished(2000);
-        if (ok) {
-            *ok = false;
-        }
-        return {};
+    NetworkFetchResult result;
+    if (!url.isValid()) {
+        result.error = QStringLiteral("Invalid URL.");
+        return result;
     }
 
-    const bool success = process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
-    if (ok) {
-        *ok = success;
+    QNetworkAccessManager manager;
+    QNetworkRequest request(url);
+    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("JARVIS/1.0"));
+    for (const auto &header : headers) {
+        request.setRawHeader(header.first, header.second);
     }
 
-    return QString::fromUtf8(process.readAllStandardOutput());
+    QEventLoop loop;
+    QTimer timer;
+    timer.setSingleShot(true);
+    QNetworkReply *reply = manager.get(request);
+    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+    timer.start(timeoutMs);
+    loop.exec();
+
+    if (timer.isActive()) {
+        timer.stop();
+    } else {
+        reply->abort();
+        result.error = QStringLiteral("Request timed out.");
+        reply->deleteLater();
+        return result;
+    }
+
+    result.statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    result.body = reply->readAll();
+    if (reply->error() == QNetworkReply::NoError) {
+        result.ok = true;
+    } else {
+        result.error = reply->errorString();
+    }
+    reply->deleteLater();
+    return result;
 }
 
 QString latestAiLogPath()
@@ -595,14 +623,8 @@ QJsonObject ToolWorker::processLogTail(const AgentTask &task)
                            QStringLiteral("Rejected path: %1").arg(path));
     }
 
-    bool ok = false;
-    const QString output = runPowerShell(
-        QStringLiteral("Get-Content %1 -Tail %2")
-            .arg(quotePowerShell(path))
-            .arg(lines),
-        12000,
-        &ok);
-    if (!ok) {
+    const QString content = readText(path, 64000);
+    if (content.isEmpty()) {
         return buildResult(task,
                            false,
                            TaskState::Finished,
@@ -610,6 +632,12 @@ QJsonObject ToolWorker::processLogTail(const AgentTask &task)
                            QStringLiteral("I couldn't read the log tail."),
                            QStringLiteral("Failed to tail: %1").arg(QDir::cleanPath(path)));
     }
+
+    const QStringList lineList = content.split(QRegularExpression(QStringLiteral("\r?\n")), Qt::KeepEmptyParts);
+    const qsizetype lineCount = lineList.size();
+    const qsizetype requestedLines = std::max<qsizetype>(1, lines);
+    const qsizetype startIndex = std::max<qsizetype>(0, lineCount - requestedLines);
+    const QString output = lineList.mid(startIndex).join(QStringLiteral("\n"));
 
     return buildResult(task,
                        true,
@@ -636,20 +664,41 @@ QJsonObject ToolWorker::processLogSearch(const AgentTask &task)
                            QStringLiteral("Rejected path: %1").arg(path));
     }
 
-    const QString command = QFileInfo(path).isDir()
-        ? QStringLiteral("Get-ChildItem -Path %1 -Recurse | Select-String -Pattern %2")
-              .arg(quotePowerShell(path), quotePowerShell(query))
-        : QStringLiteral("Select-String -Path %1 -Pattern %2")
-              .arg(quotePowerShell(path), quotePowerShell(query));
-    bool ok = false;
-    const QString output = runPowerShell(command, 15000, &ok);
-    if (!ok) {
+    QStringList matches;
+    auto searchFile = [&matches, &query](const QString &filePath) {
+        QFile file(filePath);
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            return;
+        }
+
+        QTextStream stream(&file);
+        int lineNumber = 0;
+        while (!stream.atEnd() && matches.size() < 150) {
+            const QString line = stream.readLine();
+            ++lineNumber;
+            if (line.contains(query, Qt::CaseInsensitive)) {
+                matches.push_back(QStringLiteral("%1:%2: %3").arg(QDir::cleanPath(filePath)).arg(lineNumber).arg(line.trimmed()));
+            }
+        }
+    };
+
+    const QFileInfo info(path);
+    if (info.isDir()) {
+        QDirIterator it(path, QDir::Files | QDir::Readable, QDirIterator::Subdirectories);
+        while (it.hasNext() && matches.size() < 150) {
+            searchFile(it.next());
+        }
+    } else {
+        searchFile(path);
+    }
+
+    if (matches.isEmpty()) {
         return buildResult(task,
                            false,
                            TaskState::Finished,
                            QStringLiteral("Log search failed"),
-                           QStringLiteral("I couldn't search that log path."),
-                           QStringLiteral("Failed to search %1 for %2").arg(QDir::cleanPath(path), query));
+                           QStringLiteral("No matching log lines were found."),
+                           QStringLiteral("No matches in %1 for %2").arg(QDir::cleanPath(path), query));
     }
 
     return buildResult(task,
@@ -661,7 +710,7 @@ QJsonObject ToolWorker::processLogSearch(const AgentTask &task)
                        QJsonObject{
                            {QStringLiteral("path"), QDir::cleanPath(path)},
                            {QStringLiteral("query"), query},
-                           {QStringLiteral("content"), output}
+                           {QStringLiteral("content"), matches.join(QStringLiteral("\n"))}
                        });
 }
 
@@ -777,13 +826,16 @@ QJsonObject ToolWorker::processWebSearch(const AgentTask &task)
                     uri += QStringLiteral("&freshness=%1").arg(QString::fromUtf8(QUrl::toPercentEncoding(freshness)));
                 }
 
-                output = runPowerShell(
-                    QStringLiteral("$headers=@{'Accept'='application/json';'X-Subscription-Token'=%1}; "
-                                   "(Invoke-RestMethod -Headers $headers -Uri %2) | ConvertTo-Json -Depth 8")
-                        .arg(quotePowerShell(apiKey), quotePowerShell(uri)),
-                    20000,
-                    &ok);
-                if (ok) {
+                const NetworkFetchResult fetch = httpGet(
+                    QUrl(uri),
+                    {
+                        {QByteArray("Accept"), QByteArray("application/json")},
+                        {QByteArray("X-Subscription-Token"), apiKey.toUtf8()}
+                    },
+                    20000);
+                if (fetch.ok) {
+                    output = QString::fromUtf8(fetch.body);
+                    ok = true;
                     appendUniqueSources(extractBraveSources(output));
                 }
             }
@@ -795,13 +847,12 @@ QJsonObject ToolWorker::processWebSearch(const AgentTask &task)
         }
 
         if (!ok) {
-            output = runPowerShell(
-                QStringLiteral("(Invoke-RestMethod -Uri %1) | ConvertTo-Json -Depth 8")
-                    .arg(quotePowerShell(QStringLiteral("https://api.duckduckgo.com/?q=%1&format=json&no_html=1&skip_disambig=1")
-                                             .arg(QString::fromUtf8(QUrl::toPercentEncoding(variant))))),
-                20000,
-                &ok);
-            if (ok) {
+            const QString duckUrl = QStringLiteral("https://api.duckduckgo.com/?q=%1&format=json&no_html=1&skip_disambig=1")
+                .arg(QString::fromUtf8(QUrl::toPercentEncoding(variant)));
+            const NetworkFetchResult fetch = httpGet(QUrl(duckUrl), {}, 20000);
+            if (fetch.ok) {
+                output = QString::fromUtf8(fetch.body);
+                ok = true;
                 appendUniqueSources(extractDuckSources(output));
             }
         }

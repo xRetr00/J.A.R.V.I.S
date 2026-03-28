@@ -3,7 +3,9 @@ cmake_minimum_required(VERSION 3.27)
 project(JARVIS VERSION 1.0.0 LANGUAGES C CXX)
 
 include(FetchContent)
-enable_language(RC)
+if(WIN32)
+    enable_language(RC)
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -12,6 +14,17 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
+
+if(WIN32)
+    set(JARVIS_PATH_ENV_SEPARATOR ";")
+else()
+    set(JARVIS_PATH_ENV_SEPARATOR ":")
+endif()
+
+set(JARVIS_ONNXRUNTIME_SHARED_LIBRARY "")
+set(JARVIS_SHERPA_C_API_SHARED_LIBRARY "")
+set(JARVIS_SHERPA_CXX_API_SHARED_LIBRARY "")
+set(JARVIS_ONNXRUNTIME_PROVIDER_SHARED_LIBRARY "")
 
 option(JARVIS_BUILD_TESTS "Build JARVIS tests" ON)
 set(JARVIS_ONNXRUNTIME_ROOT "" CACHE PATH "Path to a local ONNX Runtime package root")
@@ -124,6 +137,25 @@ endif()
 
 qt_standard_project_setup(REQUIRES 6.6)
 
+function(jarvis_find_shared_library out_var root_path library_base_name)
+    if(WIN32)
+        set(_patterns "${root_path}/lib/${library_base_name}.dll")
+    else()
+        set(_patterns
+            "${root_path}/lib/lib${library_base_name}.so"
+            "${root_path}/lib/lib${library_base_name}.so.*")
+    endif()
+
+    file(GLOB _matches LIST_DIRECTORIES FALSE ${_patterns})
+    list(LENGTH _matches _match_count)
+    if(_match_count GREATER 0)
+        list(GET _matches 0 _selected)
+        set(${out_var} "${_selected}" PARENT_SCOPE)
+    else()
+        set(${out_var} "" PARENT_SCOPE)
+    endif()
+endfunction()
+
 set(JARVIS_SOURCES
     src/app/JarvisApplication.cpp
     src/agent/AgentToolbox.cpp
@@ -155,6 +187,7 @@ set(JARVIS_SOURCES
     src/memory/MemoryManager.cpp
     src/memory/MemoryStore.cpp
     src/overlay/OverlayController.cpp
+    src/platform/PlatformRuntime.cpp
     src/settings/AppSettings.cpp
     src/settings/IdentityProfileService.cpp
     src/skills/SkillStore.cpp
@@ -205,6 +238,9 @@ set(JARVIS_HEADERS
     src/memory/MemoryStore.h
     src/gui/TaskViewModel.h
     src/overlay/OverlayController.h
+    src/platform/ComputerControlBackend.h
+    src/platform/PlatformCapabilities.h
+    src/platform/PlatformRuntime.h
     src/settings/AppSettings.h
     src/settings/IdentityProfileService.h
     src/skills/SkillStore.h
@@ -247,12 +283,17 @@ target_include_directories(jarvis_lib
         ${libfvad_SOURCE_DIR}/include
 )
 target_compile_definitions(jarvis_lib PUBLIC JARVIS_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
-target_compile_definitions(jarvis_lib PUBLIC JARVIS_HAS_ONNXRUNTIME=0)
-target_compile_definitions(jarvis_lib PUBLIC JARVIS_HAS_SHERPA_ONNX=0)
+set(JARVIS_HAS_ONNXRUNTIME 0)
+set(JARVIS_HAS_SHERPA_ONNX 0)
 
 if(NOT JARVIS_ONNXRUNTIME_ROOT)
-    file(GLOB JARVIS_ONNXRUNTIME_CANDIDATES RELATIVE "${CMAKE_SOURCE_DIR}"
-        "${CMAKE_SOURCE_DIR}/third_party/onnxruntime/onnxruntime-win-x64-*")
+    if(WIN32)
+        file(GLOB JARVIS_ONNXRUNTIME_CANDIDATES RELATIVE "${CMAKE_SOURCE_DIR}"
+            "${CMAKE_SOURCE_DIR}/third_party/onnxruntime/onnxruntime-win-x64-*")
+    else()
+        file(GLOB JARVIS_ONNXRUNTIME_CANDIDATES RELATIVE "${CMAKE_SOURCE_DIR}"
+            "${CMAKE_SOURCE_DIR}/third_party/onnxruntime/onnxruntime-linux-x64-*")
+    endif()
     list(LENGTH JARVIS_ONNXRUNTIME_CANDIDATES JARVIS_ONNXRUNTIME_CANDIDATE_COUNT)
     if(JARVIS_ONNXRUNTIME_CANDIDATE_COUNT GREATER 0)
         list(GET JARVIS_ONNXRUNTIME_CANDIDATES 0 JARVIS_ONNXRUNTIME_ROOT)
@@ -261,21 +302,37 @@ if(NOT JARVIS_ONNXRUNTIME_ROOT)
 endif()
 
 if(JARVIS_ONNXRUNTIME_ROOT
+    AND EXISTS "${JARVIS_ONNXRUNTIME_ROOT}/include/onnxruntime_cxx_api.h")
+    jarvis_find_shared_library(JARVIS_ONNXRUNTIME_SHARED_LIBRARY "${JARVIS_ONNXRUNTIME_ROOT}" "onnxruntime")
+endif()
+
+if(JARVIS_ONNXRUNTIME_ROOT
     AND EXISTS "${JARVIS_ONNXRUNTIME_ROOT}/include/onnxruntime_cxx_api.h"
-    AND EXISTS "${JARVIS_ONNXRUNTIME_ROOT}/lib/onnxruntime.lib")
+    AND JARVIS_ONNXRUNTIME_SHARED_LIBRARY)
     add_library(onnxruntime SHARED IMPORTED)
-    set_target_properties(onnxruntime PROPERTIES
-        IMPORTED_IMPLIB "${JARVIS_ONNXRUNTIME_ROOT}/lib/onnxruntime.lib"
-        IMPORTED_LOCATION "${JARVIS_ONNXRUNTIME_ROOT}/lib/onnxruntime.dll"
-    )
+    if(WIN32)
+        set_target_properties(onnxruntime PROPERTIES
+            IMPORTED_IMPLIB "${JARVIS_ONNXRUNTIME_ROOT}/lib/onnxruntime.lib"
+            IMPORTED_LOCATION "${JARVIS_ONNXRUNTIME_SHARED_LIBRARY}"
+        )
+    else()
+        set_target_properties(onnxruntime PROPERTIES
+            IMPORTED_LOCATION "${JARVIS_ONNXRUNTIME_SHARED_LIBRARY}"
+        )
+    endif()
     target_include_directories(jarvis_lib PRIVATE "${JARVIS_ONNXRUNTIME_ROOT}/include")
     target_link_libraries(jarvis_lib PUBLIC onnxruntime)
-    target_compile_definitions(jarvis_lib PUBLIC JARVIS_HAS_ONNXRUNTIME=1)
+    set(JARVIS_HAS_ONNXRUNTIME 1)
 endif()
 
 if(NOT JARVIS_SHERPA_ROOT)
-    file(GLOB JARVIS_SHERPA_CANDIDATES RELATIVE "${CMAKE_SOURCE_DIR}"
-        "${CMAKE_SOURCE_DIR}/third_party/sherpa-onnx/sherpa-onnx-v*-win-x64-shared-MD-Release-no-tts")
+    if(WIN32)
+        file(GLOB JARVIS_SHERPA_CANDIDATES RELATIVE "${CMAKE_SOURCE_DIR}"
+            "${CMAKE_SOURCE_DIR}/third_party/sherpa-onnx/sherpa-onnx-v*-win-x64-shared-MD-Release-no-tts")
+    else()
+        file(GLOB JARVIS_SHERPA_CANDIDATES RELATIVE "${CMAKE_SOURCE_DIR}"
+            "${CMAKE_SOURCE_DIR}/third_party/sherpa-onnx/sherpa-onnx-v*-linux-x64-shared*")
+    endif()
     list(LENGTH JARVIS_SHERPA_CANDIDATES JARVIS_SHERPA_CANDIDATE_COUNT)
     if(JARVIS_SHERPA_CANDIDATE_COUNT GREATER 0)
         list(GET JARVIS_SHERPA_CANDIDATES 0 JARVIS_SHERPA_ROOT)
@@ -299,28 +356,54 @@ if(EXISTS "${JARVIS_SENTENCEPIECE_ROOT}/CMakeLists.txt")
 endif()
 
 if(JARVIS_SHERPA_ROOT
+    AND EXISTS "${JARVIS_SHERPA_ROOT}/include/sherpa-onnx/c-api/cxx-api.h")
+    jarvis_find_shared_library(JARVIS_SHERPA_C_API_SHARED_LIBRARY "${JARVIS_SHERPA_ROOT}" "sherpa-onnx-c-api")
+    jarvis_find_shared_library(JARVIS_SHERPA_CXX_API_SHARED_LIBRARY "${JARVIS_SHERPA_ROOT}" "sherpa-onnx-cxx-api")
+    if(WIN32)
+        jarvis_find_shared_library(JARVIS_ONNXRUNTIME_PROVIDER_SHARED_LIBRARY "${JARVIS_SHERPA_ROOT}" "onnxruntime_providers_shared")
+    endif()
+endif()
+
+if(JARVIS_SHERPA_ROOT
     AND EXISTS "${JARVIS_SHERPA_ROOT}/include/sherpa-onnx/c-api/cxx-api.h"
-    AND EXISTS "${JARVIS_SHERPA_ROOT}/lib/sherpa-onnx-cxx-api.lib"
-    AND EXISTS "${JARVIS_SHERPA_ROOT}/lib/sherpa-onnx-c-api.lib"
+    AND JARVIS_SHERPA_C_API_SHARED_LIBRARY
+    AND JARVIS_SHERPA_CXX_API_SHARED_LIBRARY
     AND TARGET sentencepiece-static)
     add_library(jarvis_sherpa_onnx_c_api SHARED IMPORTED)
-    set_target_properties(jarvis_sherpa_onnx_c_api PROPERTIES
-        IMPORTED_IMPLIB "${JARVIS_SHERPA_ROOT}/lib/sherpa-onnx-c-api.lib"
-        IMPORTED_LOCATION "${JARVIS_SHERPA_ROOT}/lib/sherpa-onnx-c-api.dll"
-    )
+    if(WIN32)
+        set_target_properties(jarvis_sherpa_onnx_c_api PROPERTIES
+            IMPORTED_IMPLIB "${JARVIS_SHERPA_ROOT}/lib/sherpa-onnx-c-api.lib"
+            IMPORTED_LOCATION "${JARVIS_SHERPA_C_API_SHARED_LIBRARY}"
+        )
+    else()
+        set_target_properties(jarvis_sherpa_onnx_c_api PROPERTIES
+            IMPORTED_LOCATION "${JARVIS_SHERPA_C_API_SHARED_LIBRARY}"
+        )
+    endif()
     add_library(jarvis_sherpa_onnx_cxx_api SHARED IMPORTED)
-    set_target_properties(jarvis_sherpa_onnx_cxx_api PROPERTIES
-        IMPORTED_IMPLIB "${JARVIS_SHERPA_ROOT}/lib/sherpa-onnx-cxx-api.lib"
-        IMPORTED_LOCATION "${JARVIS_SHERPA_ROOT}/lib/sherpa-onnx-cxx-api.dll"
-    )
+    if(WIN32)
+        set_target_properties(jarvis_sherpa_onnx_cxx_api PROPERTIES
+            IMPORTED_IMPLIB "${JARVIS_SHERPA_ROOT}/lib/sherpa-onnx-cxx-api.lib"
+            IMPORTED_LOCATION "${JARVIS_SHERPA_CXX_API_SHARED_LIBRARY}"
+        )
+    else()
+        set_target_properties(jarvis_sherpa_onnx_cxx_api PROPERTIES
+            IMPORTED_LOCATION "${JARVIS_SHERPA_CXX_API_SHARED_LIBRARY}"
+        )
+    endif()
     target_include_directories(jarvis_lib PRIVATE "${JARVIS_SHERPA_ROOT}/include")
     target_link_libraries(jarvis_lib PUBLIC
         jarvis_sherpa_onnx_c_api
         jarvis_sherpa_onnx_cxx_api
         sentencepiece-static
     )
-    target_compile_definitions(jarvis_lib PUBLIC JARVIS_HAS_SHERPA_ONNX=1)
+    set(JARVIS_HAS_SHERPA_ONNX 1)
 endif()
+
+target_compile_definitions(jarvis_lib PUBLIC
+    JARVIS_HAS_ONNXRUNTIME=${JARVIS_HAS_ONNXRUNTIME}
+    JARVIS_HAS_SHERPA_ONNX=${JARVIS_HAS_SHERPA_ONNX}
+)
 
 target_link_libraries(jarvis_lib
     PUBLIC
@@ -346,29 +429,29 @@ if(TARGET rnnoise)
     target_link_libraries(jarvis_lib PUBLIC rnnoise)
 endif()
 
-function(jarvis_copy_optional_runtime_dlls target_name)
-    if(TARGET onnxruntime)
+function(jarvis_copy_optional_runtime_libraries target_name)
+    if(JARVIS_ONNXRUNTIME_SHARED_LIBRARY)
         add_custom_command(TARGET ${target_name} POST_BUILD
             COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-                "${JARVIS_ONNXRUNTIME_ROOT}/lib/onnxruntime.dll"
-                "$<TARGET_FILE_DIR:${target_name}>/onnxruntime.dll"
+                "${JARVIS_ONNXRUNTIME_SHARED_LIBRARY}"
+                "$<TARGET_FILE_DIR:${target_name}>"
         )
     endif()
 
-    if(TARGET jarvis_sherpa_onnx_cxx_api)
+    if(JARVIS_SHERPA_C_API_SHARED_LIBRARY AND JARVIS_SHERPA_CXX_API_SHARED_LIBRARY)
         add_custom_command(TARGET ${target_name} POST_BUILD
             COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-                "${JARVIS_SHERPA_ROOT}/lib/sherpa-onnx-c-api.dll"
-                "$<TARGET_FILE_DIR:${target_name}>/sherpa-onnx-c-api.dll"
+                "${JARVIS_SHERPA_C_API_SHARED_LIBRARY}"
+                "$<TARGET_FILE_DIR:${target_name}>"
             COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-                "${JARVIS_SHERPA_ROOT}/lib/sherpa-onnx-cxx-api.dll"
-                "$<TARGET_FILE_DIR:${target_name}>/sherpa-onnx-cxx-api.dll"
+                "${JARVIS_SHERPA_CXX_API_SHARED_LIBRARY}"
+                "$<TARGET_FILE_DIR:${target_name}>"
         )
-        if(EXISTS "${JARVIS_SHERPA_ROOT}/lib/onnxruntime_providers_shared.dll")
+        if(JARVIS_ONNXRUNTIME_PROVIDER_SHARED_LIBRARY)
             add_custom_command(TARGET ${target_name} POST_BUILD
                 COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-                    "${JARVIS_SHERPA_ROOT}/lib/onnxruntime_providers_shared.dll"
-                    "$<TARGET_FILE_DIR:${target_name}>/onnxruntime_providers_shared.dll"
+                    "${JARVIS_ONNXRUNTIME_PROVIDER_SHARED_LIBRARY}"
+                    "$<TARGET_FILE_DIR:${target_name}>"
             )
         endif()
     endif()
@@ -385,7 +468,10 @@ target_link_libraries(jarvis_sherpa_wake_helper
 )
 
 target_compile_definitions(jarvis_sherpa_wake_helper PRIVATE JARVIS_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
-target_compile_definitions(jarvis_sherpa_wake_helper PRIVATE JARVIS_HAS_SHERPA_ONNX=0)
+set(JARVIS_WAKE_HELPER_HAS_SHERPA_ONNX 0)
+set_target_properties(jarvis_sherpa_wake_helper PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin"
+)
 
 if(TARGET jarvis_sherpa_onnx_cxx_api)
     target_include_directories(jarvis_sherpa_wake_helper PRIVATE "${JARVIS_SHERPA_ROOT}/include")
@@ -394,12 +480,21 @@ if(TARGET jarvis_sherpa_onnx_cxx_api)
             jarvis_sherpa_onnx_c_api
             jarvis_sherpa_onnx_cxx_api
     )
-    target_compile_definitions(jarvis_sherpa_wake_helper PRIVATE JARVIS_HAS_SHERPA_ONNX=1)
+    set(JARVIS_WAKE_HELPER_HAS_SHERPA_ONNX 1)
+endif()
+target_compile_definitions(jarvis_sherpa_wake_helper PRIVATE JARVIS_HAS_SHERPA_ONNX=${JARVIS_WAKE_HELPER_HAS_SHERPA_ONNX})
+jarvis_copy_optional_runtime_libraries(jarvis_sherpa_wake_helper)
+
+set(JARVIS_APP_SOURCES
+    src/app/main.cpp
+)
+
+if(WIN32)
+    list(APPEND JARVIS_APP_SOURCES src/app/jarvis.rc)
 endif()
 
 qt_add_executable(jarvis
-    src/app/main.cpp
-    src/app/jarvis.rc
+    ${JARVIS_APP_SOURCES}
 )
 
 target_link_libraries(jarvis PRIVATE jarvis_lib)
@@ -418,9 +513,9 @@ if(NOT QT_CORE_DLL)
     get_target_property(QT_CORE_DLL Qt6::Core IMPORTED_LOCATION_RELEASE)
 endif()
 get_filename_component(QT_BIN_DIR "${QT_CORE_DLL}" DIRECTORY)
-find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS "${QT_BIN_DIR}" REQUIRED)
 
 if(WIN32)
+    find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS "${QT_BIN_DIR}" REQUIRED)
     add_custom_command(TARGET jarvis PRE_BUILD
         COMMAND "${CMAKE_COMMAND}"
             -DDEPLOY_DIR="$<TARGET_FILE_DIR:jarvis>"
@@ -435,11 +530,11 @@ if(WIN32)
             "$<TARGET_FILE:jarvis>"
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different
             "$<TARGET_FILE:jarvis_sherpa_wake_helper>"
-            "$<TARGET_FILE_DIR:jarvis>/jarvis_sherpa_wake_helper.exe"
-        COMMENT "Deploying Qt runtime for jarvis.exe"
+            "$<TARGET_FILE_DIR:jarvis>/jarvis_sherpa_wake_helper${CMAKE_EXECUTABLE_SUFFIX}"
+        COMMENT "Deploying Qt runtime for jarvis"
     )
-    jarvis_copy_optional_runtime_dlls(jarvis)
 endif()
+jarvis_copy_optional_runtime_libraries(jarvis)
 
 if(JARVIS_BUILD_TESTS)
     enable_testing()
@@ -455,8 +550,8 @@ if(JARVIS_BUILD_TESTS)
     )
 
     add_test(NAME jarvis_reasoning_tests COMMAND jarvis_reasoning_tests)
-    set_tests_properties(jarvis_reasoning_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR};$ENV{PATH}")
-    jarvis_copy_optional_runtime_dlls(jarvis_reasoning_tests)
+    set_tests_properties(jarvis_reasoning_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_reasoning_tests)
 
     qt_add_executable(jarvis_ai_services_tests
         tests/AiServicesTests.cpp
@@ -469,8 +564,8 @@ if(JARVIS_BUILD_TESTS)
     )
 
     add_test(NAME jarvis_ai_services_tests COMMAND jarvis_ai_services_tests)
-    set_tests_properties(jarvis_ai_services_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR};$ENV{PATH}")
-    jarvis_copy_optional_runtime_dlls(jarvis_ai_services_tests)
+    set_tests_properties(jarvis_ai_services_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_ai_services_tests)
 
     qt_add_executable(jarvis_local_response_tests
         tests/LocalResponseEngineTests.cpp
@@ -483,8 +578,8 @@ if(JARVIS_BUILD_TESTS)
     )
 
     add_test(NAME jarvis_local_response_tests COMMAND jarvis_local_response_tests)
-    set_tests_properties(jarvis_local_response_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR};$ENV{PATH}")
-    jarvis_copy_optional_runtime_dlls(jarvis_local_response_tests)
+    set_tests_properties(jarvis_local_response_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_local_response_tests)
 
     qt_add_executable(jarvis_identity_tests
         tests/IdentityProfileTests.cpp
@@ -497,6 +592,20 @@ if(JARVIS_BUILD_TESTS)
     )
 
     add_test(NAME jarvis_identity_tests COMMAND jarvis_identity_tests)
-    set_tests_properties(jarvis_identity_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR};$ENV{PATH}")
-    jarvis_copy_optional_runtime_dlls(jarvis_identity_tests)
+    set_tests_properties(jarvis_identity_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_identity_tests)
+
+    qt_add_executable(jarvis_platform_runtime_tests
+        tests/PlatformRuntimeTests.cpp
+    )
+
+    target_link_libraries(jarvis_platform_runtime_tests
+        PRIVATE
+            jarvis_lib
+            Qt6::Test
+    )
+
+    add_test(NAME jarvis_platform_runtime_tests COMMAND jarvis_platform_runtime_tests)
+    set_tests_properties(jarvis_platform_runtime_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_platform_runtime_tests)
 endif()

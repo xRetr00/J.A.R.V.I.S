@@ -10,6 +10,7 @@
 #include <QStringList>
 
 #include "logging/LoggingService.h"
+#include "platform/PlatformRuntime.h"
 #include "settings/AppSettings.h"
 
 #if JARVIS_HAS_SHERPA_ONNX
@@ -382,10 +383,12 @@ void SherpaWakeWordEngine::handleHelperFinished(int exitCode, QProcess::ExitStat
 
 QString SherpaWakeWordEngine::resolveHelperExecutablePath() const
 {
+    const QString helperName = PlatformRuntime::helperExecutableName(QStringLiteral("jarvis_sherpa_wake_helper"));
     return firstExisting({
-        QCoreApplication::applicationDirPath() + QStringLiteral("/jarvis_sherpa_wake_helper.exe"),
-        QStringLiteral(JARVIS_SOURCE_DIR) + QStringLiteral("/bin/jarvis_sherpa_wake_helper.exe"),
-        QStringLiteral(JARVIS_SOURCE_DIR) + QStringLiteral("/build-release/jarvis_sherpa_wake_helper.exe")
+        QCoreApplication::applicationDirPath() + QStringLiteral("/") + helperName,
+        QStringLiteral(JARVIS_SOURCE_DIR) + QStringLiteral("/bin/") + helperName,
+        QStringLiteral(JARVIS_SOURCE_DIR) + QStringLiteral("/build-release/") + helperName,
+        QStringLiteral(JARVIS_SOURCE_DIR) + QStringLiteral("/build/") + helperName
     });
 }
 

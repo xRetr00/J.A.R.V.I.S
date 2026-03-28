@@ -12,6 +12,8 @@
 #include <QDirIterator>
 #include <QVariantMap>
 
+#include "platform/PlatformRuntime.h"
+
 namespace {
 QString firstExisting(const QStringList &candidates)
 {
@@ -76,7 +78,17 @@ QVariantMap toVariantMap(const ToolInfo &info)
     map.insert(QStringLiteral("path"), info.path);
     map.insert(QStringLiteral("downloadable"), info.downloadable);
     map.insert(QStringLiteral("critical"), info.critical);
+    map.insert(QStringLiteral("autoInstallSupported"), info.autoInstallSupported);
     return map;
+}
+
+QString firstExecutableOnPath(const QStringList &names)
+{
+    QStringList candidates;
+    for (const QString &name : names) {
+        candidates.push_back(QStandardPaths::findExecutable(name));
+    }
+    return firstExisting(candidates);
 }
 }
 
@@ -91,14 +103,20 @@ QList<ToolInfo> ToolManager::scan()
     const QString root = toolsRoot();
     const QString appTools = appToolsRoot();
     const QString sourceRoot = QStringLiteral(JARVIS_SOURCE_DIR) + QStringLiteral("/third_party");
+    const QString whisperExecutableName = PlatformRuntime::helperExecutableName(QStringLiteral("whisper-cli"));
+    const QString whisperFallbackExecutableName = PlatformRuntime::helperExecutableName(QStringLiteral("main"));
+    const QString piperExecutableName = PlatformRuntime::helperExecutableName(QStringLiteral("piper"));
+    const QString ffmpegExecutableName = PlatformRuntime::helperExecutableName(QStringLiteral("ffmpeg"));
+    QStringList sherpaPatterns = PlatformRuntime::sharedLibraryPatterns(QStringLiteral("sherpa-onnx-c-api"));
+    sherpaPatterns.push_front(PlatformRuntime::helperExecutableName(QStringLiteral("sherpa-onnx")));
     m_tools = {
         probeTool(QStringLiteral("onnxruntime"), QStringLiteral("runtime"), {
-                      findFirstRecursive(root + QStringLiteral("/onnxruntime"), {QStringLiteral("onnxruntime.dll")}),
-                      findFirstRecursive(sourceRoot + QStringLiteral("/onnxruntime"), {QStringLiteral("onnxruntime.dll")})
+                      findFirstRecursive(root + QStringLiteral("/onnxruntime"), PlatformRuntime::sharedLibraryPatterns(QStringLiteral("onnxruntime"))),
+                      findFirstRecursive(sourceRoot + QStringLiteral("/onnxruntime"), PlatformRuntime::sharedLibraryPatterns(QStringLiteral("onnxruntime")))
                   }, true, true),
         probeTool(QStringLiteral("sherpa-onnx"), QStringLiteral("wake"), {
-                      findFirstRecursive(root + QStringLiteral("/sherpa-onnx"), {QStringLiteral("sherpa-onnx.exe"), QStringLiteral("sherpa-onnx-c-api.dll")}),
-                      findFirstRecursive(sourceRoot + QStringLiteral("/sherpa-onnx"), {QStringLiteral("sherpa-onnx.exe"), QStringLiteral("sherpa-onnx-c-api.dll")})
+                      findFirstRecursive(root + QStringLiteral("/sherpa-onnx"), sherpaPatterns),
+                      findFirstRecursive(sourceRoot + QStringLiteral("/sherpa-onnx"), sherpaPatterns)
                   }, true, true),
         probeTool(QStringLiteral("sherpa-kws-model"), QStringLiteral("wake"), {
                       findFirstRecursive(root + QStringLiteral("/sherpa-kws-model"), {QStringLiteral("tokens.txt"), QStringLiteral("encoder-*.onnx")}),
@@ -133,23 +151,28 @@ QList<ToolInfo> ToolManager::scan()
                       findFirstRecursive(sourceRoot + QStringLiteral("/speexdsp"), {QStringLiteral("speex_echo.h")})
                   }, false, true),
         probeTool(QStringLiteral("whisper.cpp"), QStringLiteral("stt"), {
-                      QStandardPaths::findExecutable(QStringLiteral("whisper-cli")),
-                      QStandardPaths::findExecutable(QStringLiteral("main")),
-                      appTools + QStringLiteral("/whisper/whisper-cli.exe"),
-                      appTools + QStringLiteral("/whisper/main.exe"),
-                      findFirstRecursive(appTools + QStringLiteral("/whisper"), {QStringLiteral("whisper-cli.exe"), QStringLiteral("main.exe")})
+                      firstExecutableOnPath(PlatformRuntime::whisperExecutableNames()),
+                      appTools + QStringLiteral("/whisper/") + whisperExecutableName,
+                      appTools + QStringLiteral("/whisper/") + whisperFallbackExecutableName,
+                      appTools + QStringLiteral("/whisper/bin/") + whisperExecutableName,
+                      appTools + QStringLiteral("/whisper/bin/") + whisperFallbackExecutableName,
+                      appTools + QStringLiteral("/whisper/Release/") + whisperExecutableName,
+                      appTools + QStringLiteral("/whisper/Release/") + whisperFallbackExecutableName,
+                      findFirstRecursive(appTools + QStringLiteral("/whisper"), PlatformRuntime::whisperExecutableNames())
                   }, true, false),
         probeTool(QStringLiteral("ffmpeg"), QStringLiteral("audio"), {
-                      QStandardPaths::findExecutable(QStringLiteral("ffmpeg")),
-                      appTools + QStringLiteral("/ffmpeg/ffmpeg.exe"),
-                      appTools + QStringLiteral("/ffmpeg/bin/ffmpeg.exe"),
-                      findFirstRecursive(appTools + QStringLiteral("/ffmpeg"), {QStringLiteral("ffmpeg.exe")})
+                      firstExecutableOnPath(PlatformRuntime::ffmpegExecutableNames()),
+                      appTools + QStringLiteral("/ffmpeg/") + ffmpegExecutableName,
+                      appTools + QStringLiteral("/ffmpeg/bin/") + ffmpegExecutableName,
+                      appTools + QStringLiteral("/ffmpeg_build/bin/") + ffmpegExecutableName,
+                      findFirstRecursive(appTools + QStringLiteral("/ffmpeg"), PlatformRuntime::ffmpegExecutableNames())
                   }, true, false),
         probeTool(QStringLiteral("piper"), QStringLiteral("tts"), {
-                      QStandardPaths::findExecutable(QStringLiteral("piper")),
-                      appTools + QStringLiteral("/piper/piper.exe"),
-                      appTools + QStringLiteral("/piper/bin/piper.exe"),
-                      findFirstRecursive(appTools + QStringLiteral("/piper"), {QStringLiteral("piper.exe")})
+                      firstExecutableOnPath(PlatformRuntime::piperExecutableNames()),
+                      appTools + QStringLiteral("/piper/") + piperExecutableName,
+                      appTools + QStringLiteral("/piper/bin/") + piperExecutableName,
+                      appTools + QStringLiteral("/piper/piper/") + piperExecutableName,
+                      findFirstRecursive(appTools + QStringLiteral("/piper"), PlatformRuntime::piperExecutableNames())
                   }, false, false)
     };
     return m_tools;
@@ -189,16 +212,28 @@ void ToolManager::rescan()
 
 void ToolManager::downloadTool(const QString &name)
 {
+    if (!PlatformRuntime::currentCapabilities().supportsAutoToolInstall) {
+        emit downloadFinished(name, false, QStringLiteral("Automatic tool downloads are only available on Windows. On Linux, configure existing binaries manually."));
+        return;
+    }
     beginDownload(descriptorForName(name));
 }
 
 void ToolManager::downloadModel(const QString &name)
 {
+    if (!PlatformRuntime::currentCapabilities().supportsAutoToolInstall) {
+        emit downloadFinished(name, false, QStringLiteral("Automatic model downloads are only available on Windows. On Linux, configure existing model files manually."));
+        return;
+    }
     beginDownload(descriptorForName(name));
 }
 
 void ToolManager::installAll()
 {
+    if (!PlatformRuntime::currentCapabilities().supportsAutoToolInstall) {
+        emit downloadFinished(QStringLiteral("all"), false, QStringLiteral("Automatic tool installation is only available on Windows. On Linux, configure existing binaries manually."));
+        return;
+    }
     for (const ToolInfo &tool : scan()) {
         if (!tool.installed && tool.downloadable && tool.category != QStringLiteral("intent")) {
             beginDownload(descriptorForName(tool.name));
@@ -212,10 +247,11 @@ ToolInfo ToolManager::probeTool(const QString &name, const QString &category, co
     info.name = name;
     info.category = category;
     info.critical = critical;
-    info.downloadable = downloadable;
+    info.autoInstallSupported = PlatformRuntime::currentCapabilities().supportsAutoToolInstall;
+    info.downloadable = downloadable && info.autoInstallSupported;
     info.path = resolveExistingPath(candidateFiles);
     info.installed = !info.path.isEmpty();
-    if (info.installed && info.path.endsWith(QStringLiteral(".exe"), Qt::CaseInsensitive)) {
+    if (info.installed && QFileInfo(info.path).isFile() && QFileInfo(info.path).isExecutable()) {
         info.version = probeVersion(info.path, {QStringLiteral("--version")});
     }
     return info;

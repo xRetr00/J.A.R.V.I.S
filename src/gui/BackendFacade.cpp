@@ -4,14 +4,19 @@
 #include <QDirIterator>
 #include <QAudioDevice>
 #include <QDesktopServices>
+#include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMediaDevices>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QProcess>
 #include <QRegularExpression>
 #include <QThread>
+#include <QTimer>
 #include <QVariantMap>
 #include <QStandardPaths>
 #include <QUrl>
@@ -22,6 +27,7 @@
 
 #include "core/AssistantController.h"
 #include "overlay/OverlayController.h"
+#include "platform/PlatformRuntime.h"
 #include "settings/AppSettings.h"
 #include "settings/IdentityProfileService.h"
 #include "tools/ToolManager.h"
@@ -55,6 +61,13 @@ struct McpQuickServerPreset {
     QString packageName;
     QString packageVersion;
     QString defaultCatalogUrl;
+};
+
+struct NetworkFetchResult {
+    bool ok = false;
+    int statusCode = 0;
+    QString error;
+    QByteArray body;
 };
 
 QVariantMap toVariantMap(const SkillManifest &skill)
@@ -508,6 +521,44 @@ QString whisperModelsRoot(const QString &appDataRoot)
     return appDataRoot + QStringLiteral("/tools/whisper/models");
 }
 
+QString joinExecutableNames(const QStringList &names)
+{
+    QStringList quoted;
+    for (const QString &name : names) {
+        quoted.push_back(QStringLiteral("`%1`").arg(name));
+    }
+    return quoted.join(QStringLiteral(", "));
+}
+
+QString whisperExecutableValidationMessage()
+{
+    return PlatformRuntime::isWindows()
+        ? QStringLiteral("Whisper executable is invalid. Use whisper-cli.exe or main.exe from the whisper Release folder.")
+        : QStringLiteral("Whisper executable is invalid. Select one of %1 from your Linux install.")
+            .arg(joinExecutableNames(PlatformRuntime::whisperExecutableNames()));
+}
+
+QString piperExecutableValidationMessage()
+{
+    return PlatformRuntime::isWindows()
+        ? QStringLiteral("Piper executable is invalid. Select piper.exe.")
+        : QStringLiteral("Piper executable is invalid. Select %1.")
+            .arg(joinExecutableNames(PlatformRuntime::piperExecutableNames()));
+}
+
+QString ffmpegExecutableValidationMessage()
+{
+    return PlatformRuntime::isWindows()
+        ? QStringLiteral("FFmpeg executable is invalid. Select ffmpeg.exe.")
+        : QStringLiteral("FFmpeg executable is invalid. Select %1.")
+            .arg(joinExecutableNames(PlatformRuntime::ffmpegExecutableNames()));
+}
+
+QString autoInstallUnavailableMessage()
+{
+    return QStringLiteral("Automatic downloads are only available on Windows. On Linux, select existing binaries and model files manually.");
+}
+
 QString quotePowerShell(const QString &value)
 {
     QString escaped = value;
@@ -557,6 +608,51 @@ bool downloadFileWithPowerShell(const QString &url, const QString &destinationPa
     }
 
     return QFileInfo::exists(destinationPath);
+}
+
+NetworkFetchResult httpGet(const QUrl &url,
+                           const QList<QPair<QByteArray, QByteArray>> &headers = {},
+                           int timeoutMs = 20000)
+{
+    NetworkFetchResult result;
+    if (!url.isValid()) {
+        result.error = QStringLiteral("Invalid URL.");
+        return result;
+    }
+
+    QNetworkAccessManager manager;
+    QNetworkRequest request(url);
+    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("JARVIS/1.0"));
+    for (const auto &header : headers) {
+        request.setRawHeader(header.first, header.second);
+    }
+
+    QEventLoop loop;
+    QTimer timer;
+    timer.setSingleShot(true);
+    QNetworkReply *reply = manager.get(request);
+    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+    timer.start(timeoutMs);
+    loop.exec();
+
+    if (timer.isActive()) {
+        timer.stop();
+    } else {
+        reply->abort();
+        result.error = QStringLiteral("Request timed out.");
+        reply->deleteLater();
+        return result;
+    }
+
+    result.statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    result.body = reply->readAll();
+    result.ok = reply->error() == QNetworkReply::NoError;
+    if (!result.ok) {
+        result.error = reply->errorString();
+    }
+    reply->deleteLater();
+    return result;
 }
 
 QString detectPiperVoiceModel(const QString &appDataRoot)
@@ -703,6 +799,16 @@ QString resolveExecutableSelection(const QString &selection, const QStringList &
         return resolveExecutableFromDirectory(info.absoluteFilePath(), candidateNames);
     }
 
+    const QString fromPath = QStandardPaths::findExecutable(trimmed);
+    if (!fromPath.isEmpty()) {
+        QFileInfo resolvedInfo(fromPath);
+        for (const QString &name : candidateNames) {
+            if (resolvedInfo.fileName().compare(name, Qt::CaseInsensitive) == 0) {
+                return resolvedInfo.absoluteFilePath();
+            }
+        }
+    }
+
     return {};
 }
 
@@ -814,23 +920,19 @@ QString probeToolVersion(const QString &executablePath, const QStringList &args)
 
 QString fetchLatestReleaseTag(const QString &repo)
 {
-    QProcess process;
-    const QString command = QStringLiteral("(Invoke-RestMethod -Uri 'https://api.github.com/repos/%1/releases/latest').tag_name").arg(repo);
-    process.start(QStringLiteral("powershell"),
-        {
-            QStringLiteral("-NoProfile"),
-            QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
-            QStringLiteral("-Command"),
-            command
-        });
-
-    if (!process.waitForFinished(3500)) {
-        process.kill();
-        process.waitForFinished(2000);
+    const NetworkFetchResult fetch = httpGet(
+        QUrl(QStringLiteral("https://api.github.com/repos/%1/releases/latest").arg(repo)),
+        {{QByteArray("Accept"), QByteArray("application/vnd.github+json")}},
+        6000);
+    if (!fetch.ok) {
         return {};
     }
 
-    return QString::fromUtf8(process.readAllStandardOutput()).trimmed();
+    const QJsonDocument doc = QJsonDocument::fromJson(fetch.body);
+    if (!doc.isObject()) {
+        return {};
+    }
+    return doc.object().value(QStringLiteral("tag_name")).toString().trimmed();
 }
 
 bool looksLatestEnough(const QString &installedVersion, const QString &latestTag)
@@ -1151,6 +1253,9 @@ QString BackendFacade::latestTaskToast() const { return m_assistantController->l
 QString BackendFacade::latestTaskToastTone() const { return m_assistantController->latestTaskToastTone(); }
 int BackendFacade::latestTaskToastTaskId() const { return m_assistantController->latestTaskToastTaskId(); }
 QString BackendFacade::latestTaskToastType() const { return m_assistantController->latestTaskToastType(); }
+QString BackendFacade::platformName() const { return PlatformRuntime::platformLabel(); }
+QVariantMap BackendFacade::platformCapabilities() const { return platformCapabilitiesToVariantMap(PlatformRuntime::currentCapabilities()); }
+bool BackendFacade::supportsAutoToolInstall() const { return PlatformRuntime::currentCapabilities().supportsAutoToolInstall; }
 QString BackendFacade::skillsRoot() const { return QDir::currentPath() + QStringLiteral("/skills"); }
 void BackendFacade::toggleOverlay() { m_overlayController->toggleOverlay(); }
 void BackendFacade::refreshModels() { m_assistantController->refreshModels(); }
@@ -1306,6 +1411,11 @@ void BackendFacade::saveSettings(
 
 bool BackendFacade::downloadVoiceModel(const QString &voiceId)
 {
+    if (!PlatformRuntime::currentCapabilities().supportsAutoToolInstall) {
+        setToolInstallStatus(autoInstallUnavailableMessage());
+        return false;
+    }
+
     const PiperVoicePreset *preset = findVoicePreset(voiceId);
     if (preset == nullptr) {
         setToolInstallStatus(QStringLiteral("Selected Piper voice is not recognized."));
@@ -1342,6 +1452,11 @@ bool BackendFacade::downloadVoiceModel(const QString &voiceId)
 
 bool BackendFacade::downloadWhisperModel(const QString &modelId)
 {
+    if (!PlatformRuntime::currentCapabilities().supportsAutoToolInstall) {
+        setToolInstallStatus(autoInstallUnavailableMessage());
+        return false;
+    }
+
     const WhisperModelPreset *preset = findWhisperModelPreset(modelId);
     if (preset == nullptr) {
         setToolInstallStatus(QStringLiteral("Selected Whisper model is not recognized."));
@@ -1404,13 +1519,9 @@ bool BackendFacade::completeInitialSetup(
 
     const QString resolvedWhisper = resolveExecutableSelection(
         whisperPath,
-        {
-            QStringLiteral("whisper-cli.exe"),
-            QStringLiteral("main.exe"),
-            QStringLiteral("whisper.exe")
-        });
+        PlatformRuntime::whisperExecutableNames());
     if (resolvedWhisper.isEmpty()) {
-        setToolInstallStatus(QStringLiteral("Whisper executable is invalid. Use whisper-cli.exe or main.exe from the whisper Release folder."));
+        setToolInstallStatus(whisperExecutableValidationMessage());
         return false;
     }
 
@@ -1422,21 +1533,17 @@ bool BackendFacade::completeInitialSetup(
 
     const QString resolvedPiper = resolveExecutableSelection(
         piperPath,
-        {
-            QStringLiteral("piper.exe")
-        });
+        PlatformRuntime::piperExecutableNames());
     if (resolvedPiper.isEmpty()) {
-        setToolInstallStatus(QStringLiteral("Piper executable is invalid. Select piper.exe."));
+        setToolInstallStatus(piperExecutableValidationMessage());
         return false;
     }
 
     const QString resolvedFfmpeg = resolveExecutableSelection(
         ffmpegPath,
-        {
-            QStringLiteral("ffmpeg.exe")
-        });
+        PlatformRuntime::ffmpegExecutableNames());
     if (resolvedFfmpeg.isEmpty()) {
-        setToolInstallStatus(QStringLiteral("FFmpeg executable is invalid. Select ffmpeg.exe."));
+        setToolInstallStatus(ffmpegExecutableValidationMessage());
         return false;
     }
 
@@ -1538,13 +1645,9 @@ bool BackendFacade::runSetupScenario(
 
     const QString resolvedWhisper = resolveExecutableSelection(
         whisperPath,
-        {
-            QStringLiteral("whisper-cli.exe"),
-            QStringLiteral("main.exe"),
-            QStringLiteral("whisper.exe")
-        });
+        PlatformRuntime::whisperExecutableNames());
     if (resolvedWhisper.isEmpty()) {
-        setToolInstallStatus(QStringLiteral("Whisper executable is invalid. Use whisper-cli.exe or main.exe from the whisper Release folder."));
+        setToolInstallStatus(whisperExecutableValidationMessage());
         return false;
     }
 
@@ -1556,21 +1659,17 @@ bool BackendFacade::runSetupScenario(
 
     const QString resolvedPiper = resolveExecutableSelection(
         piperPath,
-        {
-            QStringLiteral("piper.exe")
-        });
+        PlatformRuntime::piperExecutableNames());
     if (resolvedPiper.isEmpty()) {
-        setToolInstallStatus(QStringLiteral("Piper executable is invalid. Select piper.exe."));
+        setToolInstallStatus(piperExecutableValidationMessage());
         return false;
     }
 
     const QString resolvedFfmpeg = resolveExecutableSelection(
         ffmpegPath,
-        {
-            QStringLiteral("ffmpeg.exe")
-        });
+        PlatformRuntime::ffmpegExecutableNames());
     if (resolvedFfmpeg.isEmpty()) {
-        setToolInstallStatus(QStringLiteral("FFmpeg executable is invalid. Select ffmpeg.exe."));
+        setToolInstallStatus(ffmpegExecutableValidationMessage());
         return false;
     }
 
@@ -1651,28 +1750,21 @@ QVariantMap BackendFacade::evaluateSetupRequirements(
     const QString &ffmpegPath)
 {
     QVariantMap result;
+    const PlatformCapabilities capabilities = PlatformRuntime::currentCapabilities();
 
     const bool endpointOk = !endpoint.trimmed().isEmpty();
     const bool modelOk = !modelId.trimmed().isEmpty();
 
     const QString resolvedWhisper = resolveExecutableSelection(
         whisperPath,
-        {
-            QStringLiteral("whisper-cli.exe"),
-            QStringLiteral("main.exe"),
-            QStringLiteral("whisper.exe")
-        });
+        PlatformRuntime::whisperExecutableNames());
     const QString resolvedWhisperModel = resolveWhisperModelSelection(whisperModelPath);
     const QString resolvedPiper = resolveExecutableSelection(
         piperPath,
-        {
-            QStringLiteral("piper.exe")
-        });
+        PlatformRuntime::piperExecutableNames());
     const QString resolvedFfmpeg = resolveExecutableSelection(
         ffmpegPath,
-        {
-            QStringLiteral("ffmpeg.exe")
-        });
+        PlatformRuntime::ffmpegExecutableNames());
     const QString resolvedVoice = resolveVoiceModelSelection(voicePath);
 
     const bool whisperOk = !resolvedWhisper.isEmpty();
@@ -1687,12 +1779,15 @@ QVariantMap BackendFacade::evaluateSetupRequirements(
     const QString piperVersion = piperOk ? probeToolVersion(resolvedPiper, {QStringLiteral("--version")}) : QString{};
     const QString ffmpegVersion = ffmpegOk ? probeToolVersion(resolvedFfmpeg, {QStringLiteral("-version")}) : QString{};
 
-    const QString whisperLatest = whisperOk ? fetchLatestReleaseTag(QStringLiteral("ggerganov/whisper.cpp")) : QString{};
-    const QString piperLatest = piperOk ? fetchLatestReleaseTag(QStringLiteral("rhasspy/piper")) : QString{};
-    const QString ffmpegLatest = ffmpegOk ? fetchLatestReleaseTag(QStringLiteral("BtbN/FFmpeg-Builds")) : QString{};
+    const bool autoInstallSupported = capabilities.supportsAutoToolInstall;
+    const QString whisperLatest = (autoInstallSupported && whisperOk) ? fetchLatestReleaseTag(QStringLiteral("ggerganov/whisper.cpp")) : QString{};
+    const QString piperLatest = (autoInstallSupported && piperOk) ? fetchLatestReleaseTag(QStringLiteral("rhasspy/piper")) : QString{};
+    const QString ffmpegLatest = (autoInstallSupported && ffmpegOk) ? fetchLatestReleaseTag(QStringLiteral("BtbN/FFmpeg-Builds")) : QString{};
 
     result.insert(QStringLiteral("endpointOk"), endpointOk);
     result.insert(QStringLiteral("modelOk"), modelOk);
+    result.insert(QStringLiteral("platformName"), capabilities.platformLabel);
+    result.insert(QStringLiteral("supportsAutoToolInstall"), capabilities.supportsAutoToolInstall);
     result.insert(QStringLiteral("whisperOk"), whisperOk);
     result.insert(QStringLiteral("whisperModelOk"), whisperModelOk);
     result.insert(QStringLiteral("piperOk"), piperOk);
@@ -1760,6 +1855,10 @@ void BackendFacade::rescanTools()
 
 void BackendFacade::downloadTool(const QString &name)
 {
+    if (!PlatformRuntime::currentCapabilities().supportsAutoToolInstall) {
+        setToolInstallStatus(autoInstallUnavailableMessage());
+        return;
+    }
     if (m_toolManager != nullptr) {
         m_toolManager->downloadTool(name);
     }
@@ -1767,6 +1866,10 @@ void BackendFacade::downloadTool(const QString &name)
 
 void BackendFacade::downloadModel(const QString &name)
 {
+    if (!PlatformRuntime::currentCapabilities().supportsAutoToolInstall) {
+        setToolInstallStatus(autoInstallUnavailableMessage());
+        return;
+    }
     if (m_toolManager != nullptr) {
         m_toolManager->downloadModel(name);
     }
@@ -1774,6 +1877,10 @@ void BackendFacade::downloadModel(const QString &name)
 
 void BackendFacade::installAllTools()
 {
+    if (!PlatformRuntime::currentCapabilities().supportsAutoToolInstall) {
+        setToolInstallStatus(autoInstallUnavailableMessage());
+        return;
+    }
     if (m_toolManager != nullptr) {
         m_toolManager->installAll();
     }
@@ -1794,28 +1901,30 @@ bool BackendFacade::autoDetectVoiceTools()
     const QString appDataRoot = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     const QString toolsRoot = appDataRoot + QStringLiteral("/tools");
     const QString repoRoot = QDir::currentPath();
+    const QStringList whisperNames = PlatformRuntime::whisperExecutableNames();
+    const QStringList piperNames = PlatformRuntime::piperExecutableNames();
+    const QStringList ffmpegNames = PlatformRuntime::ffmpegExecutableNames();
     QDir().mkpath(appDataRoot + QStringLiteral("/tools"));
 
     QString whisper = resolveExecutable(
-        {QStringLiteral("whisper-cli"), QStringLiteral("whisper"), QStringLiteral("main")},
+        whisperNames,
         {
-            repoRoot + QStringLiteral("/tools/whisper/whisper-cli.exe"),
-            repoRoot + QStringLiteral("/tools/whisper/main.exe"),
-            appDataRoot + QStringLiteral("/tools/whisper/whisper-cli.exe"),
-            appDataRoot + QStringLiteral("/tools/whisper/main.exe"),
-            appDataRoot + QStringLiteral("/tools/whisper/Release/whisper-cli.exe"),
-            appDataRoot + QStringLiteral("/tools/whisper/Release/main.exe"),
-            appDataRoot + QStringLiteral("/tools/whisper/bin/whisper-cli.exe"),
-            appDataRoot + QStringLiteral("/tools/whisper/bin/main.exe")
+            repoRoot + QStringLiteral("/tools/whisper/") + whisperNames.value(0),
+            repoRoot + QStringLiteral("/tools/whisper/") + whisperNames.value(1),
+            appDataRoot + QStringLiteral("/tools/whisper/") + whisperNames.value(0),
+            appDataRoot + QStringLiteral("/tools/whisper/") + whisperNames.value(1),
+            appDataRoot + QStringLiteral("/tools/whisper/Release/") + whisperNames.value(0),
+            appDataRoot + QStringLiteral("/tools/whisper/Release/") + whisperNames.value(1),
+            appDataRoot + QStringLiteral("/tools/whisper/bin/") + whisperNames.value(0),
+            appDataRoot + QStringLiteral("/tools/whisper/bin/") + whisperNames.value(1)
         });
-    if (whisper.isEmpty()) {
-        whisper = findFileRecursive(toolsRoot, QStringLiteral("whisper-cli.exe"));
-    }
-    if (whisper.isEmpty()) {
-        whisper = findFileRecursive(toolsRoot, QStringLiteral("main.exe"));
-    }
-    if (whisper.isEmpty()) {
-        whisper = findFileRecursive(repoRoot + QStringLiteral("/tools"), QStringLiteral("whisper-cli.exe"));
+    for (const QString &name : whisperNames) {
+        if (whisper.isEmpty()) {
+            whisper = findFileRecursive(toolsRoot, name);
+        }
+        if (whisper.isEmpty()) {
+            whisper = findFileRecursive(repoRoot + QStringLiteral("/tools"), name);
+        }
     }
 
     QString whisperModel = m_settings->whisperModelPath();
@@ -1827,33 +1936,33 @@ bool BackendFacade::autoDetectVoiceTools()
     }
 
     QString piper = resolveExecutable(
-        {QStringLiteral("piper")},
+        piperNames,
         {
-            repoRoot + QStringLiteral("/tools/piper/piper.exe"),
-            appDataRoot + QStringLiteral("/tools/piper/piper.exe"),
-            appDataRoot + QStringLiteral("/tools/piper/bin/piper.exe"),
-            appDataRoot + QStringLiteral("/tools/piper/piper/piper.exe")
+            repoRoot + QStringLiteral("/tools/piper/") + piperNames.value(0),
+            appDataRoot + QStringLiteral("/tools/piper/") + piperNames.value(0),
+            appDataRoot + QStringLiteral("/tools/piper/bin/") + piperNames.value(0),
+            appDataRoot + QStringLiteral("/tools/piper/piper/") + piperNames.value(0)
         });
     if (piper.isEmpty()) {
-        piper = findFileRecursive(toolsRoot, QStringLiteral("piper.exe"));
+        piper = findFirstMatchingFileRecursive(toolsRoot, piperNames);
     }
     if (piper.isEmpty()) {
-        piper = findFileRecursive(repoRoot + QStringLiteral("/tools"), QStringLiteral("piper.exe"));
+        piper = findFirstMatchingFileRecursive(repoRoot + QStringLiteral("/tools"), piperNames);
     }
 
     QString ffmpeg = resolveExecutable(
-        {QStringLiteral("ffmpeg")},
+        ffmpegNames,
         {
-            repoRoot + QStringLiteral("/tools/ffmpeg/ffmpeg.exe"),
-            appDataRoot + QStringLiteral("/tools/ffmpeg/ffmpeg.exe"),
-            appDataRoot + QStringLiteral("/tools/ffmpeg/bin/ffmpeg.exe"),
-            appDataRoot + QStringLiteral("/tools/ffmpeg_build/bin/ffmpeg.exe")
+            repoRoot + QStringLiteral("/tools/ffmpeg/") + ffmpegNames.value(0),
+            appDataRoot + QStringLiteral("/tools/ffmpeg/") + ffmpegNames.value(0),
+            appDataRoot + QStringLiteral("/tools/ffmpeg/bin/") + ffmpegNames.value(0),
+            appDataRoot + QStringLiteral("/tools/ffmpeg_build/bin/") + ffmpegNames.value(0)
         });
     if (ffmpeg.isEmpty()) {
-        ffmpeg = findFileRecursive(toolsRoot, QStringLiteral("ffmpeg.exe"));
+        ffmpeg = findFirstMatchingFileRecursive(toolsRoot, ffmpegNames);
     }
     if (ffmpeg.isEmpty()) {
-        ffmpeg = findFileRecursive(repoRoot + QStringLiteral("/tools"), QStringLiteral("ffmpeg.exe"));
+        ffmpeg = findFirstMatchingFileRecursive(repoRoot + QStringLiteral("/tools"), ffmpegNames);
     }
 
     QString voiceModel = m_settings->piperVoiceModel();
@@ -1892,7 +2001,9 @@ bool BackendFacade::autoDetectVoiceTools()
 
     setToolInstallStatus(complete
             ? QStringLiteral("Voice tools detected and fields populated.")
-            : QStringLiteral("Some voice tools are still missing."));
+            : PlatformRuntime::currentCapabilities().supportsAutoToolInstall
+                ? QStringLiteral("Some voice tools are still missing.")
+                : QStringLiteral("Some voice tools are still missing. On Linux, point JARVIS to existing binaries and model files."));
 
     m_settings->save();
     emit settingsChanged();
@@ -1950,60 +2061,32 @@ QVariantMap BackendFacade::validateBraveSearchConnection(const QString &apiKey)
         };
     }
 
-    QString escapedKey = effectiveKey;
-    escapedKey.replace(QStringLiteral("'"), QStringLiteral("''"));
+    const NetworkFetchResult fetch = httpGet(
+        QUrl(QStringLiteral("https://api.search.brave.com/res/v1/web/search?q=connectivity+test&count=1")),
+        {
+            {QByteArray("Accept"), QByteArray("application/json")},
+            {QByteArray("X-Subscription-Token"), effectiveKey.toUtf8()}
+        },
+        18000);
 
-    const QString command = QStringLiteral(
-        "$headers=@{'Accept'='application/json';'X-Subscription-Token'='%1'}; "
-        "try { "
-        "  $resp=Invoke-RestMethod -Headers $headers -Uri 'https://api.search.brave.com/res/v1/web/search?q=connectivity+test&count=1' -Method Get -TimeoutSec 12; "
-        "  $count=0; "
-        "  if ($resp.web -and $resp.web.results) { $count=$resp.web.results.Count }; "
-        "  @{ok=$true;connected=$true;message='Connected to Brave Search API.';resultCount=$count} | ConvertTo-Json -Compress "
-        "} catch { "
-        "  $code=''; "
-        "  if ($_.Exception.Response -and $_.Exception.Response.StatusCode) { $code=[int]$_.Exception.Response.StatusCode }; "
-        "  @{ok=$false;connected=$false;message=$_.Exception.Message;statusCode=$code} | ConvertTo-Json -Compress "
-        "}")
-        .arg(escapedKey);
-
-    QProcess process;
-    process.start(QStringLiteral("powershell"),
-                  {QStringLiteral("-NoProfile"),
-                   QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
-                   QStringLiteral("-Command"),
-                   command});
-
-    if (!process.waitForFinished(18000)) {
-        process.kill();
-        process.waitForFinished(2000);
+    if (!fetch.ok) {
         return {
             {QStringLiteral("ok"), false},
             {QStringLiteral("connected"), false},
-            {QStringLiteral("message"), QStringLiteral("Validation timed out while contacting Brave Search API.")}
+            {QStringLiteral("message"), fetch.error.isEmpty() ? QStringLiteral("Brave Search API validation failed.") : fetch.error},
+            {QStringLiteral("statusCode"), fetch.statusCode}
         };
     }
 
-    const QString stdoutText = QString::fromUtf8(process.readAllStandardOutput()).trimmed();
-    const auto parsed = QJsonDocument::fromJson(stdoutText.toUtf8());
-    if (parsed.isObject()) {
-        return parsed.object().toVariantMap();
-    }
-
-    const bool processOk = process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
-    if (processOk) {
-        return {
-            {QStringLiteral("ok"), true},
-            {QStringLiteral("connected"), true},
-            {QStringLiteral("message"), QStringLiteral("Connected to Brave Search API.")}
-        };
-    }
-
-    const QString stderrText = QString::fromUtf8(process.readAllStandardError()).trimmed();
+    const QJsonDocument parsed = QJsonDocument::fromJson(fetch.body);
+    const int resultCount = parsed.isObject()
+        ? parsed.object().value(QStringLiteral("web")).toObject().value(QStringLiteral("results")).toArray().size()
+        : 0;
     return {
-        {QStringLiteral("ok"), false},
-        {QStringLiteral("connected"), false},
-        {QStringLiteral("message"), stderrText.isEmpty() ? QStringLiteral("Brave Search API validation failed.") : stderrText}
+        {QStringLiteral("ok"), true},
+        {QStringLiteral("connected"), true},
+        {QStringLiteral("message"), QStringLiteral("Connected to Brave Search API.")},
+        {QStringLiteral("resultCount"), resultCount}
     };
 }
 

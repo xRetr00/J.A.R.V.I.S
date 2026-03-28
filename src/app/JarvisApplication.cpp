@@ -25,6 +25,7 @@
 #include "gui/TaskViewModel.h"
 #include "logging/LoggingService.h"
 #include "overlay/OverlayController.h"
+#include "platform/PlatformRuntime.h"
 #include "settings/AppSettings.h"
 #include "settings/IdentityProfileService.h"
 #include "tools/ToolManager.h"
@@ -237,7 +238,8 @@ bool JarvisApplication::initialize()
     auto lastStartupIssue = QSharedPointer<QString>::create(QString());
     auto lastBlockedIssueNotified = QSharedPointer<QString>::create(QString());
     auto lastBlockedNotificationAtMs = QSharedPointer<qint64>::create(0);
-    const auto updateStartupPresentation = [this, startupAnnouncementSent, lastStartupIssue, lastBlockedIssueNotified, lastBlockedNotificationAtMs]() {
+    const PlatformCapabilities platformCapabilities = PlatformRuntime::currentCapabilities();
+    const auto updateStartupPresentation = [this, startupAnnouncementSent, lastStartupIssue, lastBlockedIssueNotified, lastBlockedNotificationAtMs, platformCapabilities]() {
         if (!m_settings->initialSetupCompleted()) {
             return;
         }
@@ -247,10 +249,13 @@ bool JarvisApplication::initialize()
         const QString issue = m_assistantController->startupBlockingIssue().trimmed();
         if (m_assistantController->startupReady()) {
             if (!*startupAnnouncementSent) {
-                qInfo() << "Startup complete. App is running in the tray. Use Ctrl+Alt+J or tray icon.";
+                const QString readyMessage = platformCapabilities.supportsGlobalHotkey
+                    ? QStringLiteral("Running in tray. Use Ctrl+Alt+J or the tray icon.")
+                    : QStringLiteral("Running in tray. Use the tray icon to toggle the overlay.");
+                qInfo() << "Startup complete. App is running in the tray." << readyMessage;
                 m_trayIcon->showMessage(
                     QStringLiteral("J.A.R.V.I.S"),
-                    QStringLiteral("Running in tray. Use Ctrl+Alt+J or the tray icon."),
+                    readyMessage,
                     QSystemTrayIcon::Information,
                     5000);
                 *startupAnnouncementSent = true;

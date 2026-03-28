@@ -429,6 +429,7 @@ Window {
 
                         Button {
                             text: "Download"
+                            visible: settingsVm.supportsAutoToolInstall
                             onClicked: settingsVm.downloadModel(settingsVm.intentModelPresetIds[intentModelCombo.currentIndex])
                         }
                     }
@@ -663,7 +664,9 @@ Window {
                     }
 
                     Text {
-                        text: "Local binaries, voice model, and speech tuning."
+                        text: settingsVm.supportsAutoToolInstall
+                              ? "Local binaries, voice model, and speech tuning."
+                              : "Local binaries, voice model, and speech tuning. Linux uses manual tool and model selection."
                         color: "#8099b8"
                         font.pixelSize: 14
                     }
@@ -715,6 +718,7 @@ Window {
                         }
                         Button {
                             text: "Download"
+                            visible: settingsVm.supportsAutoToolInstall
                             onClicked: {
                                 settingsVm.downloadWhisperModel(settingsVm.whisperModelPresetIds[whisperModelPresetCombo.currentIndex])
                                 settingsWindow.syncFieldsFromBackend()
@@ -732,6 +736,7 @@ Window {
                     }
                     RowLayout {
                         Layout.fillWidth: true
+                        visible: settingsVm.supportsAutoToolInstall
                         Rectangle { width: 10; height: 10; radius: 5; color: settingsWindow.statusColor(requirementStatus.whisperLatestOk === true) }
                         Text {
                             text: "Whisper latest: " + (requirementStatus.whisperLatestOk === true ? "Up to date" : "Check update")
@@ -755,6 +760,7 @@ Window {
                     }
                     RowLayout {
                         Layout.fillWidth: true
+                        visible: settingsVm.supportsAutoToolInstall
                         Rectangle { width: 10; height: 10; radius: 5; color: settingsWindow.statusColor(requirementStatus.piperLatestOk === true) }
                         Text {
                             text: "Piper latest: " + (requirementStatus.piperLatestOk === true ? "Up to date" : "Check update")
@@ -791,6 +797,7 @@ Window {
 
                         Button {
                             text: "Download"
+                            visible: settingsVm.supportsAutoToolInstall
                             onClicked: {
                                 if (voicePresetCombo.currentIndex >= 0 && voicePresetCombo.currentIndex < settingsVm.voicePresetIds.length) {
                                     const voiceId = settingsVm.voicePresetIds[voicePresetCombo.currentIndex]
@@ -804,7 +811,9 @@ Window {
                     }
 
                     Text {
-                        text: "Select from official Piper voices, then download to switch instantly."
+                        text: settingsVm.supportsAutoToolInstall
+                              ? "Select from official Piper voices, then download to switch instantly."
+                              : "Select any compatible Piper voice model already installed on this system."
                         color: "#9ab0ca"
                         font.pixelSize: 12
                         wrapMode: Text.Wrap
@@ -824,6 +833,7 @@ Window {
                     }
                     RowLayout {
                         Layout.fillWidth: true
+                        visible: settingsVm.supportsAutoToolInstall
                         Rectangle { width: 10; height: 10; radius: 5; color: settingsWindow.statusColor(requirementStatus.ffmpegLatestOk === true) }
                         Text {
                             text: "FFmpeg latest: " + (requirementStatus.ffmpegLatestOk === true ? "Up to date" : "Check update")
@@ -917,7 +927,9 @@ Window {
                     }
 
                     Text {
-                        text: "The app uses sherpa-onnx only for wake detection."
+                        text: settingsVm.supportsAutoToolInstall
+                              ? "The app uses sherpa-onnx only for wake detection."
+                              : "The app uses sherpa-onnx only for wake detection. On Linux, configure wake assets manually if you want wake-word support."
                         color: "#9ab0ca"
                         font.pixelSize: 12
                         wrapMode: Text.Wrap
@@ -1084,7 +1096,9 @@ Window {
                     }
 
                     Text {
-                        text: "Auto-detected runtimes, models, and downloadable assets."
+                        text: settingsVm.supportsAutoToolInstall
+                              ? "Auto-detected runtimes, models, and downloadable assets."
+                              : "Detected runtimes and models. Automatic downloads stay Windows-only in this release."
                         color: "#8099b8"
                         font.pixelSize: 14
                     }
@@ -1100,7 +1114,11 @@ Window {
                                 settingsWindow.refreshRequirementStatus()
                             }
                         }
-                        Button { text: "Install All"; onClicked: settingsVm.installAllTools() }
+                        Button {
+                            text: "Install All"
+                            visible: settingsVm.supportsAutoToolInstall
+                            onClicked: settingsVm.installAllTools()
+                        }
                         Item { Layout.fillWidth: true }
                         Text { text: settingsVm.toolsRoot; color: "#7f97b7"; font.pixelSize: 11; Layout.fillWidth: true; horizontalAlignment: Text.AlignRight }
                     }
@@ -1115,7 +1133,7 @@ Window {
 
                     ProgressBar {
                         Layout.fillWidth: true
-                        visible: settingsVm.toolDownloadPercent >= 0
+                        visible: settingsVm.supportsAutoToolInstall && settingsVm.toolDownloadPercent >= 0
                         from: 0
                         to: 100
                         value: settingsVm.toolDownloadPercent >= 0 ? settingsVm.toolDownloadPercent : 0
@@ -1222,4 +1240,3 @@ Window {
         }
     }
 }
-

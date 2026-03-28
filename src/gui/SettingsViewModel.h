@@ -80,6 +80,9 @@ class SettingsViewModel : public QObject
     Q_PROPERTY(QVariantList agentTraceEntries READ agentTraceEntries NOTIFY agentTraceChanged)
     Q_PROPERTY(QVariantList availableAgentTools READ availableAgentTools NOTIFY toolStatusesChanged)
     Q_PROPERTY(QVariantList installedSkills READ installedSkills NOTIFY toolStatusesChanged)
+    Q_PROPERTY(QString platformName READ platformName NOTIFY settingsChanged)
+    Q_PROPERTY(QVariantMap platformCapabilities READ platformCapabilities NOTIFY settingsChanged)
+    Q_PROPERTY(bool supportsAutoToolInstall READ supportsAutoToolInstall NOTIFY settingsChanged)
     Q_PROPERTY(QString skillsRoot READ skillsRoot NOTIFY toolStatusesChanged)
 
 public:
@@ -155,6 +158,9 @@ public:
     QVariantList agentTraceEntries() const;
     QVariantList availableAgentTools() const;
     QVariantList installedSkills() const;
+    QString platformName() const;
+    QVariantMap platformCapabilities() const;
+    bool supportsAutoToolInstall() const;
     QString skillsRoot() const;
 
     Q_INVOKABLE QVariantMap evaluateSetupRequirements(const QString &endpoint,

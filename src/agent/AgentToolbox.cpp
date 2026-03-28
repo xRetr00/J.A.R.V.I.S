@@ -3,25 +3,32 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QDirIterator>
+#include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
-#include <QProcess>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QRegularExpression>
 #include <QStandardPaths>
+#include <QTextStream>
+#include <QTimer>
 #include <QUrl>
 
 #include "core/ComputerControl.h"
 #include "logging/LoggingService.h"
 #include "memory/MemoryStore.h"
+#include "platform/PlatformRuntime.h"
 #include "settings/AppSettings.h"
 #include "skills/SkillStore.h"
 
 namespace {
-QString quotePowerShell(QString value)
+struct NetworkFetchResult
 {
-    value.replace(QStringLiteral("'"), QStringLiteral("''"));
-    return QStringLiteral("'%1'").arg(value);
-}
+    bool ok = false;
+    QString error;
+    QByteArray body;
+};
 
 QString canonicalPath(const QString &path)
 {
@@ -68,15 +75,48 @@ QString extractString(const nlohmann::json &args, const char *key)
         : QString{};
 }
 
-bool waitForProcess(QProcess &process, int timeoutMs)
+NetworkFetchResult httpGet(const QUrl &url,
+                           const QList<QPair<QByteArray, QByteArray>> &headers = {},
+                           int timeoutMs = 20000)
 {
-    if (process.waitForFinished(timeoutMs)) {
-        return process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
+    NetworkFetchResult result;
+    if (!url.isValid()) {
+        result.error = QStringLiteral("Invalid URL.");
+        return result;
     }
 
-    process.kill();
-    process.waitForFinished(2000);
-    return false;
+    QNetworkAccessManager manager;
+    QNetworkRequest request(url);
+    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("JARVIS/1.0"));
+    for (const auto &header : headers) {
+        request.setRawHeader(header.first, header.second);
+    }
+
+    QEventLoop loop;
+    QTimer timer;
+    timer.setSingleShot(true);
+    QNetworkReply *reply = manager.get(request);
+    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+    timer.start(timeoutMs);
+    loop.exec();
+
+    if (timer.isActive()) {
+        timer.stop();
+    } else {
+        reply->abort();
+        result.error = QStringLiteral("Request timed out.");
+        reply->deleteLater();
+        return result;
+    }
+
+    result.body = reply->readAll();
+    result.ok = reply->error() == QNetworkReply::NoError;
+    if (!result.ok) {
+        result.error = reply->errorString();
+    }
+    reply->deleteLater();
+    return result;
 }
 }
 
@@ -91,7 +131,7 @@ AgentToolbox::AgentToolbox(AppSettings *settings, MemoryStore *memoryStore, Skil
 
 QList<AgentToolSpec> AgentToolbox::builtInTools() const
 {
-    return {
+    QList<AgentToolSpec> tools = {
         {QStringLiteral("file_read"), QStringLiteral("Read a UTF-8 text file from a readable path."),
          schemaObject({{"path", {{"type", "string"}}}}, {"path"})},
         {QStringLiteral("file_search"), QStringLiteral("Search for text under a readable directory."),
@@ -118,10 +158,6 @@ QList<AgentToolSpec> AgentToolbox::builtInTools() const
          schemaObject({{"query", {{"type", "string"}}}}, {"query"})},
         {QStringLiteral("web_fetch"), QStringLiteral("Fetch the contents of a public URL."),
          schemaObject({{"url", {{"type", "string"}}}}, {"url"})},
-        {QStringLiteral("computer_list_apps"), QStringLiteral("List installed Windows apps from the Start menu, optionally filtered by name."),
-         schemaObject({{"query", {{"type", "string"}}}, {"limit", {{"type", "integer"}}}}, {})},
-        {QStringLiteral("computer_open_app"), QStringLiteral("Open an installed Windows app, a shortcut, or an executable path."),
-         schemaObject({{"target", {{"type", "string"}}}, {"arguments", {{"type", "array"}, {"items", {{"type", "string"}}}}}}, {"target"})},
         {QStringLiteral("computer_open_url"), QStringLiteral("Open a URL in the system default browser or handler. Use this for browser sites like YouTube."),
          schemaObject({{"url", {{"type", "string"}}}}, {"url"})},
         {QStringLiteral("computer_write_file"), QStringLiteral("Create a UTF-8 text file on the computer. Relative paths default to the Desktop unless base_dir is provided."),
@@ -130,11 +166,6 @@ QList<AgentToolSpec> AgentToolbox::builtInTools() const
                        {"base_dir", {{"type", "string"}}},
                        {"overwrite", {{"type", "boolean"}}}},
                       {"path", "content"})},
-        {QStringLiteral("computer_set_timer"), QStringLiteral("Set a local Windows timer that will show a reminder when it finishes."),
-         schemaObject({{"duration_seconds", {{"type", "integer"}}},
-                       {"title", {{"type", "string"}}},
-                       {"message", {{"type", "string"}}}},
-                      {"duration_seconds"})},
         {QStringLiteral("skill_list"), QStringLiteral("List installed declarative skills."),
          schemaObject({})},
         {QStringLiteral("skill_install"), QStringLiteral("Install a skill from a GitHub repo URL or zip URL."),
@@ -142,6 +173,25 @@ QList<AgentToolSpec> AgentToolbox::builtInTools() const
         {QStringLiteral("skill_create"), QStringLiteral("Create a new local skill scaffold."),
          schemaObject({{"id", {{"type", "string"}}}, {"name", {{"type", "string"}}}, {"description", {{"type", "string"}}}}, {"id", "name", "description"})}
     };
+
+    const PlatformCapabilities capabilities = PlatformRuntime::currentCapabilities();
+    if (capabilities.supportsAppListing) {
+        tools.push_back({QStringLiteral("computer_list_apps"), QStringLiteral("List installed apps from the desktop environment, optionally filtered by name."),
+                         schemaObject({{"query", {{"type", "string"}}}, {"limit", {{"type", "integer"}}}}, {})});
+    }
+    if (capabilities.supportsAppLaunch) {
+        tools.push_back({QStringLiteral("computer_open_app"), QStringLiteral("Open an installed app, a shortcut, or an executable path."),
+                         schemaObject({{"target", {{"type", "string"}}}, {"arguments", {{"type", "array"}, {"items", {{"type", "string"}}}}}}, {"target"})});
+    }
+    if (capabilities.supportsTimerNotification) {
+        tools.push_back({QStringLiteral("computer_set_timer"), QStringLiteral("Set a local timer that will show a reminder when it finishes."),
+                         schemaObject({{"duration_seconds", {{"type", "integer"}}},
+                                       {"title", {{"type", "string"}}},
+                                       {"message", {{"type", "string"}}}},
+                                      {"duration_seconds"})});
+    }
+
+    return tools;
 }
 
 AgentToolResult AgentToolbox::execute(const AgentToolCall &call)
@@ -339,13 +389,15 @@ AgentToolResult AgentToolbox::executeLogTail(const AgentToolCall &call, const nl
         return failedResult(call, QStringLiteral("Log path is not readable."));
     }
 
-    const QString command = QStringLiteral("Get-Content %1 -Tail %2").arg(quotePowerShell(path)).arg(lines);
-    QProcess process;
-    process.start(QStringLiteral("powershell"), {QStringLiteral("-NoProfile"), QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"), QStringLiteral("-Command"), command});
-    if (!waitForProcess(process, 10000)) {
+    const QString content = readTextFile(path, 64000);
+    if (content.isEmpty()) {
         return failedResult(call, QStringLiteral("Failed to read the log tail."));
     }
-    return successResult(call, QString::fromUtf8(process.readAllStandardOutput()));
+    const QStringList lineList = content.split(QRegularExpression(QStringLiteral("\r?\n")), Qt::KeepEmptyParts);
+    const qsizetype lineCount = lineList.size();
+    const qsizetype requestedLines = std::max<qsizetype>(1, lines);
+    const qsizetype startIndex = std::max<qsizetype>(0, lineCount - requestedLines);
+    return successResult(call, lineList.mid(startIndex).join(QStringLiteral("\n")));
 }
 
 AgentToolResult AgentToolbox::executeLogSearch(const AgentToolCall &call, const nlohmann::json &args)
@@ -356,17 +408,38 @@ AgentToolResult AgentToolbox::executeLogSearch(const AgentToolCall &call, const 
         return failedResult(call, QStringLiteral("Log search path is not readable."));
     }
 
-    const QString command = QFileInfo(path).isDir()
-        ? QStringLiteral("Get-ChildItem -Path %1 -Recurse | Select-String -Pattern %2")
-            .arg(quotePowerShell(path), quotePowerShell(query))
-        : QStringLiteral("Select-String -Path %1 -Pattern %2")
-            .arg(quotePowerShell(path), quotePowerShell(query));
-    QProcess process;
-    process.start(QStringLiteral("powershell"), {QStringLiteral("-NoProfile"), QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"), QStringLiteral("-Command"), command});
-    if (!waitForProcess(process, 10000)) {
+    QStringList matches;
+    auto searchFile = [&matches, &query](const QString &filePath) {
+        QFile file(filePath);
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            return;
+        }
+
+        QTextStream stream(&file);
+        int lineNumber = 0;
+        while (!stream.atEnd() && matches.size() < 150) {
+            const QString line = stream.readLine();
+            ++lineNumber;
+            if (line.contains(query, Qt::CaseInsensitive)) {
+                matches.push_back(QStringLiteral("%1:%2: %3").arg(QDir::cleanPath(filePath)).arg(lineNumber).arg(line.trimmed()));
+            }
+        }
+    };
+
+    const QFileInfo info(path);
+    if (info.isDir()) {
+        QDirIterator it(path, QDir::Files | QDir::Readable, QDirIterator::Subdirectories);
+        while (it.hasNext() && matches.size() < 150) {
+            searchFile(it.next());
+        }
+    } else {
+        searchFile(path);
+    }
+
+    if (matches.isEmpty()) {
         return failedResult(call, QStringLiteral("Failed to search the log."));
     }
-    return successResult(call, QString::fromUtf8(process.readAllStandardOutput()));
+    return successResult(call, matches.join(QStringLiteral("\n")));
 }
 
 AgentToolResult AgentToolbox::executeAiLogRead(const AgentToolCall &call, const nlohmann::json &args)
@@ -396,43 +469,39 @@ AgentToolResult AgentToolbox::executeWebSearch(const AgentToolCall &call, const 
             apiKey = qEnvironmentVariable("BRAVE_SEARCH_API_KEY");
         }
         if (!apiKey.isEmpty()) {
-            QProcess process;
-            process.start(QStringLiteral("powershell"),
-                          {QStringLiteral("-NoProfile"), QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"), QStringLiteral("-Command"),
-                           QStringLiteral("$headers=@{'Accept'='application/json';'X-Subscription-Token'=%1}; "
-                                          "(Invoke-RestMethod -Headers $headers -Uri %2) | ConvertTo-Json -Depth 6")
-                               .arg(quotePowerShell(apiKey),
-                                    quotePowerShell(QStringLiteral("https://api.search.brave.com/res/v1/web/search?q=%1")
-                                                        .arg(QString::fromUtf8(QUrl::toPercentEncoding(query)))))});
-            if (waitForProcess(process, 20000)) {
-                return successResult(call, QString::fromUtf8(process.readAllStandardOutput()));
+            const NetworkFetchResult fetch = httpGet(
+                QUrl(QStringLiteral("https://api.search.brave.com/res/v1/web/search?q=%1")
+                         .arg(QString::fromUtf8(QUrl::toPercentEncoding(query)))),
+                {
+                    {QByteArray("Accept"), QByteArray("application/json")},
+                    {QByteArray("X-Subscription-Token"), apiKey.toUtf8()}
+                },
+                20000);
+            if (fetch.ok) {
+                return successResult(call, QString::fromUtf8(fetch.body));
             }
         }
     }
 
-    QProcess process;
-    process.start(QStringLiteral("powershell"),
-                  {QStringLiteral("-NoProfile"), QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"), QStringLiteral("-Command"),
-                   QStringLiteral("(Invoke-RestMethod -Uri %1) | ConvertTo-Json -Depth 6")
-                       .arg(quotePowerShell(QStringLiteral("https://api.duckduckgo.com/?q=%1&format=json&no_html=1&skip_disambig=1")
-                                                .arg(QString::fromUtf8(QUrl::toPercentEncoding(query)))))});
-    if (!waitForProcess(process, 20000)) {
+    const NetworkFetchResult fetch = httpGet(
+        QUrl(QStringLiteral("https://api.duckduckgo.com/?q=%1&format=json&no_html=1&skip_disambig=1")
+                 .arg(QString::fromUtf8(QUrl::toPercentEncoding(query)))),
+        {},
+        20000);
+    if (!fetch.ok) {
         return failedResult(call, QStringLiteral("Web search failed."));
     }
-    return successResult(call, QString::fromUtf8(process.readAllStandardOutput()));
+    return successResult(call, QString::fromUtf8(fetch.body));
 }
 
 AgentToolResult AgentToolbox::executeWebFetch(const AgentToolCall &call, const nlohmann::json &args)
 {
     const QString url = extractString(args, "url");
-    QProcess process;
-    process.start(QStringLiteral("powershell"),
-                  {QStringLiteral("-NoProfile"), QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"), QStringLiteral("-Command"),
-                   QStringLiteral("(Invoke-WebRequest -UseBasicParsing -Uri %1).Content").arg(quotePowerShell(url))});
-    if (!waitForProcess(process, 30000)) {
+    const NetworkFetchResult fetch = httpGet(QUrl(url), {}, 30000);
+    if (!fetch.ok) {
         return failedResult(call, QStringLiteral("Web fetch failed."));
     }
-    QString output = QString::fromUtf8(process.readAllStandardOutput());
+    QString output = QString::fromUtf8(fetch.body);
     if (output.size() > 12000) {
         output = output.left(12000) + QStringLiteral("\n...[truncated]");
     }

@@ -1,5 +1,7 @@
 #include "skills/SkillStore.h"
 
+#include "platform/PlatformRuntime.h"
+
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
@@ -126,6 +128,13 @@ bool SkillStore::createSkill(const QString &id, const QString &name, const QStri
 
 bool SkillStore::installSkill(const QString &sourceUrl, QString *error) const
 {
+    if (!PlatformRuntime::isWindows()) {
+        if (error) {
+            *error = QStringLiteral("Skill download/install is currently only supported on Windows.");
+        }
+        return false;
+    }
+
     QTemporaryDir tempDir;
     if (!tempDir.isValid()) {
         if (error) {

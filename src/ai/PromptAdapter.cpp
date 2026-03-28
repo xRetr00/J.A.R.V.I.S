@@ -7,6 +7,7 @@
 #include <QStandardPaths>
 
 #include "ai/PromptAdapter.h"
+#include "platform/PlatformRuntime.h"
 
 namespace {
 QString profilePreferencesText(const UserProfile &userProfile)
@@ -103,10 +104,10 @@ QString toolUseGuidance(const QString &toolName)
         return QStringLiteral("you already have a URL and need its contents");
     }
     if (toolName == QStringLiteral("computer_list_apps")) {
-        return QStringLiteral("the user asks which Windows apps are installed or available to open");
+        return QStringLiteral("the user asks which desktop apps are installed or available to open");
     }
     if (toolName == QStringLiteral("computer_open_app")) {
-        return QStringLiteral("the user asks to open an installed Windows app, executable, or shortcut");
+        return QStringLiteral("the user asks to open an installed app, executable, or shortcut");
     }
     if (toolName == QStringLiteral("computer_open_url")) {
         return QStringLiteral("the user asks to open a website, browser page, or YouTube");
@@ -528,6 +529,7 @@ QString PromptAdapter::buildWorkspaceContext(const QString &workspaceRoot) const
 {
     const QString cleanWorkspace = QDir::cleanPath(workspaceRoot);
     const QString appDataPath = QDir::cleanPath(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation));
+    const PlatformCapabilities capabilities = PlatformRuntime::currentCapabilities();
     QString section = QStringLiteral("<workspace>");
     section += QStringLiteral("\nRoot: %1").arg(cleanWorkspace);
     section += QStringLiteral("\nReadable paths:");
@@ -541,8 +543,12 @@ QString PromptAdapter::buildWorkspaceContext(const QString &workspaceRoot) const
     section += QStringLiteral("\nComputer control:");
     section += QStringLiteral("\n- computer_write_file can create a text file in Desktop, Documents, Downloads, or another explicit absolute path.");
     section += QStringLiteral("\n- computer_open_url can open browser pages like YouTube.");
-    section += QStringLiteral("\n- computer_open_app can launch installed Windows apps, shortcuts, or executables.");
-    section += QStringLiteral("\n- computer_set_timer can schedule a local timer notification.");
+    if (capabilities.supportsAppLaunch) {
+        section += QStringLiteral("\n- computer_open_app can launch installed apps, shortcuts, or executables.");
+    }
+    if (capabilities.supportsTimerNotification) {
+        section += QStringLiteral("\n- computer_set_timer can schedule a local timer notification.");
+    }
     section += QStringLiteral("\nRules:");
     section += QStringLiteral("\n- Reads can target absolute paths the user names.");
     section += QStringLiteral("\n- file_write and file_patch stay inside the writable paths listed above.");

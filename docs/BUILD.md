@@ -5,7 +5,9 @@
 - Qt 6.6+ with `Qt Quick`, `Qt Multimedia`, and `Qt SVG`
 - CMake 3.27+
 - Ninja
-- Windows toolchain for Qt builds (`MinGW` or `MSVC`)
+- A Qt kit that matches your compiler toolchain:
+  - Windows: MSVC x64 with a matching Qt `msvc` desktop kit
+  - Linux: `gcc`/`clang` with a matching Qt Linux desktop kit
 - Runtime tools configured in Settings for full voice pipeline:
   - `whisper.cpp` executable
   - `Piper` executable and voice model
@@ -45,6 +47,13 @@ For the Qt kit currently installed on this machine, this working MSVC configure 
 cmd /c "call \"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat\" && cmake -S d:\J.A.R.V.I.S -B d:\J.A.R.V.I.S\build-msvc -G Ninja -DCMAKE_PREFIX_PATH=C:\Qt\6.10.2\msvc2022_64"
 ```
 
+Linux configure presets:
+
+```bash
+cmake --preset linux-debug
+cmake --preset linux-release
+```
+
 ## Build
 
 ```powershell
@@ -66,6 +75,15 @@ build.bat notest
 build.bat debug
 ```
 
+Linux helper script:
+
+```bash
+./build.sh
+./build.sh debug
+./build.sh release clean
+./build.sh notest
+```
+
 Notes:
 
 - `build.bat` defaults to Release in `build-release`.
@@ -76,6 +94,12 @@ For the verified local MSVC build directory:
 
 ```powershell
 cmd /c "call \"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat\" && cmake --build d:\J.A.R.V.I.S\build-msvc --parallel"
+```
+
+Linux build via preset:
+
+```bash
+cmake --build --preset linux-release --parallel
 ```
 
 ## Test
@@ -96,13 +120,20 @@ For the verified local MSVC build directory:
 cmd /c "call \"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat\" && ctest --test-dir d:\J.A.R.V.I.S\build-msvc --output-on-failure"
 ```
 
+Linux test example:
+
+```bash
+ctest --test-dir build-linux-release --output-on-failure
+```
+
 ## Runtime notes
 
 - LM Studio should expose the OpenAI-compatible API on `http://localhost:1234`
 - The app discovers models from `/v1/models`
 - Voice generation starts only when sentence boundaries are detected from streamed output
-- The application builds and deploys `jarvis_sherpa_wake_helper.exe` next to `jarvis.exe`
+- The application builds and deploys `jarvis_sherpa_wake_helper` next to the main `jarvis` executable, using the platform's executable suffix when applicable
 - `windeployqt` runs as a post-build step on Windows to stage Qt runtime files
+- On Linux, automatic tool downloads are disabled in v1; configure existing `whisper`, `piper`, `ffmpeg`, and optional wake assets manually
 - The default premium voice profile targets a calm English delivery:
   - preferred Piper voice families: `en_GB-*` medium voices, especially `en_GB-alba-medium`
   - enforced speed range: `0.85` to `0.92`
@@ -110,3 +141,16 @@ cmd /c "call \"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC
   - FFmpeg post-processing adds mild EQ, light reverb, compression, and limiting
 - Identity is loaded from `config/identity.json`
 - User profile is loaded from `config/user_profile.json`
+
+## Linux AppImage
+
+The repo includes an Ubuntu-focused AppImage packaging helper:
+
+```bash
+./scripts/package_linux_appimage.sh
+```
+
+Requirements:
+
+- `linuxdeployqt` available on `PATH` or exposed via `LINUXDEPLOYQT_BIN`
+- a Qt 6 runtime/toolkit compatible with the target Ubuntu environment

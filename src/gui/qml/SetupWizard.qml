@@ -362,6 +362,7 @@ Window {
 
                             Button {
                                 text: "Download"
+                                visible: settingsVm.supportsAutoToolInstall
                                 onClicked: settingsVm.downloadModel(settingsVm.intentModelPresetIds[intentModelCombo.currentIndex])
                             }
                         }
@@ -404,7 +405,20 @@ Window {
                         RowLayout {
                             Layout.fillWidth: true
                             Button { text: "Auto Detect"; onClicked: { settingsVm.autoDetectVoiceTools(); wizard.syncVoiceFieldsFromBackend() } }
-                            Button { text: "Install Stack"; onClicked: settingsVm.installAllTools() }
+                            Button {
+                                text: "Install Stack"
+                                visible: settingsVm.supportsAutoToolInstall
+                                onClicked: settingsVm.installAllTools()
+                            }
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            visible: !settingsVm.supportsAutoToolInstall
+                            text: "Linux setup uses manual dependency selection. Point JARVIS to installed `whisper`, `piper`, `ffmpeg`, and model files."
+                            color: "#9ab0ca"
+                            font.pixelSize: 12
+                            wrapMode: Text.Wrap
                         }
 
                         Text { text: "Whisper model"; color: "#d0e3f5"; font.pixelSize: 13 }
@@ -427,6 +441,7 @@ Window {
                             }
                             Button {
                                 text: "Download"
+                                visible: settingsVm.supportsAutoToolInstall
                                 onClicked: {
                                     settingsVm.downloadWhisperModel(settingsVm.whisperModelPresetIds[whisperModelPresetCombo.currentIndex])
                                     wizard.syncVoiceFieldsFromBackend()
@@ -467,6 +482,7 @@ Window {
 
                             Button {
                                 text: "Download"
+                                visible: settingsVm.supportsAutoToolInstall
                                 onClicked: {
                                     settingsVm.setSelectedVoicePresetId(settingsVm.voicePresetIds[voicePresetCombo.currentIndex])
                                     settingsVm.downloadVoiceModel(settingsVm.voicePresetIds[voicePresetCombo.currentIndex])
@@ -564,8 +580,10 @@ Window {
                         TextField { Layout.fillWidth: true; readOnly: true; text: "sherpa-onnx" }
 
                         Text {
-                            text: "Model status: Bundled sherpa runtime"
-                            color: "#69d39a"
+                            text: settingsVm.supportsAutoToolInstall
+                                  ? "Model status: Managed runtime flow"
+                                  : "Model status: Optional manual runtime"
+                            color: settingsVm.supportsAutoToolInstall ? "#69d39a" : "#f0c56a"
                             font.pixelSize: 14
                         }
 
@@ -577,7 +595,9 @@ Window {
                         }
 
                         Text {
-                            text: "The wake engine is managed automatically from the installed local tool stack."
+                            text: settingsVm.supportsAutoToolInstall
+                                  ? "The wake engine is managed automatically from the installed local tool stack."
+                                  : "On Linux, wake support stays optional until `sherpa-onnx` and the wake model files are configured manually."
                             color: "#7f97b7"
                             font.pixelSize: 13
                             wrapMode: Text.Wrap
@@ -587,7 +607,9 @@ Window {
                             Layout.fillWidth: true
                             text: settingsVm.toolInstallStatus.length > 0
                                   ? settingsVm.toolInstallStatus
-                                  : "Use Auto Detect after installing tools so the current local paths are populated."
+                                  : (settingsVm.supportsAutoToolInstall
+                                      ? "Use Auto Detect after installing tools so the current local paths are populated."
+                                      : "Use Auto Detect after installing tools so JARVIS can resolve the current Linux paths.")
                             color: "#9ab0ca"
                             font.pixelSize: 12
                             wrapMode: Text.Wrap
@@ -709,7 +731,11 @@ Window {
                             Layout.fillWidth: true
                             Button { text: "Rescan"; onClicked: settingsVm.rescanTools() }
                             Button { text: "Auto Detect"; onClicked: { settingsVm.autoDetectVoiceTools(); wizard.syncVoiceFieldsFromBackend() } }
-                            Button { text: "Install All"; onClicked: settingsVm.installAllTools() }
+                            Button {
+                                text: "Install All"
+                                visible: settingsVm.supportsAutoToolInstall
+                                onClicked: settingsVm.installAllTools()
+                            }
                         }
 
                         Text {
@@ -722,7 +748,7 @@ Window {
 
                         ProgressBar {
                             Layout.fillWidth: true
-                            visible: settingsVm.toolDownloadPercent >= 0
+                            visible: settingsVm.supportsAutoToolInstall && settingsVm.toolDownloadPercent >= 0
                             from: 0
                             to: 100
                             value: settingsVm.toolDownloadPercent >= 0 ? settingsVm.toolDownloadPercent : 0
@@ -829,4 +855,3 @@ Window {
         }
     }
 }
-

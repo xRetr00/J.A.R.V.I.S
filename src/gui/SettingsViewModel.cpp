@@ -372,6 +372,21 @@ QVariantList SettingsViewModel::installedSkills() const
     return m_backend ? m_backend->installedSkills() : QVariantList();
 }
 
+QString SettingsViewModel::platformName() const
+{
+    return m_backend ? m_backend->platformName() : QString();
+}
+
+QVariantMap SettingsViewModel::platformCapabilities() const
+{
+    return m_backend ? m_backend->platformCapabilities() : QVariantMap();
+}
+
+bool SettingsViewModel::supportsAutoToolInstall() const
+{
+    return m_backend && m_backend->supportsAutoToolInstall();
+}
+
 QString SettingsViewModel::skillsRoot() const
 {
     return m_backend ? m_backend->skillsRoot() : QString();
