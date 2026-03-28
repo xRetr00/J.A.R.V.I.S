@@ -353,6 +353,12 @@ normalize_rnnoise_model_data() {
     mv -f "${rnnoise_root}/rnnoise_data.h" "${rnnoise_root}/src/rnnoise_data.h"
     mv -f "${rnnoise_root}/rnnoise_data.c" "${rnnoise_root}/src/rnnoise_data.c"
   fi
+
+  # Recover from previous buggy runs where download_model.sh executed from repo root.
+  if [[ -f "${ROOT}/rnnoise_data.h" && -f "${ROOT}/rnnoise_data.c" ]]; then
+    mv -f "${ROOT}/rnnoise_data.h" "${rnnoise_root}/src/rnnoise_data.h"
+    mv -f "${ROOT}/rnnoise_data.c" "${rnnoise_root}/src/rnnoise_data.c"
+  fi
 }
 
 ensure_rnnoise_model_data() {
@@ -394,7 +400,10 @@ outfile="$(basename "${url}")"
 curl -fL --retry 3 --connect-timeout 15 -o "${outfile}" "${url}"
 EOF
     chmod +x "${curl_wrapper}"
-    PATH="${rnnoise_root}:$PATH" sh "${rnnoise_root}/download_model.sh"
+    (
+      cd "${rnnoise_root}"
+      PATH="${rnnoise_root}:$PATH" sh ./download_model.sh
+    )
     rm -f "${curl_wrapper}"
   else
     (cd "${rnnoise_root}" && sh ./download_model.sh)
