@@ -24,6 +24,18 @@ pip install -r requirements.txt
 python main.py --server-url ws://MAIN-PC-IP:8765/vision --node-id laptop-vision-node
 ```
 
+Interactive launcher:
+
+```bash
+./run_vision_node.sh
+```
+
+Non-interactive launcher:
+
+```bash
+./run_vision_node.sh --server-url ws://MAIN-PC-IP:8765/vision --debug-ui
+```
+
 Debug mode with overlays:
 
 ```bash
@@ -42,6 +54,7 @@ Useful flags:
 - `--gestures-min-confidence 0.70`
 - `--delta-threshold 0.12`
 - `--debug-ui`
+- `./run_vision_node.sh --non-interactive --server-url ws://MAIN-PC-IP:8765/vision`
 
 ## Notes
 
@@ -49,3 +62,4 @@ Useful flags:
 - The laptop node reconnects automatically if the network drops or the main PC restarts.
 - Semantic snapshots are confidence-filtered, delta-filtered, and rate-limited before send; this node does not stream raw frames.
 - The debug UI is optional and headless mode remains the default.
+- `run_vision_node.sh` can create a local virtualenv, install missing requirements, and prompt for missing required inputs such as the server URL.

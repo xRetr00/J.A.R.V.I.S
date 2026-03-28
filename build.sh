@@ -333,7 +333,7 @@ rnnoise_root_dir() {
 
 rnnoise_source_ready() {
   local rnnoise_root="$1"
-  [[ -f "${rnnoise_root}/include/rnnoise.h" && -f "${rnnoise_root}/src/rnnoise_data.c" ]]
+  [[ -f "${rnnoise_root}/include/rnnoise.h" && -f "${rnnoise_root}/src/denoise.c" ]]
 }
 
 ensure_rnnoise_source() {
@@ -374,6 +374,7 @@ ensure_rnnoise_source() {
 
   if ! rnnoise_source_ready "${rnnoise_root}"; then
     log_error "RNNoise source bootstrap completed but required files are still missing."
+    log_error "Expected: ${rnnoise_root}/include/rnnoise.h and ${rnnoise_root}/src/denoise.c"
     exit 1
   fi
 

@@ -115,8 +115,8 @@ if(EXISTS "${JARVIS_SPEEXDSP_ROOT}/include/speex/speex_echo.h")
 endif()
 
 if(EXISTS "${JARVIS_RNNOISE_ROOT}/include/rnnoise.h"
-    AND EXISTS "${JARVIS_RNNOISE_ROOT}/src/rnnoise_data.c")
-    add_library(rnnoise STATIC
+    AND EXISTS "${JARVIS_RNNOISE_ROOT}/src/denoise.c")
+    set(JARVIS_RNNOISE_SOURCES
         ${JARVIS_RNNOISE_ROOT}/src/celt_lpc.c
         ${JARVIS_RNNOISE_ROOT}/src/denoise.c
         ${JARVIS_RNNOISE_ROOT}/src/kiss_fft.c
@@ -125,8 +125,14 @@ if(EXISTS "${JARVIS_RNNOISE_ROOT}/include/rnnoise.h"
         ${JARVIS_RNNOISE_ROOT}/src/parse_lpcnet_weights.c
         ${JARVIS_RNNOISE_ROOT}/src/pitch.c
         ${JARVIS_RNNOISE_ROOT}/src/rnn.c
-        ${JARVIS_RNNOISE_ROOT}/src/rnnoise_data.c
         ${JARVIS_RNNOISE_ROOT}/src/rnnoise_tables.c
+    )
+    if(EXISTS "${JARVIS_RNNOISE_ROOT}/src/rnnoise_data.c")
+        list(APPEND JARVIS_RNNOISE_SOURCES
+            ${JARVIS_RNNOISE_ROOT}/src/rnnoise_data.c)
+    endif()
+    add_library(rnnoise STATIC
+        ${JARVIS_RNNOISE_SOURCES}
     )
     target_include_directories(rnnoise
         PUBLIC
