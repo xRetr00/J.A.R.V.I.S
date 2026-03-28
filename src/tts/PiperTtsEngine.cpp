@@ -14,6 +14,7 @@
 #include <QMediaDevices>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QProcessEnvironment>
 #include <QStandardPaths>
 #include <QTimer>
 #include <QUuid>
@@ -265,7 +266,9 @@ PiperTtsEngine::PiperTtsEngine(AppSettings *settings, QObject *parent)
         if (result.outputFile.isEmpty()) {
             m_processing = false;
             m_activeGeneration = 0;
-            emit playbackFailed(QStringLiteral("Failed to synthesize audio"));
+            emit playbackFailed(result.errorText.trimmed().isEmpty()
+                ? QStringLiteral("Failed to synthesize audio")
+                : result.errorText.trimmed());
             return;
         }
 
@@ -368,6 +371,24 @@ TtsSynthesisResult PiperTtsEngine::synthesizeAndProcess(const QString &sentence,
     TtsSynthesisResult result;
     result.generation = generation;
 
+    const QString piperExecutable = m_settings != nullptr ? m_settings->piperExecutable().trimmed() : QString{};
+    const QString voiceModelPath = m_settings != nullptr ? m_settings->piperVoiceModel().trimmed() : QString{};
+
+    if (piperExecutable.isEmpty() || voiceModelPath.isEmpty()) {
+        result.errorText = QStringLiteral("Piper executable or voice model is not configured");
+        return result;
+    }
+
+    if (!QFileInfo::exists(piperExecutable)) {
+        result.errorText = QStringLiteral("Piper executable was not found at %1").arg(piperExecutable);
+        return result;
+    }
+
+    if (!QFileInfo::exists(voiceModelPath)) {
+        result.errorText = QStringLiteral("Piper voice model was not found at %1").arg(voiceModelPath);
+        return result;
+    }
+
     const auto tempRoot = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
     QDir().mkpath(tempRoot);
     const QString token = QStringLiteral("%1_%2")
@@ -378,19 +399,48 @@ TtsSynthesisResult PiperTtsEngine::synthesizeAndProcess(const QString &sentence,
 
     {
         QProcess process;
-        process.start(m_settings->piperExecutable(), {
-            QStringLiteral("--model"), m_settings->piperVoiceModel(),
+        QStringList piperArgs{
+            QStringLiteral("--model"), voiceModelPath,
             QStringLiteral("--output_file"), rawPath,
             QStringLiteral("--length_scale"), QString::number(1.0 / std::max(0.1, m_settings->voiceSpeed()), 'f', 3)
-        });
+        };
+
+        const QStringList configCandidates = {
+            voiceModelPath + QStringLiteral(".json"),
+            QFileInfo(voiceModelPath).absolutePath() + QStringLiteral("/") + QFileInfo(voiceModelPath).completeBaseName() + QStringLiteral(".onnx.json")
+        };
+        for (const QString &candidate : configCandidates) {
+            if (QFileInfo::exists(candidate)) {
+                piperArgs << QStringLiteral("--config") << candidate;
+                break;
+            }
+        }
+
+#if defined(Q_OS_LINUX)
+        // Allow bundled Piper shared libraries to resolve when executable and libs live together.
+        QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+        const QString exeDir = QFileInfo(piperExecutable).absolutePath();
+        const QString existingLdPath = env.value(QStringLiteral("LD_LIBRARY_PATH"));
+        env.insert(QStringLiteral("LD_LIBRARY_PATH"), existingLdPath.isEmpty()
+            ? exeDir
+            : (exeDir + QStringLiteral(":") + existingLdPath));
+        process.setProcessEnvironment(env);
+#endif
+
+        process.start(piperExecutable, piperArgs);
         process.write(sentence.toUtf8());
         process.closeWriteChannel();
         if (!process.waitForFinished(10000)) {
             process.kill();
             process.waitForFinished(1000);
+            result.errorText = QStringLiteral("Piper synthesis timed out");
             return result;
         }
         if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+            const QString stderrText = QString::fromUtf8(process.readAllStandardError()).trimmed();
+            result.errorText = stderrText.isEmpty()
+                ? QStringLiteral("Piper synthesis failed with exit code %1").arg(process.exitCode())
+                : QStringLiteral("Piper synthesis failed: %1").arg(stderrText);
             return result;
         }
     }

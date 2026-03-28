@@ -13,6 +13,7 @@
 struct TtsSynthesisResult
 {
     QString outputFile;
+    QString errorText;
     quint64 generation = 0;
 };
 
