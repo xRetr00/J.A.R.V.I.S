@@ -24,7 +24,7 @@ signals:
     void stopSpeakingRequested();
     void cancelCurrentRequestRequested();
 
-private slots:
+private:
     enum class State {
         Idle,
         Active,
