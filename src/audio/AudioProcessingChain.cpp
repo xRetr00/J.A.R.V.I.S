@@ -75,12 +75,9 @@ AudioProcessingChain::~AudioProcessingChain()
 void AudioProcessingChain::initialize(const AudioProcessingConfig &config)
 {
     m_config = config;
-    m_nativeProcessingEnabled =
-#ifdef Q_OS_WIN
-        qEnvironmentVariableIntValue("JARVIS_ENABLE_EXPERIMENTAL_AUDIO_DSP") == 1;
-#else
-        true;
-#endif
+    // Native DSP (Speex/RNNoise chain) is opt-in because some Linux audio stacks
+    // are unstable with backend-specific plugins under threaded capture.
+    m_nativeProcessingEnabled = qEnvironmentVariableIntValue("JARVIS_ENABLE_EXPERIMENTAL_AUDIO_DSP") == 1;
 
     if (m_vad != nullptr) {
         fvad_free(m_vad);
