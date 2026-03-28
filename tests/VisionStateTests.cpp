@@ -18,6 +18,8 @@ private slots:
     void gestureStateMachineEmitsStartHoldAndEnd();
     void gestureStateMachineRespectsCooldownLock();
     void gestureActionRouterTriggersOnlyOnStart();
+    void gestureActionRouterRoutesFarewell();
+    void gestureActionRouterRoutesConfirmAndReject();
 };
 
 void VisionStateTests::worldStateCacheTracksFreshLatestSnapshot()
@@ -202,6 +204,74 @@ void VisionStateTests::gestureActionRouterTriggersOnlyOnStart()
 
     QCOMPARE(stopSpy.count(), 1);
     QCOMPARE(cancelSpy.count(), 1);
+}
+
+void VisionStateTests::gestureActionRouterRoutesFarewell()
+{
+    GestureActionRouter router(nullptr);
+    router.configure(true);
+
+    QSignalSpy stopSpy(&router, &GestureActionRouter::stopSpeakingRequested);
+    QSignalSpy cancelSpy(&router, &GestureActionRouter::cancelCurrentRequestRequested);
+    QSignalSpy farewellSpy(&router, &GestureActionRouter::farewellRequested);
+    QVERIFY(farewellSpy.isValid());
+
+    router.routeGestureEvent({
+        .type = GestureEventType::Start,
+        .lifecycleState = GestureLifecycleState::Active,
+        .actionName = QStringLiteral("farewell"),
+        .sourceGesture = QStringLiteral("closed_hand"),
+        .confidence = 0.95,
+        .timestampMs = 1400,
+        .stableForMs = 320,
+        .stableFrameCount = 4,
+        .traceId = QStringLiteral("trace-b")
+    });
+
+    QCOMPARE(farewellSpy.count(), 1);
+    QCOMPARE(stopSpy.count(), 0);
+    QCOMPARE(cancelSpy.count(), 0);
+}
+
+void VisionStateTests::gestureActionRouterRoutesConfirmAndReject()
+{
+    GestureActionRouter router(nullptr);
+    router.configure(true);
+
+    QSignalSpy confirmSpy(&router, &GestureActionRouter::confirmRequested);
+    QSignalSpy rejectSpy(&router, &GestureActionRouter::rejectRequested);
+    QSignalSpy stopSpy(&router, &GestureActionRouter::stopSpeakingRequested);
+    QSignalSpy cancelSpy(&router, &GestureActionRouter::cancelCurrentRequestRequested);
+    QVERIFY(confirmSpy.isValid());
+    QVERIFY(rejectSpy.isValid());
+
+    router.routeGestureEvent({
+        .type = GestureEventType::Start,
+        .lifecycleState = GestureLifecycleState::Active,
+        .actionName = QStringLiteral("confirm"),
+        .sourceGesture = QStringLiteral("thumbs_up"),
+        .confidence = 0.93,
+        .timestampMs = 1500,
+        .stableForMs = 260,
+        .stableFrameCount = 4,
+        .traceId = QStringLiteral("trace-c")
+    });
+    router.routeGestureEvent({
+        .type = GestureEventType::Start,
+        .lifecycleState = GestureLifecycleState::Active,
+        .actionName = QStringLiteral("reject"),
+        .sourceGesture = QStringLiteral("thumbs_down"),
+        .confidence = 0.92,
+        .timestampMs = 1600,
+        .stableForMs = 270,
+        .stableFrameCount = 4,
+        .traceId = QStringLiteral("trace-d")
+    });
+
+    QCOMPARE(confirmSpy.count(), 1);
+    QCOMPARE(rejectSpy.count(), 1);
+    QCOMPARE(stopSpy.count(), 0);
+    QCOMPARE(cancelSpy.count(), 0);
 }
 
 QTEST_APPLESS_MAIN(VisionStateTests)

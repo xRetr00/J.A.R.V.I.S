@@ -1083,6 +1083,9 @@ AssistantController::AssistantController(
     }, Qt::QueuedConnection);
     connect(m_gestureActionRouter, &GestureActionRouter::stopSpeakingRequested, this, &AssistantController::stopSpeaking, Qt::QueuedConnection);
     connect(m_gestureActionRouter, &GestureActionRouter::cancelCurrentRequestRequested, this, &AssistantController::cancelCurrentRequest, Qt::QueuedConnection);
+    connect(m_gestureActionRouter, &GestureActionRouter::farewellRequested, this, &AssistantController::handleGestureFarewell, Qt::QueuedConnection);
+    connect(m_gestureActionRouter, &GestureActionRouter::confirmRequested, this, &AssistantController::handleGestureConfirm, Qt::QueuedConnection);
+    connect(m_gestureActionRouter, &GestureActionRouter::rejectRequested, this, &AssistantController::handleGestureReject, Qt::QueuedConnection);
     connect(m_settings, &AppSettings::settingsChanged, this, &AssistantController::reconfigureGestureActionRouter);
     createWakeWordEngine();
 }
@@ -3101,6 +3104,40 @@ void AssistantController::applyVisionGestureTriggers(const VisionSnapshot &snaps
         return;
     }
     m_gestureInterpreter->ingestSnapshot(snapshot);
+}
+
+void AssistantController::handleGestureFarewell()
+{
+    if (m_currentState == AssistantState::Listening) {
+        stopListening();
+    } else if (m_currentState == AssistantState::Processing || m_currentState == AssistantState::Speaking) {
+        cancelActiveRequest();
+    } else {
+        endConversationSession();
+    }
+
+    deliverLocalResponse(QStringLiteral("Bye sir."), QStringLiteral("Gesture farewell"), true);
+    endConversationSession();
+}
+
+void AssistantController::handleGestureConfirm()
+{
+    if (m_currentState == AssistantState::Listening) {
+        stopListening();
+    }
+
+    deliverLocalResponse(QStringLiteral("Confirmed."), QStringLiteral("Gesture confirm"), true);
+}
+
+void AssistantController::handleGestureReject()
+{
+    if (m_currentState == AssistantState::Listening) {
+        stopListening();
+    } else if (m_currentState == AssistantState::Processing || m_currentState == AssistantState::Speaking) {
+        cancelActiveRequest();
+    }
+
+    deliverLocalResponse(QStringLiteral("Rejected."), QStringLiteral("Gesture reject"), true);
 }
 
 void AssistantController::startCommandRequest(const QString &input)

@@ -13,6 +13,15 @@ QString mapGestureToAction(const QString &gestureName)
     if (normalized == QStringLiteral("open_hand") || normalized == QStringLiteral("open_palm")) {
         return QStringLiteral("cancel");
     }
+    if (normalized == QStringLiteral("closed_hand")) {
+        return QStringLiteral("farewell");
+    }
+    if (normalized == QStringLiteral("thumbs_up")) {
+        return QStringLiteral("confirm");
+    }
+    if (normalized == QStringLiteral("thumbs_down")) {
+        return QStringLiteral("reject");
+    }
     if (normalized == QStringLiteral("two_fingers")) {
         return QStringLiteral("scroll");
     }

@@ -214,6 +214,9 @@ private:
     QString buildVisionPromptContext(const QString &input, IntentType intent) const;
     bool shouldUseVisionContext(const QString &input, IntentType intent) const;
     void applyVisionGestureTriggers(const VisionSnapshot &snapshot);
+    void handleGestureFarewell();
+    void handleGestureConfirm();
+    void handleGestureReject();
     void handleConversationFinished(const QString &text);
     void handleHybridAgentFinished(const QString &payload);
     void handleAgentResponse(const AgentResponse &response);

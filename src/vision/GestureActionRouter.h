@@ -21,6 +21,9 @@ signals:
     void gestureTriggered(const QString &gestureName, qint64 timestampMs);
     void stopSpeakingRequested();
     void cancelCurrentRequestRequested();
+    void farewellRequested();
+    void confirmRequested();
+    void rejectRequested();
 
 private:
     void logGestureEvent(const QString &event,
@@ -29,6 +32,9 @@ private:
                          const QString &reason = QString(),
                          int intervalMs = 700) const;
     bool isCancelGesture(const QString &actionName, const QString &sourceGesture) const;
+    bool isFarewellGesture(const QString &actionName, const QString &sourceGesture) const;
+    bool isConfirmGesture(const QString &actionName, const QString &sourceGesture) const;
+    bool isRejectGesture(const QString &actionName, const QString &sourceGesture) const;
 
     LoggingService *m_loggingService = nullptr;
     bool m_enabled = false;

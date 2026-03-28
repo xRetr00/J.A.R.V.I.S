@@ -22,7 +22,11 @@ void GestureActionRouter::routeGestureEvent(const GestureEvent &event)
     const QString gestureName = event.sourceGesture.isEmpty() ? event.actionName : event.sourceGesture;
     logGestureEvent(QStringLiteral("gesture_detected"), gestureName, event.confidence);
 
-    if (!isCancelGesture(event.actionName, event.sourceGesture)) {
+    const bool cancelGesture = isCancelGesture(event.actionName, event.sourceGesture);
+    const bool farewellGesture = isFarewellGesture(event.actionName, event.sourceGesture);
+    const bool confirmGesture = isConfirmGesture(event.actionName, event.sourceGesture);
+    const bool rejectGesture = isRejectGesture(event.actionName, event.sourceGesture);
+    if (!cancelGesture && !farewellGesture && !confirmGesture && !rejectGesture) {
         logGestureEvent(QStringLiteral("gesture_ignored"), gestureName, event.confidence, QStringLiteral("unsupported"));
         return;
     }
@@ -37,6 +41,19 @@ void GestureActionRouter::routeGestureEvent(const GestureEvent &event)
 
     logGestureEvent(QStringLiteral("gesture_triggered"), gestureName, event.confidence);
     emit gestureTriggered(gestureName, event.timestampMs);
+    if (farewellGesture) {
+        emit farewellRequested();
+        return;
+    }
+    if (confirmGesture) {
+        emit confirmRequested();
+        return;
+    }
+    if (rejectGesture) {
+        emit rejectRequested();
+        return;
+    }
+
     emit stopSpeakingRequested();
     emit cancelCurrentRequestRequested();
 }
@@ -71,4 +88,28 @@ bool GestureActionRouter::isCancelGesture(const QString &actionName, const QStri
         || normalizedGesture == QStringLiteral("open_palm")
         || normalizedGesture == QStringLiteral("palm")
         || normalizedGesture == QStringLiteral("stop");
+}
+
+bool GestureActionRouter::isFarewellGesture(const QString &actionName, const QString &sourceGesture) const
+{
+    const QString normalizedAction = actionName.trimmed().toLower();
+    const QString normalizedGesture = sourceGesture.trimmed().toLower();
+    return normalizedAction == QStringLiteral("farewell")
+        || normalizedGesture == QStringLiteral("closed_hand");
+}
+
+bool GestureActionRouter::isConfirmGesture(const QString &actionName, const QString &sourceGesture) const
+{
+    const QString normalizedAction = actionName.trimmed().toLower();
+    const QString normalizedGesture = sourceGesture.trimmed().toLower();
+    return normalizedAction == QStringLiteral("confirm")
+        || normalizedGesture == QStringLiteral("thumbs_up");
+}
+
+bool GestureActionRouter::isRejectGesture(const QString &actionName, const QString &sourceGesture) const
+{
+    const QString normalizedAction = actionName.trimmed().toLower();
+    const QString normalizedGesture = sourceGesture.trimmed().toLower();
+    return normalizedAction == QStringLiteral("reject")
+        || normalizedGesture == QStringLiteral("thumbs_down");
 }
