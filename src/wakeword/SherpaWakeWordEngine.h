@@ -37,11 +37,13 @@ private:
     void handleHelperFinished(int exitCode, QProcess::ExitStatus exitStatus);
     QString resolveHelperExecutablePath() const;
     QString resolveModelFile(const QString &rootPath, const QStringList &fileNames) const;
-    void handleTranscriptEvent(const QString &transcript, bool isFinal);
+    bool writeKeywordsFile(const QString &modelPath, QString *keywordsPath, QString *errorText) const;
+    QString helperLogPath(const QString &fileName) const;
+    void appendHelperLogLine(const QString &fileName, const QByteArray &line) const;
 
     AppSettings *m_settings = nullptr;
     LoggingService *m_loggingService = nullptr;
-    float m_threshold = 0.8f;
+    float m_threshold = 0.18f;
     int m_cooldownMs = 450;
     QString m_preferredDeviceId;
     bool m_paused = false;
@@ -50,14 +52,13 @@ private:
     int m_activationWarmupMs = 250;
     QString m_runtimeRoot;
     QString m_modelRoot;
+    QString m_keywordsFilePath;
     QString m_encoderPath;
     QString m_decoderPath;
     QString m_joinerPath;
     QString m_tokensPath;
-    QString m_bpeModelPath;
     QString m_helperPath;
     QByteArray m_stdoutBuffer;
     QByteArray m_stderrBuffer;
-    qint64 m_lastTranscriptWakeMs = 0;
     QPointer<QProcess> m_helperProcess;
 };

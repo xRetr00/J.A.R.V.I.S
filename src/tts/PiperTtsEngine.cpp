@@ -317,6 +317,7 @@ void PiperTtsEngine::speakText(const QString &text)
 {
     const QString prepared = applyVoicePipeline(text);
     if (prepared.isEmpty() || isStatusOnlyUtterance(prepared)) {
+        emit playbackFinished();
         return;
     }
 
