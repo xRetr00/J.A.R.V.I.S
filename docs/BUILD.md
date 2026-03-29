@@ -44,7 +44,7 @@ cmake --preset release
 For the Qt kit currently installed on this machine, this working MSVC configure flow is:
 
 ```powershell
-cmd /c "call \"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat\" && cmake -S d:\J.A.R.V.I.S -B d:\J.A.R.V.I.S\build-msvc -G Ninja -DCMAKE_PREFIX_PATH=C:\Qt\6.10.2\msvc2022_64"
+cmd /c "call \"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat\" && cmake -S d:\Vaxil -B d:\Vaxil\build-msvc -G Ninja -DCMAKE_PREFIX_PATH=C:\Qt\6.10.2\msvc2022_64"
 ```
 
 Linux configure presets:
@@ -93,7 +93,7 @@ Notes:
 For the verified local MSVC build directory:
 
 ```powershell
-cmd /c "call \"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat\" && cmake --build d:\J.A.R.V.I.S\build-msvc --parallel"
+cmd /c "call \"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat\" && cmake --build d:\Vaxil\build-msvc --parallel"
 ```
 
 Linux build via preset:
@@ -117,7 +117,7 @@ ctest --test-dir build-release --output-on-failure
 For the verified local MSVC build directory:
 
 ```powershell
-cmd /c "call \"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat\" && ctest --test-dir d:\J.A.R.V.I.S\build-msvc --output-on-failure"
+cmd /c "call \"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat\" && ctest --test-dir d:\Vaxil\build-msvc --output-on-failure"
 ```
 
 Linux test example:
