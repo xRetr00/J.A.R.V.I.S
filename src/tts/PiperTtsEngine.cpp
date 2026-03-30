@@ -36,6 +36,16 @@ QString canonicalSpeechKey(const QString &text)
     return key;
 }
 
+QString expandLetterAcronym(const QString &token)
+{
+    QStringList letters;
+    letters.reserve(token.size());
+    for (const QChar ch : token) {
+        letters.push_back(QString(ch));
+    }
+    return letters.join(QChar::fromLatin1(' '));
+}
+
 bool isStatusOnlyUtterance(const QString &text)
 {
     static const QStringList statusKeys = {
@@ -63,6 +73,62 @@ QString rewriteDotForSpeech(QString text)
     return text;
 }
 
+QString rewriteTimesForSpeech(const QString &text)
+{
+    const QRegularExpression timePattern(
+        QStringLiteral("\\b(\\d{1,2}):(\\d{2})(?:\\s*([AaPp])\\.?\\s*([Mm])\\.?)?\\b"));
+    QString rewritten;
+    rewritten.reserve(text.size() + 16);
+
+    int lastEnd = 0;
+    const auto matches = timePattern.globalMatch(text);
+    for (auto it = matches; it.hasNext();) {
+        const QRegularExpressionMatch match = it.next();
+        rewritten += text.mid(lastEnd, match.capturedStart() - lastEnd);
+
+        const QString hour = match.captured(1);
+        const QString minute = match.captured(2);
+        QString replacement = hour + QStringLiteral(" ") + minute;
+        if (!match.captured(3).isEmpty() && !match.captured(4).isEmpty()) {
+            replacement += QStringLiteral(" ")
+                + match.captured(3).toLower()
+                + match.captured(4).toLower();
+        }
+
+        rewritten += replacement;
+        lastEnd = match.capturedEnd();
+    }
+
+    rewritten += text.mid(lastEnd);
+    return rewritten;
+}
+
+QString expandAcronymsForSpeech(const QString &text)
+{
+    const QRegularExpression acronymPattern(QStringLiteral("\\b([A-Z]{2,6})(?=(?:\\s|$|[.,!?;:]))"));
+    QString rewritten;
+    rewritten.reserve(text.size() + 16);
+
+    int lastEnd = 0;
+    const auto matches = acronymPattern.globalMatch(text);
+    for (auto it = matches; it.hasNext();) {
+        const QRegularExpressionMatch match = it.next();
+        const QString token = match.captured(1);
+        rewritten += text.mid(lastEnd, match.capturedStart() - lastEnd);
+
+        if (token == QStringLiteral("AM") || token == QStringLiteral("PM")) {
+            rewritten += token.toLower();
+        } else {
+            rewritten += expandLetterAcronym(token);
+        }
+
+        lastEnd = match.capturedEnd();
+    }
+
+    rewritten += text.mid(lastEnd);
+    return rewritten;
+}
+
 QString stripHiddenReasoning(const QString &text)
 {
     QString cleaned = text;
@@ -82,7 +148,7 @@ QString removeNonSpeechArtifacts(const QString &text)
     cleaned.replace(QRegularExpression(QStringLiteral("https?://\\S+")), QStringLiteral(" "));
     cleaned.replace(QRegularExpression(QStringLiteral("[`*_#~]+")), QStringLiteral(" "));
     cleaned.replace(QRegularExpression(QStringLiteral("[\\[\\]{}<>|]+")), QStringLiteral(" "));
-    cleaned.replace(QRegularExpression(QStringLiteral("\\b[A-Z_]{2,}\\b(?=\\s|$)")), QStringLiteral(" "));
+    cleaned.replace(QRegularExpression(QStringLiteral("\\b[A-Z]+_[A-Z0-9_]+\\b(?=\\s|$)")), QStringLiteral(" "));
     return cleaned;
 }
 
@@ -107,8 +173,13 @@ QString normalizeSpeechText(QString text)
 {
     QString cleaned = stripHiddenReasoning(text);
     cleaned.replace(QRegularExpression(QStringLiteral("\\s*\\n+\\s*")), QStringLiteral(". "));
-    cleaned.replace(QRegularExpression(QStringLiteral("(?<=[A-Za-z0-9])[-_/](?=[A-Za-z0-9])")), QStringLiteral(" "));
+    cleaned = rewriteTimesForSpeech(cleaned);
+    cleaned.replace(QRegularExpression(QStringLiteral("(?<![A-Za-z0-9])['\"“”‘’]+|['\"“”‘’]+(?![A-Za-z0-9])")), QStringLiteral(" "));
+    cleaned.replace(QRegularExpression(QStringLiteral("(?<=[A-Za-z0-9])[_/](?=[A-Za-z0-9])")), QStringLiteral(" "));
+    cleaned.replace(QRegularExpression(QStringLiteral("(?<=[A-Za-z])-(?=[A-Za-z0-9])")), QStringLiteral(" "));
+    cleaned.replace(QRegularExpression(QStringLiteral("(?<=[0-9])-(?=[A-Za-z])")), QStringLiteral(" "));
     cleaned = rewriteDotForSpeech(cleaned);
+    cleaned = expandAcronymsForSpeech(cleaned);
     cleaned = removeNonSpeechArtifacts(cleaned);
     cleaned.replace(QRegularExpression(QStringLiteral("\\s*([,.;:!?])\\s*")), QStringLiteral("\\1 "));
     cleaned.replace(QRegularExpression(QStringLiteral("\\s*\\.\\.\\.\\s*")), QStringLiteral("... "));
@@ -174,8 +245,8 @@ QString injectNaturalPauses(const QString &text)
         return {};
     }
 
-    withPauses.replace(QStringLiteral(": "), QStringLiteral("... "));
-    withPauses.replace(QRegularExpression(QStringLiteral("\\s+[\\-–—]\\s+")), QStringLiteral("... "));
+    withPauses.replace(QRegularExpression(QStringLiteral("(?<=[A-Za-z\\)])\\s*:\\s+")), QStringLiteral(", "));
+    withPauses.replace(QRegularExpression(QStringLiteral("\\s+[\\-–—]\\s+")), QStringLiteral(", "));
     withPauses.replace(QRegularExpression(QStringLiteral("\\b(please wait|stand by)\\b"),
                                           QRegularExpression::CaseInsensitiveOption),
                        QStringLiteral("please wait"));
@@ -395,8 +466,8 @@ TtsSynthesisResult PiperTtsEngine::synthesizeAndProcess(const QString &sentence,
     const QString token = QStringLiteral("%1_%2")
         .arg(generation)
         .arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
-    const QString rawPath = tempRoot + QStringLiteral("/jarvis_tts_%1_raw.wav").arg(token);
-    const QString processedPath = tempRoot + QStringLiteral("/jarvis_tts_%1_processed.wav").arg(token);
+    const QString rawPath = tempRoot + QStringLiteral("/vaxil_tts_%1_raw.wav").arg(token);
+    const QString processedPath = tempRoot + QStringLiteral("/vaxil_tts_%1_processed.wav").arg(token);
 
     {
         QProcess process;

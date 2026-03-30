@@ -191,6 +191,22 @@ QString normalizePhrase(const QString &input)
     return normalized.simplified();
 }
 
+QString userFacingPromptForLogging(const QString &input)
+{
+    const QString trimmed = input.trimmed();
+    if (!trimmed.startsWith(QStringLiteral("You previously asked me to search the web."), Qt::CaseInsensitive)) {
+        return trimmed;
+    }
+
+    const QRegularExpression queryPattern(QStringLiteral("User query:\\s*(.+?)(?:\\n|$)"), QRegularExpression::CaseInsensitiveOption);
+    const QRegularExpressionMatch match = queryPattern.match(trimmed);
+    if (match.hasMatch()) {
+        return match.captured(1).trimmed();
+    }
+
+    return QStringLiteral("[web search summary]");
+}
+
 bool containsPhrase(const QString &normalizedInput, const QString &phrase)
 {
     const QString escaped = QRegularExpression::escape(phrase);
@@ -236,6 +252,70 @@ bool isConversationStopPhrase(const QString &input)
     }
 
     return false;
+}
+
+bool startsWithAllowedFollowUpWord(const QStringList &words)
+{
+    if (words.isEmpty()) {
+        return false;
+    }
+
+    static const QSet<QString> allowedStarts = {
+        QStringLiteral("what"),
+        QStringLiteral("where"),
+        QStringLiteral("when"),
+        QStringLiteral("why"),
+        QStringLiteral("how"),
+        QStringLiteral("who"),
+        QStringLiteral("can"),
+        QStringLiteral("could"),
+        QStringLiteral("would"),
+        QStringLiteral("will"),
+        QStringLiteral("should"),
+        QStringLiteral("do"),
+        QStringLiteral("does"),
+        QStringLiteral("did"),
+        QStringLiteral("is"),
+        QStringLiteral("are"),
+        QStringLiteral("am"),
+        QStringLiteral("tell"),
+        QStringLiteral("show"),
+        QStringLiteral("list"),
+        QStringLiteral("read"),
+        QStringLiteral("write"),
+        QStringLiteral("create"),
+        QStringLiteral("open"),
+        QStringLiteral("close"),
+        QStringLiteral("start"),
+        QStringLiteral("stop"),
+        QStringLiteral("set"),
+        QStringLiteral("search"),
+        QStringLiteral("find"),
+        QStringLiteral("remember"),
+        QStringLiteral("forget"),
+        QStringLiteral("save"),
+        QStringLiteral("delete"),
+        QStringLiteral("play"),
+        QStringLiteral("pause"),
+        QStringLiteral("resume"),
+        QStringLiteral("make"),
+        QStringLiteral("give"),
+        QStringLiteral("call"),
+        QStringLiteral("name"),
+        QStringLiteral("check"),
+        QStringLiteral("run"),
+        QStringLiteral("explain"),
+        QStringLiteral("summarize"),
+        QStringLiteral("use"),
+        QStringLiteral("go"),
+        QStringLiteral("okay"),
+        QStringLiteral("ok"),
+        QStringLiteral("please"),
+        QStringLiteral("thanks"),
+        QStringLiteral("thank")
+    };
+
+    return allowedStarts.contains(words.first());
 }
 
 QString firstExistingPath(const QStringList &candidates)
@@ -2413,6 +2493,10 @@ bool AssistantController::shouldIgnoreAmbiguousTranscript(const QString &transcr
         return true;
     }
 
+    if (WakeWordDetector::isWakeWordDetected(transcript) || isConversationStopPhrase(transcript)) {
+        return false;
+    }
+
     if (words.size() == 1) {
         const QString token = words.first();
         static const QStringList allowSingleWordCommands = {
@@ -2424,6 +2508,25 @@ bool AssistantController::shouldIgnoreAmbiguousTranscript(const QString &transcr
             QStringLiteral("start")
         };
         if (!allowSingleWordCommands.contains(token) && token.size() <= 3) {
+            return true;
+        }
+    }
+
+    if (m_conversationSessionActive && !startsWithAllowedFollowUpWord(words)) {
+        if (words.size() <= 2) {
+            return true;
+        }
+
+        static const QSet<QString> lowSignalStarts = {
+            QStringLiteral("you"),
+            QStringLiteral("your"),
+            QStringLiteral("it"),
+            QStringLiteral("its"),
+            QStringLiteral("this"),
+            QStringLiteral("that"),
+            QStringLiteral("tip")
+        };
+        if (words.size() <= 4 && lowSignalStarts.contains(words.first())) {
             return true;
         }
     }
@@ -2674,7 +2777,7 @@ void AssistantController::startConversationRequest(const QString &input)
     m_activeRequestKind = RequestKind::Conversation;
     if (m_loggingService) {
         m_loggingService->info(QStringLiteral("Starting conversation request. model=\"%1\" input=\"%2\"")
-            .arg(modelId, input.left(240)));
+            .arg(modelId, userFacingPromptForLogging(input).left(240)));
     }
 
     QList<MemoryRecord> requestMemory = m_memoryStore->relevantMemory(input);
@@ -3433,6 +3536,7 @@ void AssistantController::startWebSearchSummaryRequest(const BackgroundTaskResul
               "Fetched payload (JSON/text):\n%3")
               .arg(query, provider.isEmpty() ? QStringLiteral("unknown") : provider, clippedContent);
 
+    m_lastPromptForAiLog = query;
     startConversationRequest(synthesisInput);
 }
 

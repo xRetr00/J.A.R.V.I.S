@@ -247,7 +247,7 @@ QString WhisperSttEngine::writeWaveFile(const QByteArray &pcmData) const
 {
     const auto tempRoot = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
     QDir().mkpath(tempRoot);
-    const auto path = tempRoot + QStringLiteral("/jarvis_input_%1.wav").arg(QDateTime::currentMSecsSinceEpoch());
+    const auto path = tempRoot + QStringLiteral("/vaxil_input_%1.wav").arg(QDateTime::currentMSecsSinceEpoch());
 
     QFile file(path);
     if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
