@@ -21,12 +21,14 @@
 #include <QVariantMap>
 #include <QStandardPaths>
 #include <QUrl>
+#include <QDateTime>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
 #endif
 
 #include "core/AssistantController.h"
+#include "logging/LoggingService.h"
 #include "overlay/OverlayController.h"
 #include "platform/PlatformRuntime.h"
 #include "settings/AppSettings.h"
@@ -1003,12 +1005,14 @@ BackendFacade::BackendFacade(
     IdentityProfileService *identityProfileService,
     AssistantController *assistantController,
     OverlayController *overlayController,
+    LoggingService *loggingService,
     QObject *parent)
     : QObject(parent)
     , m_settings(settings)
     , m_identityProfileService(identityProfileService)
     , m_assistantController(assistantController)
     , m_overlayController(overlayController)
+    , m_loggingService(loggingService)
 {
     m_toolManager = new ToolManager(this);
     connect(m_assistantController, &AssistantController::stateChanged, this, &BackendFacade::stateNameChanged);
@@ -1056,6 +1060,45 @@ BackendFacade::BackendFacade(
         emit toolStatusesChanged();
     });
     m_toolManager->rescan();
+}
+
+void BackendFacade::logOrbRendererStatus(const QString &eventName, const QVariantMap &details)
+{
+    if (m_loggingService == nullptr) {
+        return;
+    }
+
+    const QString normalizedEvent = eventName.trimmed().isEmpty()
+        ? QStringLiteral("status")
+        : eventName.trimmed().toLower();
+    const QString tag = details.value(QStringLiteral("tag")).toString().trimmed();
+    const QString rateLimitKey = normalizedEvent + QStringLiteral("|")
+        + (tag.isEmpty() ? QStringLiteral("default") : tag);
+
+    if (normalizedEvent == QStringLiteral("heartbeat")) {
+        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+        const qint64 previousMs = m_orbHeartbeatLogTimes.value(rateLimitKey, 0);
+        if (previousMs > 0 && (nowMs - previousMs) < 10000) {
+            return;
+        }
+        m_orbHeartbeatLogTimes.insert(rateLimitKey, nowMs);
+    }
+
+    const QString payloadText = QString::fromUtf8(
+        QJsonDocument(QJsonObject::fromVariantMap(details)).toJson(QJsonDocument::Compact));
+    const QString message = QStringLiteral("[orb] event=\"%1\" details=%2")
+        .arg(normalizedEvent, payloadText);
+
+    if (normalizedEvent.contains(QStringLiteral("error")) || normalizedEvent.contains(QStringLiteral("failed"))) {
+        m_loggingService->errorFor(QStringLiteral("orb_render"), message);
+        return;
+    }
+    if (normalizedEvent.contains(QStringLiteral("warn"))) {
+        m_loggingService->warnFor(QStringLiteral("orb_render"), message);
+        return;
+    }
+
+    m_loggingService->infoFor(QStringLiteral("orb_render"), message);
 }
 
 QString BackendFacade::stateName() const { return m_assistantController->stateName(); }

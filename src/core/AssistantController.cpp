@@ -694,6 +694,33 @@ bool buildDeterministicComputerTask(const QString &input, AgentTask *task, QStri
         return true;
     }
 
+    const bool wantsBrowser = lowered.contains(QStringLiteral("open browser"))
+        || lowered.contains(QStringLiteral("launch browser"))
+        || lowered.contains(QStringLiteral("start browser"));
+    if (wantsBrowser) {
+        QString query;
+        const int searchIndex = lowered.indexOf(QStringLiteral("search"));
+        if (searchIndex >= 0) {
+            query = input.mid(searchIndex + QStringLiteral("search").size()).trimmed();
+            query.remove(QRegularExpression(QStringLiteral("^(?:google|the\\s+web|web|the\\s+internet|internet)\\b\\s*"),
+                                            QRegularExpression::CaseInsensitiveOption));
+            query.remove(QRegularExpression(QStringLiteral("^(?:for)\\b\\s*"),
+                                            QRegularExpression::CaseInsensitiveOption));
+        }
+
+        task->type = QStringLiteral("browser_open");
+        if (!query.isEmpty()) {
+            const QString encoded = QString::fromUtf8(QUrl::toPercentEncoding(query)).replace(QStringLiteral("%20"), QStringLiteral("+"));
+            task->args = QJsonObject{{QStringLiteral("url"), QStringLiteral("https://www.google.com/search?q=%1").arg(encoded)}};
+            *spoken = QStringLiteral("Opening browser search results with Playwright.");
+        } else {
+            task->args = QJsonObject{{QStringLiteral("url"), QStringLiteral("https://www.google.com")}};
+            *spoken = QStringLiteral("Opening the browser with Playwright.");
+        }
+        task->priority = 84;
+        return true;
+    }
+
     QRegularExpression openAppPattern(
         QStringLiteral("^(?:open|launch|start)\\s+(?:the\\s+)?(.+)$"),
         QRegularExpression::CaseInsensitiveOption);
@@ -706,21 +733,18 @@ bool buildDeterministicComputerTask(const QString &input, AgentTask *task, QStri
             && !targetLower.contains(QStringLiteral("website"))
             && !targetLower.contains(QStringLiteral("url"))
             && !targetLower.contains(QStringLiteral("timer"))
-            && !targetLower.contains(QStringLiteral("file"))) {
+            && !targetLower.contains(QStringLiteral("file"))
+            && !targetLower.contains(QStringLiteral("browser"))
+            && !targetLower.contains(QStringLiteral("search"))
+            && !targetLower.contains(QStringLiteral("google"))
+            && !targetLower.contains(QStringLiteral("web"))
+            && !targetLower.contains(QStringLiteral("internet"))) {
             task->type = QStringLiteral("computer_open_app");
             task->args = QJsonObject{{QStringLiteral("target"), target}};
             task->priority = 86;
             *spoken = QStringLiteral("Opening %1.").arg(target);
             return true;
         }
-    }
-
-    if (lowered.contains(QStringLiteral("open browser")) || lowered.contains(QStringLiteral("launch browser"))) {
-        task->type = QStringLiteral("computer_open_url");
-        task->args = QJsonObject{{QStringLiteral("url"), QStringLiteral("https://www.google.com")}};
-        task->priority = 84;
-        *spoken = QStringLiteral("Opening your browser.");
-        return true;
     }
 
     return false;

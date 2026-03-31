@@ -10,7 +10,9 @@
 #include <QIcon>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQmlError>
 #include <QQuickWindow>
+#include <QSGRendererInterface>
 #include <QStyle>
 #include <QSystemTrayIcon>
 #include <QWindow>
@@ -65,6 +67,62 @@ private:
     std::function<void()> m_callback;
 };
 #endif
+
+QString graphicsApiName(QSGRendererInterface::GraphicsApi api)
+{
+    switch (api) {
+    case QSGRendererInterface::GraphicsApi::Direct3D11Rhi:
+        return QStringLiteral("Direct3D11Rhi");
+    case QSGRendererInterface::GraphicsApi::Direct3D12:
+        return QStringLiteral("Direct3D12");
+    case QSGRendererInterface::GraphicsApi::MetalRhi:
+        return QStringLiteral("MetalRhi");
+    case QSGRendererInterface::GraphicsApi::NullRhi:
+        return QStringLiteral("NullRhi");
+    case QSGRendererInterface::GraphicsApi::OpenGL:
+        return QStringLiteral("OpenGL");
+    case QSGRendererInterface::GraphicsApi::OpenVG:
+        return QStringLiteral("OpenVG");
+    case QSGRendererInterface::GraphicsApi::Software:
+        return QStringLiteral("Software");
+    case QSGRendererInterface::GraphicsApi::VulkanRhi:
+        return QStringLiteral("VulkanRhi");
+    case QSGRendererInterface::GraphicsApi::Unknown:
+    default:
+        return QStringLiteral("Unknown");
+    }
+}
+
+QString sceneGraphErrorName(QQuickWindow::SceneGraphError error)
+{
+    switch (error) {
+    case QQuickWindow::SceneGraphError::ContextNotAvailable:
+        return QStringLiteral("ContextNotAvailable");
+    default:
+        return QStringLiteral("UnknownSceneGraphError");
+    }
+}
+
+QString formatQmlError(const QQmlError &error)
+{
+    const QString url = error.url().isValid() ? error.url().toString() : QStringLiteral("<unknown>");
+    return QStringLiteral("%1:%2:%3 %4")
+        .arg(url)
+        .arg(error.line())
+        .arg(error.column())
+        .arg(error.description().trimmed());
+}
+
+bool isOrbRelatedQmlError(const QQmlError &error)
+{
+    const QString url = error.url().toString().toLower();
+    const QString description = error.description().toLower();
+    return url.contains(QStringLiteral("orbrenderer.qml"))
+        || url.contains(QStringLiteral("orb.frag"))
+        || description.contains(QStringLiteral("shadereffect"))
+        || description.contains(QStringLiteral("orb renderer"))
+        || description.contains(QStringLiteral("orb.frag"));
+}
 
 JarvisApplication::JarvisApplication(QObject *parent)
     : QObject(parent)
@@ -129,13 +187,29 @@ bool JarvisApplication::initialize()
         m_settings.get(),
         m_identityProfileService.get(),
         m_assistantController.get(),
-        m_overlayController.get());
+        m_overlayController.get(),
+        m_loggingService.get());
     m_agentViewModel = std::make_unique<AgentViewModel>(m_backendFacade.get());
     m_settingsViewModel = std::make_unique<SettingsViewModel>(m_backendFacade.get());
     m_taskViewModel = std::make_unique<TaskViewModel>(m_backendFacade.get());
     m_engine = std::make_unique<QQmlApplicationEngine>();
     const QIcon appIcon(QStringLiteral(":/qt/qml/VAXIL/gui/assets/icon.ico"));
     m_trayIcon = std::make_unique<QSystemTrayIcon>(appIcon.isNull() ? qApp->style()->standardIcon(QStyle::SP_ComputerIcon) : appIcon, this);
+
+    connect(m_engine.get(), &QQmlEngine::warnings, this, [this](const QList<QQmlError> &warnings) {
+        if (m_loggingService == nullptr) {
+            return;
+        }
+
+        for (const QQmlError &warning : warnings) {
+            const QString message = QStringLiteral("[orb] qml_warning %1").arg(formatQmlError(warning));
+            if (isOrbRelatedQmlError(warning)) {
+                m_loggingService->errorFor(QStringLiteral("orb_render"), message);
+            } else {
+                m_loggingService->warn(message);
+            }
+        }
+    });
 
     m_engine->rootContext()->setContextProperty(QStringLiteral("backend"), m_backendFacade.get());
     m_engine->rootContext()->setContextProperty(QStringLiteral("agentVm"), m_agentViewModel.get());
@@ -152,8 +226,47 @@ bool JarvisApplication::initialize()
         return false;
     }
 
+    const auto registerWindowDiagnostics = [this](QQuickWindow *window, const QString &windowName) {
+        if (window == nullptr || m_loggingService == nullptr) {
+            return;
+        }
+
+        window->setObjectName(windowName);
+        m_loggingService->infoFor(
+            QStringLiteral("orb_render"),
+            QStringLiteral("[orb] window_registered name=\"%1\" visible=%2")
+                .arg(windowName)
+                .arg(window->isVisible() ? QStringLiteral("true") : QStringLiteral("false")));
+
+        connect(window, &QQuickWindow::sceneGraphInitialized, this, [this, window, windowName]() {
+            if (m_loggingService == nullptr || window == nullptr) {
+                return;
+            }
+
+            m_loggingService->infoFor(
+                QStringLiteral("orb_render"),
+                QStringLiteral("[orb] scenegraph_initialized window=\"%1\" graphics_api=\"%2\"")
+                    .arg(windowName, graphicsApiName(window->rendererInterface()->graphicsApi())));
+        });
+
+        connect(window,
+                &QQuickWindow::sceneGraphError,
+                this,
+                [this, windowName](QQuickWindow::SceneGraphError error, const QString &message) {
+                    if (m_loggingService == nullptr) {
+                        return;
+                    }
+
+                    m_loggingService->errorFor(
+                        QStringLiteral("orb_render"),
+                        QStringLiteral("[orb] scenegraph_error window=\"%1\" code=\"%2\" message=\"%3\"")
+                            .arg(windowName, sceneGraphErrorName(error), message.trimmed()));
+                });
+    };
+
     if (auto *window = qobject_cast<QQuickWindow *>(m_engine->rootObjects().first())) {
         m_mainWindow = window;
+        registerWindowDiagnostics(window, QStringLiteral("overlay_window"));
         m_overlayController->attachWindow(window);
         m_overlayController->setClickThrough(true);
         if (!appIcon.isNull()) {
@@ -165,6 +278,7 @@ bool JarvisApplication::initialize()
     if (m_engine->rootObjects().size() > 1) {
         m_settingsWindow = qobject_cast<QQuickWindow *>(m_engine->rootObjects().at(1));
         if (m_settingsWindow) {
+            registerWindowDiagnostics(m_settingsWindow, QStringLiteral("settings_window"));
             if (!appIcon.isNull()) {
                 m_settingsWindow->setIcon(appIcon);
             }
@@ -174,6 +288,7 @@ bool JarvisApplication::initialize()
     if (m_engine->rootObjects().size() > 2) {
         m_setupWindow = qobject_cast<QQuickWindow *>(m_engine->rootObjects().at(2));
         if (m_setupWindow) {
+            registerWindowDiagnostics(m_setupWindow, QStringLiteral("setup_window"));
             if (!appIcon.isNull()) {
                 m_setupWindow->setIcon(appIcon);
             }
@@ -183,6 +298,7 @@ bool JarvisApplication::initialize()
     if (m_engine->rootObjects().size() > 3) {
         m_toolsWindow = qobject_cast<QQuickWindow *>(m_engine->rootObjects().at(3));
         if (m_toolsWindow) {
+            registerWindowDiagnostics(m_toolsWindow, QStringLiteral("tools_window"));
             if (!appIcon.isNull()) {
                 m_toolsWindow->setIcon(appIcon);
             }
@@ -192,6 +308,7 @@ bool JarvisApplication::initialize()
     if (m_engine->rootObjects().size() > 4) {
         m_fullUiWindow = qobject_cast<QQuickWindow *>(m_engine->rootObjects().at(4));
         if (m_fullUiWindow) {
+            registerWindowDiagnostics(m_fullUiWindow, QStringLiteral("full_ui_window"));
             if (!appIcon.isNull()) {
                 m_fullUiWindow->setIcon(appIcon);
             }

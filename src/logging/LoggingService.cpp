@@ -55,6 +55,14 @@ QString detectChannelFromMessage(const QString &message)
         return QStringLiteral("vision");
     }
 
+    if (lowered.contains(QStringLiteral("[orb]"))
+        || lowered.contains(QStringLiteral("orb renderer"))
+        || lowered.contains(QStringLiteral("orb.frag"))
+        || lowered.contains(QStringLiteral("scenegraph"))
+        || lowered.contains(QStringLiteral("shadereffect"))) {
+        return QStringLiteral("orb_render");
+    }
+
     if (lowered.contains(QStringLiteral("ai backend"))
         || lowered.contains(QStringLiteral("agent request"))
         || lowered.contains(QStringLiteral("conversation request"))
@@ -110,6 +118,7 @@ bool LoggingService::initialize()
         m_wakeLogger = makeFileLogger(QStringLiteral("vaxil_wake"), QStringLiteral("wake_engine.log"));
         m_ttsLogger = makeFileLogger(QStringLiteral("vaxil_tts"), QStringLiteral("tts.log"));
         m_sttLogger = makeFileLogger(QStringLiteral("vaxil_stt"), QStringLiteral("stt.log"));
+        m_orbLogger = makeFileLogger(QStringLiteral("vaxil_orb"), QStringLiteral("orb_render.log"));
         return true;
     } catch (...) {
         return false;
@@ -184,6 +193,9 @@ std::shared_ptr<spdlog::logger> LoggingService::loggerForChannel(const QString &
     }
     if (normalized == QStringLiteral("stt")) {
         return m_sttLogger;
+    }
+    if (normalized == QStringLiteral("orb_render")) {
+        return m_orbLogger;
     }
 
     return nullptr;

@@ -15,10 +15,12 @@ private slots:
     void promptAdapterInjectsRuntimeContext();
     void promptAdapterInjectsVisionContext();
     void promptAdapterSelectsComputerToolsForGeneralChat();
+    void promptAdapterPrefersPlaywrightForBrowserRequests();
     void spokenReplyParsesStructuredPayload();
     void spokenReplyFallsBackToSanitizedPlainText();
     void spokenReplyStripsUnclosedThinkBlocks();
     void spokenReplySuppressesStatusOnlySpeech();
+    void spokenReplyTruncatesLongSpeechForPlayback();
     void streamAssemblerEmitsSentences();
 };
 
@@ -128,6 +130,27 @@ void AiServicesTests::promptAdapterSelectsComputerToolsForGeneralChat()
     QVERIFY(names.contains(QStringLiteral("computer_set_timer")));
 }
 
+void AiServicesTests::promptAdapterPrefersPlaywrightForBrowserRequests()
+{
+    PromptAdapter adapter;
+
+    const auto messages = adapter.buildConversationMessages(
+        QStringLiteral("Open the browser"),
+        {},
+        {},
+        {
+            .assistantName = QStringLiteral("Vaxil"),
+            .personality = QStringLiteral("calm"),
+            .tone = QStringLiteral("confident"),
+            .addressingStyle = QStringLiteral("direct")
+        },
+        {},
+        ReasoningMode::Balanced);
+
+    QVERIFY(messages.first().content.contains(QStringLiteral("browser_open should be the first choice")));
+    QVERIFY(messages.first().content.contains(QStringLiteral("computer_open_url is the fallback")));
+}
+
 void AiServicesTests::spokenReplyParsesStructuredPayload()
 {
     const SpokenReply reply = parseSpokenReply(QStringLiteral(R"({
@@ -166,6 +189,22 @@ void AiServicesTests::spokenReplySuppressesStatusOnlySpeech()
     QCOMPARE(reply.displayText, QStringLiteral("Listening."));
     QVERIFY(reply.spokenText.isEmpty());
     QVERIFY(!reply.shouldSpeak);
+}
+
+void AiServicesTests::spokenReplyTruncatesLongSpeechForPlayback()
+{
+    const SpokenReply reply = parseSpokenReply(
+        QStringLiteral("First sentence explains the result. "
+                       "Second sentence gives a little more detail. "
+                       "Third sentence still fits the spoken summary. "
+                       "Fourth sentence should stay on screen only. "
+                       "[00:00:00] Timestamp noise should not be spoken."));
+
+    QVERIFY(reply.shouldSpeak);
+    QVERIFY(reply.spokenText.contains(QStringLiteral("The rest is on screen.")));
+    QVERIFY(!reply.spokenText.contains(QStringLiteral("Fourth sentence should stay on screen only.")));
+    QVERIFY(!reply.spokenText.contains(QStringLiteral("00:00:00")));
+    QVERIFY(reply.displayText.contains(QStringLiteral("Fourth sentence should stay on screen only.")));
 }
 
 void AiServicesTests::streamAssemblerEmitsSentences()

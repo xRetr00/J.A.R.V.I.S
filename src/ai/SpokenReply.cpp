@@ -27,6 +27,18 @@ QString collapseWhitespace(QString text)
     return text.trimmed();
 }
 
+QString ensureTerminalPunctuation(QString text)
+{
+    text = collapseWhitespace(text);
+    if (!text.isEmpty()
+        && !text.endsWith(QChar::fromLatin1('.'))
+        && !text.endsWith(QChar::fromLatin1('!'))
+        && !text.endsWith(QChar::fromLatin1('?'))) {
+        text += QChar::fromLatin1('.');
+    }
+    return text;
+}
+
 QString canonicalSpeechKey(const QString &text)
 {
     QString key = text.toLower();
@@ -62,6 +74,55 @@ QString trimJsonPayload(const QString &input)
     }
     return input.mid(start, end - start + 1);
 }
+
+QString limitSpokenLength(const QString &input)
+{
+    constexpr int kMaxSpokenSentences = 3;
+    constexpr int kMaxSpokenChars = 280;
+    const QStringList sentences = input.split(QRegularExpression(QStringLiteral("(?<=[.!?])\\s+")), Qt::SkipEmptyParts);
+    QStringList limited;
+    int totalChars = 0;
+    bool truncated = false;
+
+    for (const QString &rawSentence : sentences) {
+        QString sentence = ensureTerminalPunctuation(rawSentence.trimmed());
+        if (sentence.isEmpty()) {
+            continue;
+        }
+        if (limited.size() >= kMaxSpokenSentences) {
+            truncated = true;
+            break;
+        }
+
+        const int nextChars = totalChars + (limited.isEmpty() ? 0 : 1) + sentence.size();
+        if (nextChars > kMaxSpokenChars) {
+            if (limited.isEmpty()) {
+                sentence = ensureTerminalPunctuation(sentence.left(kMaxSpokenChars).trimmed());
+                if (!sentence.isEmpty()) {
+                    limited.push_back(sentence);
+                }
+            }
+            truncated = true;
+            break;
+        }
+
+        limited.push_back(sentence);
+        totalChars = nextChars;
+    }
+
+    QString result = limited.join(QStringLiteral(" "));
+    if (result.isEmpty()) {
+        result = ensureTerminalPunctuation(input.left(kMaxSpokenChars).trimmed());
+        truncated = input.size() > result.size();
+    }
+
+    if (truncated && !result.isEmpty()) {
+        result = ensureTerminalPunctuation(result);
+        result += QStringLiteral(" The rest is on screen.");
+    }
+
+    return collapseWhitespace(result);
+}
 }
 
 QString sanitizeDisplayText(const QString &input)
@@ -82,15 +143,11 @@ QString sanitizeSpokenText(const QString &input)
     cleaned.replace(QRegularExpression(QStringLiteral("[\\[\\]{}<>|]+")), QStringLiteral(" "));
     cleaned.replace(QRegularExpression(QStringLiteral("[\\x{1F300}-\\x{1FAFF}\\x{2600}-\\x{27BF}]")), QStringLiteral(" "));
     cleaned.replace(QRegularExpression(QStringLiteral("\\b[A-Z_]{2,}\\b(?=\\s|$)")), QStringLiteral(" "));
+    cleaned.replace(QRegularExpression(QStringLiteral("\\b\\d{1,2}:\\d{2}(?::\\d{2})?\\b")), QStringLiteral(" "));
     cleaned.replace(QRegularExpression(QStringLiteral("\\s*([,.;:!?])\\s*")), QStringLiteral("\\1 "));
     cleaned = collapseWhitespace(cleaned);
-    if (!cleaned.isEmpty()
-        && !cleaned.endsWith(QChar::fromLatin1('.'))
-        && !cleaned.endsWith(QChar::fromLatin1('!'))
-        && !cleaned.endsWith(QChar::fromLatin1('?'))) {
-        cleaned += QChar::fromLatin1('.');
-    }
-    return cleaned;
+    cleaned = ensureTerminalPunctuation(cleaned);
+    return limitSpokenLength(cleaned);
 }
 
 SpokenReply parseSpokenReply(const QString &input)

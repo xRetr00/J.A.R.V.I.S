@@ -59,19 +59,6 @@ Window {
         return (blinkOn ? "*" : " ") + " IDLE"
     }
 
-    function waveformHeight(index) {
-        if (agentVm.uiState === 3) {
-            return 6 + (Math.abs(Math.sin(motion.time * 2.8 + index * 0.42)) * 18)
-        }
-        if (agentVm.uiState === 1) {
-            return 4 + (Math.abs(Math.sin(motion.time * 1.8 + index * 0.52)) * 10)
-        }
-        if (agentVm.uiState === 2) {
-            return 4 + (Math.abs(Math.sin(motion.time * 1.2 + index * 0.36)) * 8)
-        }
-        return 3 + (Math.abs(Math.sin(motion.time * 0.8 + index * 0.44)) * 4)
-    }
-
     onVisibleChanged: {
         if (!visible) {
             return
@@ -285,20 +272,22 @@ Window {
                             border.width: 1
                             border.color: "#1c3452"
 
-                            Row {
+                            Rectangle {
                                 anchors.fill: parent
-                                anchors.margins: 12
-                                spacing: 10
+                                anchors.margins: 10
+                                radius: 12
+                                color: "#040c16"
+                                border.width: 1
+                                border.color: "#1a3551"
 
-                                Repeater {
-                                    model: 32
-                                    delegate: Rectangle {
-                                        width: 8
-                                        height: waveformHeight(index)
-                                        radius: 3
-                                        color: agentVm.uiState === 3 ? "#00d4ff" : agentVm.uiState === 1 ? "#00ff88" : "#2f4b6b"
-                                        anchors.verticalCenter: parent.verticalCenter
-                                    }
+                                JarvisUi.VoiceWaveRenderer {
+                                    anchors.fill: parent
+                                    anchors.margins: 4
+                                    time: motion.time
+                                    audioLevel: motion.inputBoost
+                                    speakingLevel: motion.speakingSignal
+                                    glow: motion.glow
+                                    uiState: agentVm.uiState
                                 }
                             }
                         }

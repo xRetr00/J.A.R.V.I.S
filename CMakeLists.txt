@@ -368,6 +368,7 @@ qt_add_shaders(jarvis_lib "jarvis_shaders"
         "/qt/qml/VAXIL/gui/shaders"
     FILES
         src/gui/shaders/orb.frag
+        src/gui/shaders/voice_wave.frag
         src/gui/shaders/text_shimmer.frag
 )
 

@@ -24,5 +24,17 @@ def run(_service, args, _context):
     if not target:
         return failure("Open app failed", "A target is required.")
     escaped_target = target.replace("'", "''")
-    subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", f"Start-Process -FilePath '{escaped_target}'"])
+    script = "$ErrorActionPreference='Stop'; Start-Process -FilePath '{}' | Out-Null".format(escaped_target)
+    try:
+        subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or "").strip()
+        if not detail:
+            detail = f"Unable to launch {target}."
+        return failure("Open app failed", detail)
     return success("App launch requested", f"Launched {target}.", target=target)

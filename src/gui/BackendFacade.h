@@ -1,11 +1,13 @@
 #pragma once
 
 #include <QObject>
+#include <QHash>
 #include <QVariantMap>
 
 class AssistantController;
 class AppSettings;
 class IdentityProfileService;
+class LoggingService;
 class OverlayController;
 class ToolManager;
 
@@ -119,6 +121,7 @@ public:
         IdentityProfileService *identityProfileService,
         AssistantController *assistantController,
         OverlayController *overlayController,
+        LoggingService *loggingService = nullptr,
         QObject *parent = nullptr);
 
     QString stateName() const;
@@ -345,6 +348,7 @@ public:
                                             const QString &mcpServerUrl);
     Q_INVOKABLE bool installMcpQuickServer(const QString &presetId);
     Q_INVOKABLE bool installMcpPackage(const QString &packageSpec, const QString &serverIdHint);
+    Q_INVOKABLE void logOrbRendererStatus(const QString &eventName, const QVariantMap &details = QVariantMap());
 
 signals:
     void stateNameChanged();
@@ -377,6 +381,8 @@ private:
     IdentityProfileService *m_identityProfileService = nullptr;
     AssistantController *m_assistantController = nullptr;
     OverlayController *m_overlayController = nullptr;
+    LoggingService *m_loggingService = nullptr;
     ToolManager *m_toolManager = nullptr;
     QString m_toolInstallStatus;
+    QHash<QString, qint64> m_orbHeartbeatLogTimes;
 };

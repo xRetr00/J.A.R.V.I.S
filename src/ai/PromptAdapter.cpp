@@ -104,7 +104,7 @@ QString toolUseGuidance(const QString &toolName)
         return QStringLiteral("you already have a URL and need its contents");
     }
     if (toolName == QStringLiteral("browser_open")) {
-        return QStringLiteral("the user asks to open or control a page through the browser automation engine");
+        return QStringLiteral("the user asks to open a browser page and you should prefer Playwright browser automation before any system-browser fallback");
     }
     if (toolName == QStringLiteral("browser_fetch_text")) {
         return QStringLiteral("the user needs rendered page text or a page inspected through the browser automation engine");
@@ -128,7 +128,7 @@ QString toolUseGuidance(const QString &toolName)
         return QStringLiteral("the user asks to open an installed app, executable, or shortcut");
     }
     if (toolName == QStringLiteral("computer_open_url")) {
-        return QStringLiteral("the user asks to open a website, browser page, or YouTube");
+        return QStringLiteral("the user explicitly wants the system browser, or browser_open is unavailable and you need a fallback way to open a website or page");
     }
     if (toolName == QStringLiteral("computer_write_file")) {
         return QStringLiteral("the user asks to create a text file on the Desktop, Documents, Downloads, or another explicit computer path");
@@ -595,7 +595,8 @@ QString PromptAdapter::buildWorkspaceContext(const QString &workspaceRoot) const
     section += QStringLiteral("\n- %1").arg(appDataPath.isEmpty() ? QStringLiteral("app data directory") : appDataPath);
     section += QStringLiteral("\nComputer control:");
     section += QStringLiteral("\n- computer_write_file can create a text file in Desktop, Documents, Downloads, or another explicit absolute path.");
-    section += QStringLiteral("\n- computer_open_url can open browser pages like YouTube.");
+    section += QStringLiteral("\n- browser_open should be the first choice for opening web pages through Playwright browser automation.");
+    section += QStringLiteral("\n- computer_open_url is the fallback when Playwright is unavailable or the user explicitly wants the system browser.");
     if (capabilities.supportsAppLaunch) {
         section += QStringLiteral("\n- computer_open_app can launch installed apps, shortcuts, or executables.");
     }
@@ -635,6 +636,7 @@ QString PromptAdapter::buildCapabilityRulesContext(IntentType intent) const
                        "- If the user asks to open an app, launch a site, create a file on the computer, or set a timer, you must use a matching computer tool.\n"
                        "- If the request involves memory writes, you must use a memory tool.\n"
                        "- Prefer tools over natural-language guesses whenever a tool can verify the answer.\n"
+                       "- For requests to open browser pages, prefer browser_open first and use computer_open_url only as a fallback.\n"
                        "- For web/factual/current events queries, you must queue web_search before claiming an answer.\n"
                        "- If you are uncertain about a factual answer, queue web_search instead of guessing.\n"
                        "- Never claim that a background task already finished.\n"

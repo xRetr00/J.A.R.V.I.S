@@ -55,6 +55,7 @@ private:
     std::shared_ptr<spdlog::logger> m_wakeLogger;
     std::shared_ptr<spdlog::logger> m_ttsLogger;
     std::shared_ptr<spdlog::logger> m_sttLogger;
+    std::shared_ptr<spdlog::logger> m_orbLogger;
     QString m_logFilePath;
     mutable QHash<QString, qint64> m_rateLimitedLogTimes;
     mutable QMutex m_rateLimitMutex;

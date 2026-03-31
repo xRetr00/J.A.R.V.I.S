@@ -57,6 +57,14 @@ QString readTextFile(const QString &path, int maxChars = 12000)
     return text;
 }
 
+bool shouldFallbackFromBrowserAutomation(const QString &summary, const QString &detail)
+{
+    const QString combined = (summary + QStringLiteral(" ") + detail).toLower();
+    return combined.contains(QStringLiteral("playwright unavailable"))
+        || combined.contains(QStringLiteral("browser binaries are missing"))
+        || combined.contains(QStringLiteral("playwright is not installed"));
+}
+
 nlohmann::json schemaObject(const std::initializer_list<std::pair<const char *, nlohmann::json>> &properties,
                             const std::vector<std::string> &required = {})
 {
@@ -231,6 +239,7 @@ AgentToolResult AgentToolbox::execute(const AgentToolCall &call)
             if (!response.isEmpty()) {
                 const bool ok = response.value(QStringLiteral("ok")).toBool();
                 const QJsonObject payload = response.value(QStringLiteral("payload")).toObject();
+                const QString summary = response.value(QStringLiteral("summary")).toString();
                 QString output = response.value(QStringLiteral("detail")).toString();
                 if (payload.contains(QStringLiteral("text"))) {
                     output = payload.value(QStringLiteral("text")).toString();
@@ -250,6 +259,11 @@ AgentToolResult AgentToolbox::execute(const AgentToolCall &call)
                                                                        entry.value(QStringLiteral("name")).toString()));
                     }
                     output = lines.join(QStringLiteral("\n"));
+                }
+                if (!ok
+                    && call.name == QStringLiteral("browser_open")
+                    && shouldFallbackFromBrowserAutomation(summary, output)) {
+                    return executeComputerOpenUrl(call, args);
                 }
                 return ok ? successResult(call, output) : failedResult(call, output);
             }

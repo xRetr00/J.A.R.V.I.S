@@ -151,6 +151,14 @@ QString hostFromUrl(const QString &url)
     return parsed.host().toLower();
 }
 
+bool shouldFallbackFromBrowserAutomation(const QString &summary, const QString &detail)
+{
+    const QString combined = (summary + QStringLiteral(" ") + detail).toLower();
+    return combined.contains(QStringLiteral("playwright unavailable"))
+        || combined.contains(QStringLiteral("browser binaries are missing"))
+        || combined.contains(QStringLiteral("playwright is not installed"));
+}
+
 bool isAuthoritativeHost(const QString &host)
 {
     static const QStringList authoritative{
@@ -336,13 +344,20 @@ void ToolWorker::processTask(const AgentTask &task)
         context.insert(QStringLiteral("braveSearchApiKey"), m_settings ? m_settings->braveSearchApiKey() : QString{});
         const QJsonObject runtimeResult = m_pythonRuntime->executeAction(task.type, task.args, context, &runtimeError);
         if (!runtimeResult.isEmpty()) {
-            result = buildResult(task,
-                                 runtimeResult.value(QStringLiteral("ok")).toBool(),
-                                 TaskState::Finished,
-                                 runtimeResult.value(QStringLiteral("summary")).toString(task.type),
-                                 runtimeResult.value(QStringLiteral("summary")).toString(task.type),
-                                 runtimeResult.value(QStringLiteral("detail")).toString(),
-                                 runtimeResult.value(QStringLiteral("payload")).toObject());
+            const bool ok = runtimeResult.value(QStringLiteral("ok")).toBool();
+            const QString summary = runtimeResult.value(QStringLiteral("summary")).toString(task.type);
+            const QString detail = runtimeResult.value(QStringLiteral("detail")).toString();
+            if (!(task.type == QStringLiteral("browser_open")
+                  && !ok
+                  && shouldFallbackFromBrowserAutomation(summary, detail))) {
+                result = buildResult(task,
+                                     ok,
+                                     TaskState::Finished,
+                                     summary,
+                                     summary,
+                                     detail,
+                                     runtimeResult.value(QStringLiteral("payload")).toObject());
+            }
         }
     }
 
@@ -366,6 +381,10 @@ void ToolWorker::processTask(const AgentTask &task)
         result = processComputerListApps(task);
     } else if (result.isEmpty() && task.type == QStringLiteral("computer_open_app")) {
         result = processComputerOpenApp(task);
+    } else if (result.isEmpty() && task.type == QStringLiteral("browser_open")) {
+        AgentTask fallbackTask = task;
+        fallbackTask.type = QStringLiteral("computer_open_url");
+        result = processComputerOpenUrl(fallbackTask);
     } else if (result.isEmpty() && task.type == QStringLiteral("computer_open_url")) {
         result = processComputerOpenUrl(task);
     } else if (result.isEmpty() && task.type == QStringLiteral("computer_write_file")) {

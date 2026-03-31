@@ -29,6 +29,18 @@ QString collapseWhitespace(const QString &text)
     return normalized.trimmed();
 }
 
+QString ensureTerminalPunctuation(QString text)
+{
+    text = collapseWhitespace(text);
+    if (!text.isEmpty()
+        && !text.endsWith(QChar::fromLatin1('.'))
+        && !text.endsWith(QChar::fromLatin1('!'))
+        && !text.endsWith(QChar::fromLatin1('?'))) {
+        text += QChar::fromLatin1('.');
+    }
+    return text;
+}
+
 QString canonicalSpeechKey(const QString &text)
 {
     QString key = text.toLower();
@@ -202,6 +214,8 @@ QString normalizeSpeechText(QString text)
 
 QString styleFormatJarvisResponse(const QString &text)
 {
+    constexpr int kMaxSpokenSentences = 3;
+    constexpr int kMaxSpokenChars = 280;
     QString formatted = normalizeSpeechText(text);
     if (formatted.isEmpty()) {
         return {};
@@ -218,6 +232,8 @@ QString styleFormatJarvisResponse(const QString &text)
     const QStringList sentences = formatted.split(QRegularExpression(QStringLiteral("(?<=[.!?])\\s+")), Qt::SkipEmptyParts);
     QStringList conciseSentences;
     conciseSentences.reserve(3);
+    int totalChars = 0;
+    bool truncated = false;
 
     for (const QString &rawSentence : sentences) {
         QString sentence = rawSentence.trimmed();
@@ -225,17 +241,39 @@ QString styleFormatJarvisResponse(const QString &text)
             continue;
         }
 
-        if (!sentence.endsWith(QChar::fromLatin1('.'))
-            && !sentence.endsWith(QChar::fromLatin1('!'))
-            && !sentence.endsWith(QChar::fromLatin1('?'))) {
-            sentence += QChar::fromLatin1('.');
+        if (conciseSentences.size() >= kMaxSpokenSentences) {
+            truncated = true;
+            break;
         }
 
-        sentence = ensureSentenceCase(sentence);
+        sentence = ensureSentenceCase(ensureTerminalPunctuation(sentence));
+        const int nextChars = totalChars + (conciseSentences.isEmpty() ? 0 : 1) + sentence.size();
+        if (nextChars > kMaxSpokenChars) {
+            if (conciseSentences.isEmpty()) {
+                sentence = ensureTerminalPunctuation(sentence.left(kMaxSpokenChars).trimmed());
+                if (!sentence.isEmpty()) {
+                    conciseSentences.push_back(sentence);
+                }
+            }
+            truncated = true;
+            break;
+        }
+
         conciseSentences.push_back(sentence);
+        totalChars = nextChars;
     }
 
-    return conciseSentences.join(QStringLiteral(" "));
+    QString result = conciseSentences.join(QStringLiteral(" "));
+    if (result.isEmpty()) {
+        result = ensureTerminalPunctuation(formatted.left(kMaxSpokenChars).trimmed());
+        truncated = formatted.size() > result.size();
+    }
+    if (truncated && !result.isEmpty()) {
+        result = ensureTerminalPunctuation(result);
+        result += QStringLiteral(" The rest is on screen.");
+    }
+
+    return result;
 }
 
 QString injectNaturalPauses(const QString &text)
