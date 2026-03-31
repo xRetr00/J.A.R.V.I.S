@@ -504,7 +504,15 @@ bool isExplicitAgentWorldQuery(const QString &input)
         QStringLiteral("what can you access"),
         QStringLiteral("latest model"),
         QStringLiteral("tools inside the workspace"),
-        QStringLiteral("use the tools inside the workspace")
+        QStringLiteral("use the tools inside the workspace"),
+        QStringLiteral("generate code"),
+        QStringLiteral("write code"),
+        QStringLiteral("create code"),
+        QStringLiteral("code a"),
+        QStringLiteral("build a"),
+        QStringLiteral("make a script"),
+        QStringLiteral("python game"),
+        QStringLiteral("snake game")
     });
 }
 
@@ -645,8 +653,16 @@ bool isExplicitComputerControlQuery(const QString &input)
 {
     return containsAnyNormalized(input, {
         QStringLiteral("open browser"),
+        QStringLiteral("open my browser"),
         QStringLiteral("open the browser"),
         QStringLiteral("launch browser"),
+        QStringLiteral("start browser"),
+        QStringLiteral("in the browser"),
+        QStringLiteral("browser tab"),
+        QStringLiteral("new tab"),
+        QStringLiteral("private tab"),
+        QStringLiteral("private window"),
+        QStringLiteral("incognito"),
         QStringLiteral("open youtube"),
         QStringLiteral("launch youtube"),
         QStringLiteral("open app"),
@@ -717,19 +733,19 @@ bool buildDeterministicComputerTask(const QString &input, AgentTask *task, QStri
         const QString query = ytMatch.captured(1).trimmed();
         if (!query.isEmpty()) {
             const QString encoded = QString::fromUtf8(QUrl::toPercentEncoding(query)).replace(QStringLiteral("%20"), QStringLiteral("+"));
-            task->type = QStringLiteral("computer_open_url");
+            task->type = QStringLiteral("browser_open");
             task->args = QJsonObject{{QStringLiteral("url"), QStringLiteral("https://www.youtube.com/results?search_query=%1").arg(encoded)}};
             task->priority = 90;
-            *spoken = QStringLiteral("Opening YouTube search results.");
+            *spoken = QStringLiteral("Opening YouTube search results with Playwright.");
             return true;
         }
     }
 
     if (lowered.contains(QStringLiteral("open youtube")) || lowered == QStringLiteral("youtube")) {
-        task->type = QStringLiteral("computer_open_url");
+        task->type = QStringLiteral("browser_open");
         task->args = QJsonObject{{QStringLiteral("url"), QStringLiteral("https://www.youtube.com")}};
         task->priority = 85;
-        *spoken = QStringLiteral("Opening YouTube.");
+        *spoken = QStringLiteral("Opening YouTube with Playwright.");
         return true;
     }
 
@@ -3572,6 +3588,20 @@ void AssistantController::handleCommandFinished(const QString &text)
 {
     const CommandEnvelope command = parseCommand(text);
     if (!command.valid || command.confidence < 0.6f) {
+        startConversationRequest(m_transcript);
+        return;
+    }
+
+    if (!m_deviceManager->canExecuteTarget(command.target)) {
+        if (m_settings->agentEnabled()
+            && (isExplicitComputerControlQuery(m_transcript)
+                || command.target.compare(QStringLiteral("browser"), Qt::CaseInsensitive) == 0
+                || command.target.compare(QStringLiteral("computer"), Qt::CaseInsensitive) == 0
+                || command.target.compare(QStringLiteral("youtube"), Qt::CaseInsensitive) == 0)) {
+            startAgentConversationRequest(m_transcript, IntentType::GENERAL_CHAT);
+            return;
+        }
+
         startConversationRequest(m_transcript);
         return;
     }

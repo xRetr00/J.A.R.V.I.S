@@ -12,6 +12,7 @@ public:
     explicit DeviceManager(QObject *parent = nullptr);
 
     void registerDefaults();
+    bool canExecuteTarget(const QString &target) const;
     QString execute(const CommandEnvelope &command);
 
 private:

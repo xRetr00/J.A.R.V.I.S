@@ -15,10 +15,26 @@ void DeviceManager::registerDefaults()
     };
 }
 
+bool DeviceManager::canExecuteTarget(const QString &target) const
+{
+    const QString normalized = target.trimmed();
+    if (normalized.isEmpty()) {
+        return false;
+    }
+
+    for (auto *device : m_devices) {
+        if (device->deviceId().compare(normalized, Qt::CaseInsensitive) == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 QString DeviceManager::execute(const CommandEnvelope &command)
 {
     for (auto *device : m_devices) {
-        if (device->deviceId() == command.target) {
+        if (device->deviceId().compare(command.target, Qt::CaseInsensitive) == 0) {
             return device->execute(command);
         }
     }
