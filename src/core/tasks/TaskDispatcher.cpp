@@ -28,16 +28,18 @@ void TaskDispatcher::enqueue(const AgentTask &incomingTask)
 
     if (isDuplicate(task)) {
         if (m_loggingService) {
-            m_loggingService->infoFor(QStringLiteral("tools_mcp"), QStringLiteral("[TaskDispatcher] deduplicated %1 id=%2").arg(task.type).arg(task.id));
+            m_loggingService->infoFor(QStringLiteral("tools_mcp"),
+                                      QStringLiteral("[TaskDispatcher] deduplicated %1 id=%2 key=%3")
+                                          .arg(task.type)
+                                          .arg(task.id)
+                                          .arg(task.taskKey));
         }
         return;
     }
 
-    cancelPreviousTask(task.type);
-
     m_tasksById.insert(task.id, task);
-    m_activeTaskIdByType.insert(task.type, task.id);
-    emit activeTaskChanged(task.type, task.id);
+    m_activeTaskIdByKey.insert(task.taskKey, task.id);
+    emit activeTaskChanged(task.taskKey, task.id);
 
     m_pending.push_back(task);
     std::sort(m_pending.begin(), m_pending.end(), [](const AgentTask &left, const AgentTask &right) {
@@ -73,45 +75,9 @@ bool TaskDispatcher::isDuplicate(const AgentTask &task) const
     return false;
 }
 
-void TaskDispatcher::cancelPreviousTask(const QString &type)
+int TaskDispatcher::activeTaskId(const QString &taskKey) const
 {
-    if (!m_activeTaskIdByType.contains(type)) {
-        return;
-    }
-
-    const int previousTaskId = m_activeTaskIdByType.value(type);
-    if (!m_tasksById.contains(previousTaskId)) {
-        return;
-    }
-
-    AgentTask task = m_tasksById.value(previousTaskId);
-    if (task.state == TaskState::Finished || task.state == TaskState::Canceled || task.state == TaskState::Expired) {
-        return;
-    }
-
-    task.state = TaskState::Canceled;
-    m_tasksById.insert(previousTaskId, task);
-    m_canceledTaskIds.insert(previousTaskId);
-
-    for (int index = 0; index < m_pending.size(); ++index) {
-        if (m_pending.at(index).id == previousTaskId) {
-            m_pending.removeAt(index);
-            break;
-        }
-    }
-
-    if (m_runningTaskIds.contains(previousTaskId)) {
-        emit taskCanceled(previousTaskId);
-    }
-
-    if (m_loggingService) {
-        m_loggingService->infoFor(QStringLiteral("tools_mcp"), QStringLiteral("[TaskDispatcher] canceled previous %1 id=%2").arg(type).arg(previousTaskId));
-    }
-}
-
-int TaskDispatcher::activeTaskId(const QString &type) const
-{
-    return m_activeTaskIdByType.value(type, -1);
+    return m_activeTaskIdByKey.value(taskKey, -1);
 }
 
 void TaskDispatcher::handleTaskStarted(int taskId, const QString &type)
@@ -137,7 +103,6 @@ void TaskDispatcher::handleTaskStarted(int taskId, const QString &type)
 void TaskDispatcher::handleTaskFinished(int taskId, const QJsonObject &result)
 {
     QJsonObject normalizedResult = result;
-    const QString type = normalizedResult.value(QStringLiteral("type")).toString();
 
     if (m_tasksById.contains(taskId)) {
         AgentTask task = m_tasksById.value(taskId);
@@ -146,6 +111,9 @@ void TaskDispatcher::handleTaskFinished(int taskId, const QJsonObject &result)
         m_tasksById.insert(taskId, task);
         m_runningTaskIds.remove(taskId);
         m_runningTaskIdByKey.remove(task.taskKey);
+        if (m_activeTaskIdByKey.value(task.taskKey) == taskId) {
+            m_activeTaskIdByKey.remove(task.taskKey);
+        }
         m_busy = false;
 
         if (canceled) {
@@ -205,8 +173,8 @@ void TaskDispatcher::cleanupFinishedTasks()
     for (int taskId : expiredIds) {
         const AgentTask task = m_tasksById.take(taskId);
         m_canceledTaskIds.remove(taskId);
-        if (m_activeTaskIdByType.value(task.type) == taskId) {
-            m_activeTaskIdByType.remove(task.type);
+        if (m_activeTaskIdByKey.value(task.taskKey) == taskId) {
+            m_activeTaskIdByKey.remove(task.taskKey);
         }
     }
 }

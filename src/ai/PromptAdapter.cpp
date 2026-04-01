@@ -2,6 +2,8 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
 #include <QLocale>
 #include <QTimeZone>
 #include <QStandardPaths>
@@ -59,6 +61,27 @@ QString intentName(IntentType intent)
     case IntentType::GENERAL_CHAT:
     default:
         return QStringLiteral("GENERAL_CHAT");
+    }
+}
+
+QString toolErrorKindName(ToolErrorKind errorKind)
+{
+    switch (errorKind) {
+    case ToolErrorKind::None:
+        return QStringLiteral("none");
+    case ToolErrorKind::Transport:
+        return QStringLiteral("transport");
+    case ToolErrorKind::Auth:
+        return QStringLiteral("auth");
+    case ToolErrorKind::Capability:
+        return QStringLiteral("capability");
+    case ToolErrorKind::Invalid:
+        return QStringLiteral("invalid");
+    case ToolErrorKind::Timeout:
+        return QStringLiteral("timeout");
+    case ToolErrorKind::Unknown:
+    default:
+        return QStringLiteral("unknown");
     }
 }
 
@@ -290,6 +313,21 @@ QString spokenTaskGuidance(IntentType intent)
     }
 }
 
+QString hybridOutputContract(IntentType intent)
+{
+    QString section = QStringLiteral("<output_contract>");
+    section += QStringLiteral("\nReturn exactly one JSON object with keys: intent, message, tool_calls.");
+    section += QStringLiteral("\nintent must be one of: LIST_FILES, READ_FILE, WRITE_FILE, MEMORY_WRITE, GENERAL_CHAT.");
+    section += QStringLiteral("\nmessage must be a short spoken-safe sentence. %1").arg(spokenTaskGuidance(intent));
+    section += QStringLiteral("\ntool_calls must be an array. Each object must have keys: name, arguments_json, priority.");
+    section += QStringLiteral("\narguments_json must be a compact JSON string.");
+    section += QStringLiteral("\nIf a file or log tool is required but you cannot determine the path, ask for the missing path in message and return tool_calls as [].");
+    section += QStringLiteral("\nIf no tool is needed, return tool_calls as [].");
+    section += QStringLiteral("\nDo not include markdown, code fences, explanations, or extra keys.");
+    section += QStringLiteral("\n</output_contract>");
+    return section;
+}
+
 QString reasoningGuidance(ReasoningMode mode)
 {
     switch (mode) {
@@ -450,16 +488,7 @@ QList<AiMessage> PromptAdapter::buildHybridAgentMessages(
     systemPrompt += QStringLiteral("\n%1").arg(reasoningGuidance(mode));
     systemPrompt += QStringLiteral("\n</mode>\n");
     systemPrompt += buildAgentWorldContext(intent, availableTools, memory, workspaceRoot, visionContext);
-    systemPrompt += QStringLiteral("\n<output_contract>");
-    systemPrompt += QStringLiteral("\nReturn exactly one JSON object with keys: intent, message, tool_calls.");
-    systemPrompt += QStringLiteral("\nintent must be one of: LIST_FILES, READ_FILE, WRITE_FILE, MEMORY_WRITE, GENERAL_CHAT.");
-    systemPrompt += QStringLiteral("\nmessage must be a short spoken-safe sentence. %1").arg(spokenTaskGuidance(intent));
-    systemPrompt += QStringLiteral("\ntool_calls must be an array. Each object must have keys: name, arguments_json, priority.");
-    systemPrompt += QStringLiteral("\narguments_json must be a compact JSON string.");
-    systemPrompt += QStringLiteral("\nIf a file or log tool is required but you cannot determine the path, ask for the missing path in message and return tool_calls as [].");
-    systemPrompt += QStringLiteral("\nIf no tool is needed, return tool_calls as [].");
-    systemPrompt += QStringLiteral("\nDo not include markdown, code fences, explanations, or extra keys.");
-    systemPrompt += QStringLiteral("\n</output_contract>");
+    systemPrompt += QStringLiteral("\n%1").arg(hybridOutputContract(intent));
 
     return {
         {
@@ -469,6 +498,64 @@ QList<AiMessage> PromptAdapter::buildHybridAgentMessages(
         {
             .role = QStringLiteral("user"),
             .content = applyReasoningMode(input, mode)
+        }
+    };
+}
+
+QList<AiMessage> PromptAdapter::buildHybridAgentContinuationMessages(
+    const QString &input,
+    const QList<AgentToolResult> &results,
+    const QList<MemoryRecord> &memory,
+    const AssistantIdentity &identity,
+    const UserProfile &userProfile,
+    const QString &workspaceRoot,
+    IntentType intent,
+    const QList<AgentToolSpec> &availableTools,
+    ReasoningMode mode,
+    const QString &visionContext) const
+{
+    QString systemPrompt = buildSharedIdentityLayer(identity, userProfile, visionContext, true);
+    systemPrompt += QStringLiteral("\n<mode>");
+    systemPrompt += QStringLiteral("\n%1").arg(reasoningGuidance(mode));
+    systemPrompt += QStringLiteral("\n</mode>\n");
+    systemPrompt += buildAgentWorldContext(intent, availableTools, memory, workspaceRoot, visionContext);
+    systemPrompt += QStringLiteral("\n<adapter_loop>");
+    systemPrompt += QStringLiteral("\nYou are continuing the same tool-using request after completed tool calls.");
+    systemPrompt += QStringLiteral("\nUse the tool results below as the grounded execution state for this step.");
+    systemPrompt += QStringLiteral("\nIf the results already answer the user, return the final answer with tool_calls as [].");
+    systemPrompt += QStringLiteral("\nIf another tool is needed, return only the next tool_calls needed to continue.");
+    systemPrompt += QStringLiteral("\nDo not repeat a finished tool call unless you need a new call with different arguments.");
+    systemPrompt += QStringLiteral("\n</adapter_loop>");
+    systemPrompt += QStringLiteral("\n%1").arg(hybridOutputContract(intent));
+
+    QJsonArray resultArray;
+    for (const AgentToolResult &result : results) {
+        resultArray.push_back(QJsonObject{
+            {QStringLiteral("call_id"), result.callId},
+            {QStringLiteral("tool_name"), result.toolName},
+            {QStringLiteral("success"), result.success},
+            {QStringLiteral("error_kind"), toolErrorKindName(result.errorKind)},
+            {QStringLiteral("summary"), result.summary},
+            {QStringLiteral("detail"), result.detail},
+            {QStringLiteral("payload"), result.payload}
+        });
+    }
+
+    const QString userPrompt = QStringLiteral(
+        "Original user request:\n%1\n\n"
+        "Completed tool results:\n%2\n\n"
+        "Continue the same request and return the next JSON object only.")
+        .arg(applyReasoningMode(input, mode),
+             QString::fromUtf8(QJsonDocument(resultArray).toJson(QJsonDocument::Indented)));
+
+    return {
+        {
+            .role = QStringLiteral("system"),
+            .content = systemPrompt
+        },
+        {
+            .role = QStringLiteral("user"),
+            .content = userPrompt
         }
     };
 }

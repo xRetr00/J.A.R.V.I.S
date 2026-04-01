@@ -222,6 +222,7 @@ private:
     void startConversationRequest(const QString &input);
     void startAgentConversationRequest(const QString &input, IntentType expectedIntent);
     void continueAgentConversation(const QList<AgentToolResult> &results);
+    QList<AgentToolResult> executeAgentToolCalls(const QList<AgentToolCall> &toolCalls);
     void startCommandRequest(const QString &input);
     void handleVisionSnapshot(const VisionSnapshot &snapshot);
     QString buildDirectVisionResponse(const QString &input) const;
@@ -297,6 +298,7 @@ private:
     QString m_lastAgentInput;
     IntentType m_lastAgentIntent = IntentType::GENERAL_CHAT;
     ReasoningMode m_activeReasoningMode = ReasoningMode::Balanced;
+    bool m_activeAgentUsesResponses = false;
     QString m_previousAgentResponseId;
     int m_activeAgentIteration = 0;
     AgentCapabilitySet m_agentCapabilities;

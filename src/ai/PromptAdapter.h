@@ -37,6 +37,18 @@ public:
         ReasoningMode mode,
         const QString &visionContext = QString()) const;
 
+    QList<AiMessage> buildHybridAgentContinuationMessages(
+        const QString &input,
+        const QList<AgentToolResult> &results,
+        const QList<MemoryRecord> &memory,
+        const AssistantIdentity &identity,
+        const UserProfile &userProfile,
+        const QString &workspaceRoot,
+        IntentType intent,
+        const QList<AgentToolSpec> &availableTools,
+        ReasoningMode mode,
+        const QString &visionContext = QString()) const;
+
     QString buildAgentInstructions(
         const QList<MemoryRecord> &memory,
         const QList<SkillManifest> &skills,

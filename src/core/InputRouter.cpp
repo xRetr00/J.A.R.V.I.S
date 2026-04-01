@@ -59,16 +59,16 @@ InputRouteDecision InputRouter::decide(const InputRouterContext &context) const
         return decision;
     }
 
-    if (!context.aiAvailable) {
-        decision.kind = InputRouteKind::AgentCapabilityError;
-        decision.status = QStringLiteral("AI unavailable");
-        return decision;
-    }
-
     if (context.explicitToolInventory) {
         decision.kind = InputRouteKind::LocalResponse;
         decision.message = context.toolInventoryText;
         decision.status = QStringLiteral("Tool inventory");
+        return decision;
+    }
+
+    if (!context.aiAvailable) {
+        decision.kind = InputRouteKind::AgentCapabilityError;
+        decision.status = QStringLiteral("AI unavailable");
         return decision;
     }
 
@@ -98,6 +98,17 @@ InputRouteDecision InputRouter::decide(const InputRouterContext &context) const
 
     if (!context.visionRelevant && context.agentEnabled && context.freshnessSensitive) {
         decision.kind = InputRouteKind::BackgroundTasks;
+        AgentTask task;
+        task.type = QStringLiteral("web_search");
+        task.args = QJsonObject{
+            {QStringLiteral("query"), context.explicitWebQuery},
+            {QStringLiteral("freshness"), context.freshnessCode},
+            {QStringLiteral("prefer_fresh"), true}
+        };
+        task.priority = 84;
+        decision.tasks = {task};
+        decision.message = QStringLiteral("All right, I'll check the web for the latest information and summarize it for you next.");
+        decision.status = QStringLiteral("Background task queued");
         return decision;
     }
 

@@ -15,6 +15,7 @@ private slots:
     void promptAdapterInjectsRuntimeContext();
     void promptAdapterInjectsVisionContext();
     void promptAdapterUsesCanonicalToolCallEnvelope();
+    void promptAdapterBuildsHybridContinuationEnvelope();
     void promptAdapterSelectsComputerToolsForGeneralChat();
     void promptAdapterPrefersPlaywrightForBrowserRequests();
     void spokenReplyParsesStructuredPayload();
@@ -130,6 +131,42 @@ void AiServicesTests::promptAdapterUsesCanonicalToolCallEnvelope()
     QVERIFY(messages.first().content.contains(QStringLiteral("tool_calls")));
     QVERIFY(!messages.first().content.contains(QStringLiteral("background_tasks")));
     QVERIFY(messages.first().content.contains(QStringLiteral("<workspace_root>")));
+}
+
+void AiServicesTests::promptAdapterBuildsHybridContinuationEnvelope()
+{
+    PromptAdapter adapter;
+
+    const auto messages = adapter.buildHybridAgentContinuationMessages(
+        QStringLiteral("check the latest release notes"),
+        {
+            AgentToolResult{
+                .callId = QStringLiteral("call-1"),
+                .toolName = QStringLiteral("web_search"),
+                .success = true,
+                .errorKind = ToolErrorKind::None,
+                .summary = QStringLiteral("Web search ready"),
+                .detail = QStringLiteral("Search completed"),
+                .payload = QJsonObject{{QStringLiteral("text"), QStringLiteral("Result body")}}
+            }
+        },
+        {},
+        {
+            .assistantName = QStringLiteral("Vaxil"),
+            .personality = QStringLiteral("calm"),
+            .tone = QStringLiteral("confident"),
+            .addressingStyle = QStringLiteral("direct")
+        },
+        {},
+        QStringLiteral("D:/Vaxil"),
+        IntentType::GENERAL_CHAT,
+        {{QStringLiteral("web_search"), QStringLiteral("Search the web"), nlohmann::json::object()}},
+        ReasoningMode::Balanced);
+
+    QVERIFY(messages.first().content.contains(QStringLiteral("tool_calls")));
+    QVERIFY(messages.first().content.contains(QStringLiteral("continuing the same tool-using request")));
+    QVERIFY(messages.last().content.contains(QStringLiteral("Completed tool results")));
+    QVERIFY(messages.last().content.contains(QStringLiteral("\"tool_name\": \"web_search\"")));
 }
 
 void AiServicesTests::promptAdapterSelectsComputerToolsForGeneralChat()

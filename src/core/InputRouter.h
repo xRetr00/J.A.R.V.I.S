@@ -21,6 +21,7 @@ struct InputRouterContext {
     QString toolInventoryText;
     bool explicitWebSearch = false;
     QString explicitWebQuery;
+    QString freshnessCode;
     bool likelyKnowledgeLookup = false;
     bool freshnessSensitive = false;
     bool agentEnabled = false;

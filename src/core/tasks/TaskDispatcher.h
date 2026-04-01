@@ -17,8 +17,7 @@ public:
 
     void enqueue(const AgentTask &task);
     bool isDuplicate(const AgentTask &task) const;
-    void cancelPreviousTask(const QString &type);
-    int activeTaskId(const QString &type) const;
+    int activeTaskId(const QString &taskKey) const;
 
 public slots:
     void handleTaskStarted(int taskId, const QString &type);
@@ -28,7 +27,7 @@ signals:
     void taskReady(const AgentTask &task);
     void taskCanceled(int taskId);
     void taskResultReady(const QJsonObject &result);
-    void activeTaskChanged(const QString &type, int taskId);
+    void activeTaskChanged(const QString &taskKey, int taskId);
 
 private:
     QString taskKeyFor(const AgentTask &task) const;
@@ -38,7 +37,7 @@ private:
     LoggingService *m_loggingService = nullptr;
     QList<AgentTask> m_pending;
     QHash<int, AgentTask> m_tasksById;
-    QHash<QString, int> m_activeTaskIdByType;
+    QHash<QString, int> m_activeTaskIdByKey;
     QHash<QString, int> m_runningTaskIdByKey;
     QSet<int> m_runningTaskIds;
     QSet<int> m_canceledTaskIds;
