@@ -5,6 +5,7 @@
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QJsonObject>
+#include <QRegularExpression>
 #include <QSet>
 
 #include "core/InputRouter.h"
@@ -19,6 +20,25 @@ bool containsAny(const QString &input, const QStringList &needles)
 {
     for (const QString &needle : needles) {
         if (input.contains(needle)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool containsWholeWordOrPhrase(const QString &input, const QString &needle)
+{
+    const QString escaped = QRegularExpression::escape(needle);
+    const QString pattern = QStringLiteral("(^|\\s)%1(\\s|$)")
+        .arg(escaped)
+        .replace(QStringLiteral("\\ "), QStringLiteral("\\s+"));
+    return QRegularExpression(pattern).match(input).hasMatch();
+}
+
+bool containsWholeWordOrPhraseAny(const QString &input, const QStringList &needles)
+{
+    for (const QString &needle : needles) {
+        if (containsWholeWordOrPhrase(input, needle)) {
             return true;
         }
     }
@@ -266,6 +286,101 @@ bool containsActionRestatement(const QString &input)
         QStringLiteral("go ahead"),
         QStringLiteral("proceed")
     });
+}
+
+QStringList continuationWords(const QString &input)
+{
+    QString normalized = normalizedText(input);
+    normalized.replace(QRegularExpression(QStringLiteral("[^a-z0-9]+")), QStringLiteral(" "));
+    return normalized.split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
+}
+
+bool containsReferentialLanguage(const QString &input)
+{
+    return containsWholeWordOrPhraseAny(input, {
+        QStringLiteral("it"),
+        QStringLiteral("that"),
+        QStringLiteral("this"),
+        QStringLiteral("them"),
+        QStringLiteral("those"),
+        QStringLiteral("these"),
+        QStringLiteral("one"),
+        QStringLiteral("which"),
+        QStringLiteral("result"),
+        QStringLiteral("results"),
+        QStringLiteral("summary"),
+        QStringLiteral("summarize"),
+        QStringLiteral("why"),
+        QStringLiteral("how"),
+        QStringLiteral("and then"),
+        QStringLiteral("then"),
+        QStringLiteral("more"),
+        QStringLiteral("open it"),
+        QStringLiteral("read it"),
+        QStringLiteral("show it"),
+        QStringLiteral("use it")
+    });
+}
+
+bool startsWithContinuationCue(const QStringList &words)
+{
+    if (words.isEmpty()) {
+        return false;
+    }
+
+    static const QSet<QString> cues = {
+        QStringLiteral("what"),
+        QStringLiteral("why"),
+        QStringLiteral("how"),
+        QStringLiteral("when"),
+        QStringLiteral("where"),
+        QStringLiteral("which"),
+        QStringLiteral("and"),
+        QStringLiteral("then"),
+        QStringLiteral("so"),
+        QStringLiteral("open"),
+        QStringLiteral("read"),
+        QStringLiteral("show"),
+        QStringLiteral("summarize"),
+        QStringLiteral("explain"),
+        QStringLiteral("compare"),
+        QStringLiteral("use"),
+        QStringLiteral("pick"),
+        QStringLiteral("choose"),
+        QStringLiteral("it"),
+        QStringLiteral("that"),
+        QStringLiteral("this")
+    };
+
+    return cues.contains(words.first());
+}
+
+bool isClearlyFreshRequest(const QString &input, const InputRouteDecision &decision)
+{
+    const QString lowered = normalizedText(input);
+    if (containsAny(lowered, {
+            QStringLiteral("search for "),
+            QStringLiteral("look up "),
+            QStringLiteral("find "),
+            QStringLiteral("create "),
+            QStringLiteral("write "),
+            QStringLiteral("make "),
+            QStringLiteral("open "),
+            QStringLiteral("go to "),
+            QStringLiteral("set "),
+            QStringLiteral("launch ")
+        }) && !containsWholeWordOrPhraseAny(lowered, {
+            QStringLiteral("open it"),
+            QStringLiteral("read it"),
+            QStringLiteral("show it"),
+            QStringLiteral("summarize that"),
+            QStringLiteral("use it")
+        })) {
+        return true;
+    }
+
+    return decision.kind == InputRouteKind::BackgroundTasks
+        || decision.kind == InputRouteKind::DeterministicTasks;
 }
 }
 
@@ -698,6 +813,53 @@ ActionSession AssistantBehaviorPolicy::createActionSession(const QString &input,
     }
 
     return session;
+}
+
+bool AssistantBehaviorPolicy::shouldContinueActionThread(const QString &input,
+                                                         const InputRouteDecision &decision,
+                                                         const ActionThread &thread,
+                                                         qint64 nowMs) const
+{
+    if (!thread.isUsable(nowMs)) {
+        return false;
+    }
+
+    const QString lowered = normalizedText(input);
+    if (lowered.isEmpty()) {
+        return false;
+    }
+
+    const QStringList words = continuationWords(lowered);
+    if (words.isEmpty()) {
+        return false;
+    }
+
+    const bool referential = containsReferentialLanguage(lowered) || startsWithContinuationCue(words);
+    const bool shortTurn = words.size() <= 8;
+    const bool runningThread = thread.state == ActionThreadState::Running;
+    if (!referential && !(runningThread && shortTurn)) {
+        return false;
+    }
+
+    if (isClearlyFreshRequest(lowered, decision) && !referential) {
+        return false;
+    }
+
+    switch (decision.kind) {
+    case InputRouteKind::LocalResponse:
+    case InputRouteKind::AgentCapabilityError:
+    case InputRouteKind::None:
+        return false;
+    case InputRouteKind::Conversation:
+    case InputRouteKind::CommandExtraction:
+    case InputRouteKind::AgentConversation:
+        return referential || (runningThread && shortTurn);
+    case InputRouteKind::BackgroundTasks:
+    case InputRouteKind::DeterministicTasks:
+        return referential;
+    }
+
+    return false;
 }
 
 bool AssistantBehaviorPolicy::isConfirmationReply(const QString &input, const ActionSession &session) const

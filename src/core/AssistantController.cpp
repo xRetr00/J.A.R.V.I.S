@@ -281,11 +281,158 @@ QString normalizePhrase(const QString &input)
     return normalized.simplified();
 }
 
+bool isLowSignalConversationToken(const QString &token)
+{
+    static const QSet<QString> lowSignalTokens = {
+        QStringLiteral("you"),
+        QStringLiteral("your"),
+        QStringLiteral("it"),
+        QStringLiteral("its"),
+        QStringLiteral("this"),
+        QStringLiteral("that"),
+        QStringLiteral("there"),
+        QStringLiteral("tip"),
+        QStringLiteral("uh"),
+        QStringLiteral("um"),
+        QStringLiteral("hmm"),
+        QStringLiteral("hm"),
+        QStringLiteral("ah"),
+        QStringLiteral("oh"),
+        QStringLiteral("yeah"),
+        QStringLiteral("yep")
+    };
+    return lowSignalTokens.contains(token);
+}
+
+bool allWordsLowSignal(const QStringList &words)
+{
+    if (words.isEmpty()) {
+        return true;
+    }
+
+    for (const QString &word : words) {
+        if (!isLowSignalConversationToken(word)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+QString clippedBackgroundPayload(const BackgroundTaskResult &result, int maxChars = 12000)
+{
+    QString content = result.payload.value(QStringLiteral("content")).toString().trimmed();
+    if (content.isEmpty()) {
+        content = result.payload.value(QStringLiteral("text")).toString().trimmed();
+    }
+    if (content.isEmpty()) {
+        content = result.payload.value(QStringLiteral("summary")).toString().trimmed();
+    }
+    if (content.isEmpty()) {
+        const QString detail = result.detail.trimmed();
+        if (!detail.isEmpty()) {
+            content = detail;
+        }
+    }
+    if (content.isEmpty()) {
+        const QString summary = result.summary.trimmed();
+        if (!summary.isEmpty()) {
+            content = summary;
+        }
+    }
+    if (content.isEmpty() && !result.payload.isEmpty()) {
+        content = QString::fromUtf8(QJsonDocument(result.payload).toJson(QJsonDocument::Compact));
+    }
+    if (content.size() > maxChars) {
+        content = content.left(maxChars);
+    }
+    return content;
+}
+
+QStringList sourceUrlsForResult(const BackgroundTaskResult &result)
+{
+    QStringList urls;
+    const QJsonArray sources = result.payload.value(QStringLiteral("sources")).toArray();
+    for (const QJsonValue &value : sources) {
+        const QString url = value.toObject().value(QStringLiteral("url")).toString().trimmed();
+        if (!url.isEmpty() && !urls.contains(url)) {
+            urls.push_back(url);
+        }
+    }
+    return urls;
+}
+
+QString suggestedNextStepForResult(const BackgroundTaskResult &result)
+{
+    const QString type = result.type.trimmed().toLower();
+    if (!sourceUrlsForResult(result).isEmpty()) {
+        return QStringLiteral("If you want, I can open one of the sources or summarize them.");
+    }
+    if (type == QStringLiteral("file_read") || type == QStringLiteral("file_search") || type == QStringLiteral("dir_list")) {
+        return QStringLiteral("If you want, I can summarize it or pull out the relevant part.");
+    }
+    if (type == QStringLiteral("file_write")
+        || type == QStringLiteral("file_patch")
+        || type == QStringLiteral("computer_write_file")) {
+        return QStringLiteral("If you want, I can verify the change.");
+    }
+    if (type == QStringLiteral("browser_open")
+        || type == QStringLiteral("computer_open_url")
+        || type == QStringLiteral("computer_open_app")) {
+        return QStringLiteral("If you want, I can keep going with that.");
+    }
+    return {};
+}
+
+QString taskTypeForTasks(const QList<AgentTask> &tasks)
+{
+    return tasks.isEmpty() ? QStringLiteral("task") : tasks.first().type.trimmed();
+}
+
+QString suggestedNextStepForTaskType(const QString &taskType)
+{
+    const QString type = taskType.trimmed().toLower();
+    if (type == QStringLiteral("web_search") || type == QStringLiteral("web_fetch")) {
+        return QStringLiteral("If you want, I can summarize it, compare sources, or open one.");
+    }
+    if (type == QStringLiteral("file_read") || type == QStringLiteral("file_search") || type == QStringLiteral("dir_list")) {
+        return QStringLiteral("If you want, I can summarize it or pull out the relevant part.");
+    }
+    if (type == QStringLiteral("file_write")
+        || type == QStringLiteral("file_patch")
+        || type == QStringLiteral("computer_write_file")) {
+        return QStringLiteral("If you want, I can verify the change.");
+    }
+    if (type == QStringLiteral("browser_open")
+        || type == QStringLiteral("computer_open_url")
+        || type == QStringLiteral("computer_open_app")
+        || type == QStringLiteral("browser")
+        || type == QStringLiteral("computer")
+        || type == QStringLiteral("youtube")) {
+        return QStringLiteral("If you want, I can keep going with that.");
+    }
+    return {};
+}
+
 QString userFacingPromptForLogging(const QString &input)
 {
     const QString trimmed = input.trimmed();
     if (!trimmed.startsWith(QStringLiteral("You previously asked me to search the web."), Qt::CaseInsensitive)) {
-        return trimmed;
+        const bool actionThreadFollowUp = trimmed.startsWith(QStringLiteral("You are continuing the current assistant action thread."), Qt::CaseInsensitive);
+        const bool actionThreadCompletion = trimmed.startsWith(QStringLiteral("A task just completed."), Qt::CaseInsensitive);
+        if (!actionThreadFollowUp && !actionThreadCompletion) {
+            return trimmed;
+        }
+
+        const QRegularExpression followUpPattern(QStringLiteral("User follow-up:\\s*(.+?)(?:\\n|$)"), QRegularExpression::CaseInsensitiveOption);
+        const QRegularExpressionMatch followUpMatch = followUpPattern.match(trimmed);
+        if (followUpMatch.hasMatch()) {
+            return followUpMatch.captured(1).trimmed();
+        }
+
+        return actionThreadCompletion
+            ? QStringLiteral("[action thread completion]")
+            : QStringLiteral("[action thread follow-up]");
     }
 
     const QRegularExpression queryPattern(QStringLiteral("User query:\\s*(.+?)(?:\\n|$)"), QRegularExpression::CaseInsensitiveOption);
@@ -1900,6 +2047,7 @@ bool AssistantController::executeRouteDecision(const InputRouteDecision &decisio
         if (decision.tasks.isEmpty()) {
             return false;
         }
+        beginActionThread(decision.tasks, nowMs);
         dispatchBackgroundTasks(decision.tasks);
         const QString fallbackPreamble = decision.message.isEmpty()
             ? QStringLiteral("All right, I'm handling that now.")
@@ -2037,6 +2185,30 @@ void AssistantController::submitText(const QString &text)
         deterministicSpoken,
         nowMs);
     const InputRouteDecision decision = m_inputRouter->decide(routeContext);
+    if (shouldContinueActionThread(effectiveInput, decision, nowMs)) {
+        m_lastPromptForAiLog = effectiveInput;
+        const QString continuationInput = buildActionThreadContinuationInput(effectiveInput);
+        if (m_settings->agentEnabled() && availability.online && availability.modelAvailable) {
+            startAgentConversationRequest(continuationInput, IntentType::GENERAL_CHAT);
+        } else {
+            startConversationRequest(continuationInput);
+        }
+        return;
+    }
+    if (m_recentActionThread.has_value() && !m_recentActionThread->isUsable(nowMs)) {
+        clearActionThread();
+    } else {
+        switch (decision.kind) {
+        case InputRouteKind::BackgroundTasks:
+        case InputRouteKind::DeterministicTasks:
+        case InputRouteKind::CommandExtraction:
+        case InputRouteKind::AgentConversation:
+            clearActionThread();
+            break;
+        default:
+            break;
+        }
+    }
     if (!executeRouteDecision(decision, routedInput, intent, false, nowMs)) {
         startConversationRequest(routedInput);
     }
@@ -2872,20 +3044,13 @@ bool AssistantController::shouldIgnoreAmbiguousTranscript(const QString &transcr
     }
 
     if (m_conversationSessionActive && !startsWithAllowedFollowUpWord(words)) {
-        if (words.size() <= 2) {
+        if (allWordsLowSignal(words)) {
             return true;
         }
 
-        static const QSet<QString> lowSignalStarts = {
-            QStringLiteral("you"),
-            QStringLiteral("your"),
-            QStringLiteral("it"),
-            QStringLiteral("its"),
-            QStringLiteral("this"),
-            QStringLiteral("that"),
-            QStringLiteral("tip")
-        };
-        if (words.size() <= 4 && lowSignalStarts.contains(words.first())) {
+        if (words.size() <= 3
+            && isLowSignalConversationToken(words.first())
+            && allWordsLowSignal(words.mid(0, std::min<qsizetype>(words.size(), 3)))) {
             return true;
         }
     }
@@ -3780,6 +3945,15 @@ void AssistantController::handleHybridAgentFinished(const QString &payload)
                 ? m_executionNarrator->outcomeSummary(m_activeActionSession, true, QStringLiteral("I finished that request."))
                 : QStringLiteral("I finished that request."))
             : message);
+    if (m_activeActionSession.responseMode == ResponseMode::Act
+        || m_activeActionSession.responseMode == ResponseMode::ActWithProgress
+        || m_activeActionSession.responseMode == ResponseMode::Recover) {
+        rememberCompletedActionReply(
+            m_activeActionSession.selectedTools.isEmpty() ? QStringLiteral("assistant_action") : m_activeActionSession.selectedTools.first(),
+            reply.displayText,
+            true,
+            QDateTime::currentMSecsSinceEpoch());
+    }
     finalizeReply(QStringLiteral("agent"),
                   reply,
                   QStringLiteral("Response ready"),
@@ -3811,6 +3985,15 @@ void AssistantController::handleAgentResponse(const AgentResponse &response)
                 ? m_executionNarrator->outcomeSummary(m_activeActionSession, true, QStringLiteral("I finished that request."))
                 : QStringLiteral("I finished that request."))
             : response.outputText);
+    if (m_activeActionSession.responseMode == ResponseMode::Act
+        || m_activeActionSession.responseMode == ResponseMode::ActWithProgress
+        || m_activeActionSession.responseMode == ResponseMode::Recover) {
+        rememberCompletedActionReply(
+            m_activeActionSession.selectedTools.isEmpty() ? QStringLiteral("assistant_action") : m_activeActionSession.selectedTools.first(),
+            reply.displayText,
+            true,
+            QDateTime::currentMSecsSinceEpoch());
+    }
     finalizeReply(QStringLiteral("agent"),
                   reply,
                   QStringLiteral("Response ready"),
@@ -3852,6 +4035,10 @@ void AssistantController::handleCommandFinished(const QString &text)
     reply.displayText = message;
     reply.spokenText = message;
     reply.shouldSpeak = true;
+    rememberCompletedActionReply(command.target.trimmed().isEmpty() ? QStringLiteral("device_action") : command.target.trimmed(),
+                                 message,
+                                 true,
+                                 QDateTime::currentMSecsSinceEpoch());
     finalizeReply(QStringLiteral("command"),
                   reply,
                   QStringLiteral("Command executed"),
@@ -3891,10 +4078,48 @@ void AssistantController::recordTaskResult(const QJsonObject &resultObject)
     if (handling.appendTrace) {
         appendAgentTrace(handling.traceKind, handling.traceTitle, handling.traceDetail, handling.traceSuccess);
     }
-    if (handling.completedResult.has_value()
-        && handling.completedResult->type == QStringLiteral("web_search")
-        && handling.completedResult->success) {
-        startWebSearchSummaryRequest(*handling.completedResult);
+    if (!handling.completedResult.has_value()) {
+        return;
+    }
+
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    rememberActionThreadResult(*handling.completedResult, nowMs);
+
+    if (m_currentState == AssistantState::Processing) {
+        return;
+    }
+
+    if (m_recentActionThread.has_value()
+        && m_recentActionThread->success
+        && m_recentActionThread->hasArtifacts()) {
+        startActionThreadCompletionRequest(*m_recentActionThread);
+        return;
+    }
+
+    const QString fallbackSummary = m_executionNarrator
+        ? m_executionNarrator->summarizeBackgroundResult(*handling.completedResult)
+        : (handling.completedResult->summary.isEmpty()
+            ? handling.completedResult->detail
+            : handling.completedResult->summary);
+    ActionSession outcomeSession = m_activeActionSession;
+    if (m_recentActionThread.has_value()) {
+        outcomeSession.nextStepHint = m_recentActionThread->nextStepHint;
+        outcomeSession.successSummary = m_recentActionThread->resultSummary;
+        outcomeSession.failureSummary = m_recentActionThread->resultSummary;
+    }
+    const QString message = m_executionNarrator
+        ? m_executionNarrator->outcomeSummary(
+            outcomeSession,
+            handling.completedResult->success,
+            fallbackSummary)
+        : fallbackSummary;
+    if (!message.trimmed().isEmpty()) {
+        const QString status = m_executionNarrator
+            ? m_executionNarrator->statusForBackgroundResult(*handling.completedResult)
+            : (handling.completedResult->success
+                ? QStringLiteral("Task finished")
+                : QStringLiteral("Task failed"));
+        deliverLocalResponse(message, status, true);
     }
 }
 
@@ -3937,28 +4162,171 @@ void AssistantController::clearSurfaceError(const QString &source)
     emit assistantSurfaceChanged();
 }
 
-void AssistantController::startWebSearchSummaryRequest(const BackgroundTaskResult &result)
+void AssistantController::startActionThreadCompletionRequest(const ActionThread &thread)
 {
-    if (m_toolCoordinator == nullptr) {
+    if (!thread.hasArtifacts()) {
         return;
     }
 
-    const std::optional<WebSearchFollowUp> followUp = m_toolCoordinator->buildWebSearchFollowUp(result);
-    if (!followUp.has_value()) {
+    m_lastPromptForAiLog = thread.userGoal.trimmed().isEmpty()
+        ? thread.taskType
+        : thread.userGoal;
+    startConversationRequest(buildActionThreadCompletionInput(thread));
+}
+
+bool AssistantController::shouldContinueActionThread(const QString &input,
+                                                     const InputRouteDecision &decision,
+                                                     qint64 nowMs) const
+{
+    if (!m_recentActionThread.has_value() || m_assistantBehaviorPolicy == nullptr) {
+        return false;
+    }
+
+    return m_assistantBehaviorPolicy->shouldContinueActionThread(
+        input,
+        decision,
+        *m_recentActionThread,
+        nowMs);
+}
+
+QString AssistantController::buildActionThreadContinuationInput(const QString &userInput) const
+{
+    if (!m_recentActionThread.has_value()) {
+        return userInput;
+    }
+
+    const ActionThread &thread = *m_recentActionThread;
+    const QString sources = thread.sourceUrls.join(QStringLiteral("\n"));
+    const QString stateText = thread.state == ActionThreadState::Running
+        ? QStringLiteral("running")
+        : (thread.state == ActionThreadState::Completed
+            ? QStringLiteral("completed")
+            : (thread.state == ActionThreadState::Failed
+                ? QStringLiteral("failed")
+                : QStringLiteral("canceled")));
+
+    return QStringLiteral(
+        "You are continuing the current assistant action thread.\n"
+        "Treat the user's message as a follow-up to this task when appropriate. "
+        "Only start a brand-new unrelated task if the user clearly asks for one.\n\n"
+        "Thread state: %1\n"
+        "Task type: %2\n"
+        "User goal: %3\n"
+        "Result summary: %4\n"
+        "Artifacts:\n%5\n"
+        "Sources:\n%6\n"
+        "Suggested next step: %7\n\n"
+        "User follow-up: %8")
+        .arg(stateText,
+             thread.taskType.trimmed().isEmpty() ? QStringLiteral("task") : thread.taskType.trimmed(),
+             thread.userGoal.trimmed().isEmpty() ? QStringLiteral("unknown") : thread.userGoal.trimmed(),
+             thread.resultSummary.trimmed().isEmpty() ? QStringLiteral("none") : thread.resultSummary.trimmed(),
+             thread.artifactText.trimmed().isEmpty() ? QStringLiteral("none") : thread.artifactText.trimmed(),
+             sources.trimmed().isEmpty() ? QStringLiteral("none") : sources.trimmed(),
+             thread.nextStepHint.trimmed().isEmpty() ? QStringLiteral("none") : thread.nextStepHint.trimmed(),
+             userInput.trimmed());
+}
+
+QString AssistantController::buildActionThreadCompletionInput(const ActionThread &thread) const
+{
+    const QString sources = thread.sourceUrls.join(QStringLiteral("\n"));
+    return QStringLiteral(
+        "A task just completed.\n"
+        "Give the user a short useful completion summary grounded only in the task result below. "
+        "If there is an obvious next step, suggest one short follow-up.\n\n"
+        "Task type: %1\n"
+        "User goal: %2\n"
+        "Result summary: %3\n"
+        "Artifacts:\n%4\n"
+        "Sources:\n%5\n"
+        "Suggested next step: %6")
+        .arg(thread.taskType.trimmed().isEmpty() ? QStringLiteral("task") : thread.taskType.trimmed(),
+             thread.userGoal.trimmed().isEmpty() ? QStringLiteral("unknown") : thread.userGoal.trimmed(),
+             thread.resultSummary.trimmed().isEmpty() ? QStringLiteral("none") : thread.resultSummary.trimmed(),
+             thread.artifactText.trimmed().isEmpty() ? QStringLiteral("none") : thread.artifactText.trimmed(),
+             sources.trimmed().isEmpty() ? QStringLiteral("none") : sources.trimmed(),
+             thread.nextStepHint.trimmed().isEmpty() ? QStringLiteral("none") : thread.nextStepHint.trimmed());
+}
+
+void AssistantController::beginActionThread(const QList<AgentTask> &tasks, qint64 nowMs)
+{
+    if (tasks.isEmpty()) {
         return;
     }
 
-    if (followUp->deliverLocalResponse) {
-        deliverLocalResponse(followUp->localResponseText, followUp->localResponseStatus, true);
-        return;
+    ActionThread thread;
+    thread.id = m_activeActionSession.id;
+    thread.taskType = taskTypeForTasks(tasks);
+    thread.userGoal = m_activeActionSession.userRequest.trimmed().isEmpty()
+        ? m_activeActionSession.goal
+        : m_activeActionSession.userRequest.trimmed();
+    thread.resultSummary = m_executionNarrator
+        ? m_executionNarrator->preActionText(m_activeActionSession, QStringLiteral("Working on it."))
+        : QStringLiteral("Working on it.");
+    thread.nextStepHint = suggestedNextStepForTaskType(thread.taskType);
+    thread.state = ActionThreadState::Running;
+    thread.success = false;
+    thread.valid = true;
+    thread.updatedAtMs = nowMs;
+    thread.expiresAtMs = nowMs + conversationSessionTimeoutMs();
+    m_recentActionThread = thread;
+}
+
+void AssistantController::rememberActionThreadResult(const BackgroundTaskResult &result, qint64 nowMs)
+{
+    ActionThread thread;
+    if (m_recentActionThread.has_value()) {
+        thread = *m_recentActionThread;
+    } else {
+        thread.id = m_activeActionSession.id;
+        thread.userGoal = m_activeActionSession.userRequest.trimmed().isEmpty()
+            ? m_activeActionSession.goal
+            : m_activeActionSession.userRequest.trimmed();
     }
 
-    if (followUp->synthesisInput.isEmpty()) {
-        return;
+    thread.taskType = result.type.trimmed().isEmpty() ? thread.taskType : result.type.trimmed();
+    thread.resultSummary = m_executionNarrator
+        ? m_executionNarrator->summarizeBackgroundResult(result)
+        : (result.summary.trimmed().isEmpty() ? result.detail.trimmed() : result.summary.trimmed());
+    thread.artifactText = clippedBackgroundPayload(result);
+    thread.payload = result.payload;
+    thread.sourceUrls = sourceUrlsForResult(result);
+    thread.nextStepHint = suggestedNextStepForResult(result);
+    thread.state = result.success ? ActionThreadState::Completed : ActionThreadState::Failed;
+    if (result.state == TaskState::Canceled) {
+        thread.state = ActionThreadState::Canceled;
     }
+    thread.success = result.success;
+    thread.valid = true;
+    thread.updatedAtMs = nowMs;
+    thread.expiresAtMs = nowMs + conversationSessionTimeoutMs();
+    m_recentActionThread = thread;
+}
 
-    m_lastPromptForAiLog = followUp->logPrompt;
-    startConversationRequest(followUp->synthesisInput);
+void AssistantController::rememberCompletedActionReply(const QString &taskType,
+                                                       const QString &summary,
+                                                       bool success,
+                                                       qint64 nowMs)
+{
+    ActionThread thread;
+    thread.id = m_activeActionSession.id;
+    thread.taskType = taskType.trimmed().isEmpty() ? QStringLiteral("assistant_action") : taskType.trimmed();
+    thread.userGoal = m_activeActionSession.userRequest.trimmed().isEmpty()
+        ? m_activeActionSession.goal
+        : m_activeActionSession.userRequest.trimmed();
+    thread.resultSummary = summary.trimmed();
+    thread.nextStepHint = suggestedNextStepForTaskType(thread.taskType);
+    thread.state = success ? ActionThreadState::Completed : ActionThreadState::Failed;
+    thread.success = success;
+    thread.valid = true;
+    thread.updatedAtMs = nowMs;
+    thread.expiresAtMs = nowMs + conversationSessionTimeoutMs();
+    m_recentActionThread = thread;
+}
+
+void AssistantController::clearActionThread()
+{
+    m_recentActionThread.reset();
 }
 
 bool AssistantController::handlePendingConfirmationInput(const QString &input)

@@ -4,6 +4,7 @@
 #include <QObject>
 #include <QPair>
 #include <QThread>
+#include <optional>
 #include <memory>
 
 #include "core/AssistantTypes.h"
@@ -271,7 +272,19 @@ private:
     void recordTaskResult(const QJsonObject &resultObject);
     void setSurfaceError(const QString &source, const QString &primary, const QString &secondary = QString());
     void clearSurfaceError(const QString &source = QString());
-    void startWebSearchSummaryRequest(const BackgroundTaskResult &result);
+    void startActionThreadCompletionRequest(const ActionThread &thread);
+    bool shouldContinueActionThread(const QString &input,
+                                    const InputRouteDecision &decision,
+                                    qint64 nowMs) const;
+    QString buildActionThreadContinuationInput(const QString &userInput) const;
+    QString buildActionThreadCompletionInput(const ActionThread &thread) const;
+    void beginActionThread(const QList<AgentTask> &tasks, qint64 nowMs);
+    void rememberActionThreadResult(const BackgroundTaskResult &result, qint64 nowMs);
+    void rememberCompletedActionReply(const QString &taskType,
+                                      const QString &summary,
+                                      bool success,
+                                      qint64 nowMs);
+    void clearActionThread();
     bool handlePendingConfirmationInput(const QString &input);
     void storePendingConfirmation(const InputRouteDecision &decision,
                                   const QString &input,
@@ -343,6 +356,7 @@ private:
     InputRouteDecision m_pendingRouteDecision;
     QString m_pendingRouteInput;
     LocalIntent m_pendingLocalIntent = LocalIntent::Unknown;
+    std::optional<ActionThread> m_recentActionThread;
     QString m_previousAgentResponseId;
     int m_activeAgentIteration = 0;
     AgentCapabilitySet m_agentCapabilities;

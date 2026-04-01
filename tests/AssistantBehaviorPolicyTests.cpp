@@ -1,4 +1,5 @@
 #include <QtTest>
+#include <QDateTime>
 
 #include "core/AssistantBehaviorPolicy.h"
 #include "core/InputRouter.h"
@@ -16,6 +17,8 @@ private slots:
     void routesHighConfidenceToolIntentToAgent();
     void acceptsExplicitConfirmationReply();
     void recognizesRejectionReply();
+    void continuesReferentialFollowUpAgainstRecentActionThread();
+    void ignoresFreshRequestAgainstRecentActionThread();
 };
 
 void AssistantBehaviorPolicyTests::buildsMemoryContextLanes()
@@ -143,6 +146,48 @@ void AssistantBehaviorPolicyTests::recognizesRejectionReply()
     AssistantBehaviorPolicy policy;
     QVERIFY(policy.isRejectionReply(QStringLiteral("no, cancel that")));
     QVERIFY(!policy.isRejectionReply(QStringLiteral("tell me more")));
+}
+
+void AssistantBehaviorPolicyTests::continuesReferentialFollowUpAgainstRecentActionThread()
+{
+    AssistantBehaviorPolicy policy;
+    InputRouteDecision decision;
+    decision.kind = InputRouteKind::CommandExtraction;
+
+    ActionThread thread;
+    thread.taskType = QStringLiteral("web_search");
+    thread.userGoal = QStringLiteral("Find the latest Tesla news");
+    thread.resultSummary = QStringLiteral("Found several current sources.");
+    thread.state = ActionThreadState::Completed;
+    thread.valid = true;
+    thread.expiresAtMs = QDateTime::currentMSecsSinceEpoch() + 30000;
+
+    QVERIFY(policy.shouldContinueActionThread(
+        QStringLiteral("open it"),
+        decision,
+        thread,
+        QDateTime::currentMSecsSinceEpoch()));
+}
+
+void AssistantBehaviorPolicyTests::ignoresFreshRequestAgainstRecentActionThread()
+{
+    AssistantBehaviorPolicy policy;
+    InputRouteDecision decision;
+    decision.kind = InputRouteKind::BackgroundTasks;
+
+    ActionThread thread;
+    thread.taskType = QStringLiteral("file_read");
+    thread.userGoal = QStringLiteral("Read the startup log");
+    thread.resultSummary = QStringLiteral("Read completed.");
+    thread.state = ActionThreadState::Completed;
+    thread.valid = true;
+    thread.expiresAtMs = QDateTime::currentMSecsSinceEpoch() + 30000;
+
+    QVERIFY(!policy.shouldContinueActionThread(
+        QStringLiteral("search for the latest AMD news"),
+        decision,
+        thread,
+        QDateTime::currentMSecsSinceEpoch()));
 }
 
 QTEST_APPLESS_MAIN(AssistantBehaviorPolicyTests)

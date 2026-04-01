@@ -755,6 +755,20 @@ if(JARVIS_BUILD_TESTS)
     set_tests_properties(jarvis_execution_narrator_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
     jarvis_copy_optional_runtime_libraries(jarvis_execution_narrator_tests)
 
+    qt_add_executable(jarvis_tool_coordinator_tests
+        tests/ToolCoordinatorTests.cpp
+    )
+
+    target_link_libraries(jarvis_tool_coordinator_tests
+        PRIVATE
+            jarvis_lib
+            Qt6::Test
+    )
+
+    add_test(NAME jarvis_tool_coordinator_tests COMMAND jarvis_tool_coordinator_tests)
+    set_tests_properties(jarvis_tool_coordinator_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_tool_coordinator_tests)
+
     qt_add_executable(jarvis_local_response_tests
         tests/LocalResponseEngineTests.cpp
     )

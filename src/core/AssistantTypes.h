@@ -91,6 +91,14 @@ enum class ResponseMode {
     Confirm
 };
 
+enum class ActionThreadState {
+    None,
+    Running,
+    Completed,
+    Failed,
+    Canceled
+};
+
 enum class MemoryLane {
     Profile,
     Episodic,
@@ -423,6 +431,32 @@ struct ActionSession {
     bool shouldAnnounceProgress = false;
     TrustDecision trust;
     ToolPlan toolPlan;
+};
+
+struct ActionThread {
+    QString id;
+    QString taskType;
+    QString userGoal;
+    QString resultSummary;
+    QString artifactText;
+    QJsonObject payload;
+    QStringList sourceUrls;
+    QString nextStepHint;
+    ActionThreadState state = ActionThreadState::None;
+    bool success = false;
+    bool valid = false;
+    qint64 updatedAtMs = 0;
+    qint64 expiresAtMs = 0;
+
+    [[nodiscard]] bool isUsable(qint64 nowMs) const
+    {
+        return valid && state != ActionThreadState::None && expiresAtMs > nowMs;
+    }
+
+    [[nodiscard]] bool hasArtifacts() const
+    {
+        return !artifactText.trimmed().isEmpty() || !payload.isEmpty() || !sourceUrls.isEmpty();
+    }
 };
 
 struct AssistantIdentity {

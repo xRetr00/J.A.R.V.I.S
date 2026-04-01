@@ -25,6 +25,10 @@ public:
                                       const InputRouteDecision &decision,
                                       const ToolPlan &plan,
                                       const TrustDecision &trust) const;
+    bool shouldContinueActionThread(const QString &input,
+                                    const InputRouteDecision &decision,
+                                    const ActionThread &thread,
+                                    qint64 nowMs) const;
     bool isConfirmationReply(const QString &input, const ActionSession &session) const;
     bool isRejectionReply(const QString &input) const;
 };

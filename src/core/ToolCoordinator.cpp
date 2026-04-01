@@ -3,12 +3,54 @@
 #include <algorithm>
 
 #include <QDateTime>
+#include <QJsonArray>
 #include <QJsonDocument>
 
 #include "agent/AgentToolbox.h"
 #include "core/ExecutionNarrator.h"
 #include "core/tasks/TaskDispatcher.h"
 #include "logging/LoggingService.h"
+
+namespace {
+QString clippedWebSearchPayload(const BackgroundTaskResult &result, int maxChars = 12000)
+{
+    QString content = result.payload.value(QStringLiteral("content")).toString().trimmed();
+    if (content.isEmpty()) {
+        content = result.payload.value(QStringLiteral("text")).toString().trimmed();
+    }
+    if (content.isEmpty()) {
+        content = result.payload.value(QStringLiteral("summary")).toString().trimmed();
+    }
+    if (content.isEmpty()) {
+        const QJsonArray sources = result.payload.value(QStringLiteral("sources")).toArray();
+        QStringList lines;
+        for (const QJsonValue &value : sources) {
+            const QJsonObject source = value.toObject();
+            const QString url = source.value(QStringLiteral("url")).toString().trimmed();
+            if (url.isEmpty()) {
+                continue;
+            }
+            lines.push_back(QStringLiteral("%1 | %2 | %3")
+                                .arg(source.value(QStringLiteral("title")).toString().trimmed().isEmpty()
+                                         ? QStringLiteral("untitled")
+                                         : source.value(QStringLiteral("title")).toString().trimmed())
+                                .arg(url)
+                                .arg(source.value(QStringLiteral("snippet")).toString().trimmed().left(240)));
+            if (lines.size() >= 8) {
+                break;
+            }
+        }
+        content = lines.join(QStringLiteral("\n")).trimmed();
+    }
+    if (content.isEmpty() && !result.payload.isEmpty()) {
+        content = QString::fromUtf8(QJsonDocument(result.payload).toJson(QJsonDocument::Compact));
+    }
+    if (content.size() > maxChars) {
+        content = content.left(maxChars);
+    }
+    return content;
+}
+}
 
 ToolCoordinator::ToolCoordinator(LoggingService *loggingService,
                                  const ExecutionNarrator *executionNarrator)
@@ -240,12 +282,21 @@ QList<AgentToolCall> ToolCoordinator::filterAllowedToolCalls(
 
 std::optional<WebSearchFollowUp> ToolCoordinator::buildWebSearchFollowUp(const BackgroundTaskResult &result) const
 {
-    const QString query = result.payload.value(QStringLiteral("query")).toString().trimmed();
+    QString query = result.payload.value(QStringLiteral("query")).toString().trimmed();
     const QString provider = result.payload.value(QStringLiteral("provider")).toString().trimmed();
-    const QString content = result.payload.value(QStringLiteral("content")).toString();
+    const QString content = clippedWebSearchPayload(result);
     const bool reliable = result.payload.value(QStringLiteral("reliable")).toBool(true);
     const QString reliabilityReason = result.payload.value(QStringLiteral("reliability_reason")).toString().trimmed();
-    if (query.isEmpty() || content.trimmed().isEmpty()) {
+    if (query.isEmpty()) {
+        query = result.summary.trimmed();
+    }
+    if (query.isEmpty()) {
+        query = result.title.trimmed();
+    }
+    if (query.isEmpty()) {
+        query = QStringLiteral("the latest search result");
+    }
+    if (content.trimmed().isEmpty()) {
         return std::nullopt;
     }
 
