@@ -5,6 +5,47 @@
 #include "memory/MemoryStore.h"
 #include "tts/TtsEngine.h"
 
+namespace {
+QString modeAwareStatus(const ActionSession &session, const QString &status)
+{
+    if (!status.trimmed().isEmpty() && status != QStringLiteral("Response ready")) {
+        return status;
+    }
+
+    switch (session.responseMode) {
+    case ResponseMode::ActWithProgress:
+        return QStringLiteral("Task finished");
+    case ResponseMode::Act:
+        return QStringLiteral("Request handled");
+    case ResponseMode::Recover:
+        return QStringLiteral("Recovery response");
+    case ResponseMode::Confirm:
+        return QStringLiteral("Confirmation needed");
+    case ResponseMode::Summarize:
+        return QStringLiteral("Direct response");
+    case ResponseMode::Clarify:
+        return QStringLiteral("Clarification needed");
+    case ResponseMode::Chat:
+    default:
+        return status.trimmed().isEmpty() ? QStringLiteral("Response ready") : status;
+    }
+}
+
+bool shouldAppendHint(const ActionSession &session, const QString &text)
+{
+    if (session.responseMode == ResponseMode::Chat || session.nextStepHint.trimmed().isEmpty()) {
+        return false;
+    }
+
+    const QString simplified = text.simplified();
+    return simplified.isEmpty()
+        || simplified == session.successSummary.simplified()
+        || simplified == session.failureSummary.simplified()
+        || session.responseMode == ResponseMode::Confirm
+        || session.responseMode == ResponseMode::Recover;
+}
+}
+
 ResponseFinalizer::ResponseFinalizer(MemoryStore *memoryStore,
                                      TtsEngine *ttsEngine,
                                      LoggingService *loggingService)
@@ -16,6 +57,7 @@ ResponseFinalizer::ResponseFinalizer(MemoryStore *memoryStore,
 
 bool ResponseFinalizer::finalizeResponse(const QString &source,
                                          const SpokenReply &reply,
+                                         const ActionSession &session,
                                          QString *responseText,
                                          const std::function<void()> &emitResponseChanged,
                                          const std::function<void()> &refreshConversationSession,
@@ -23,31 +65,52 @@ bool ResponseFinalizer::finalizeResponse(const QString &source,
                                          const QString &status,
                                          const std::function<void(const QString &)> &setStatus) const
 {
+    SpokenReply finalizedReply = reply;
+    if (finalizedReply.displayText.trimmed().isEmpty()) {
+        finalizedReply.displayText = session.successSummary.trimmed();
+    }
+    if (finalizedReply.spokenText.trimmed().isEmpty() && finalizedReply.shouldSpeak) {
+        finalizedReply.spokenText = finalizedReply.displayText;
+    }
+    if (shouldAppendHint(session, finalizedReply.displayText)) {
+        const QString suffix = session.nextStepHint.trimmed();
+        finalizedReply.displayText = finalizedReply.displayText.trimmed().isEmpty()
+            ? suffix
+            : QStringLiteral("%1 %2").arg(finalizedReply.displayText.trimmed(), suffix);
+        if (finalizedReply.shouldSpeak) {
+            finalizedReply.spokenText = finalizedReply.spokenText.trimmed().isEmpty()
+                ? suffix
+                : QStringLiteral("%1 %2").arg(finalizedReply.spokenText.trimmed(), suffix);
+        }
+    }
+
+    const QString effectiveStatus = modeAwareStatus(session, status);
+
     if (responseText) {
-        *responseText = reply.displayText;
+        *responseText = finalizedReply.displayText;
     }
     if (emitResponseChanged) {
         emitResponseChanged();
     }
     if (m_memoryStore) {
-        m_memoryStore->appendConversation(QStringLiteral("assistant"), reply.displayText);
+        m_memoryStore->appendConversation(QStringLiteral("assistant"), finalizedReply.displayText);
     }
     if (m_loggingService) {
         m_loggingService->info(QStringLiteral("Response finalized. source=\"%1\" speak=%2 chars=%3")
-                                   .arg(source, reply.shouldSpeak ? QStringLiteral("true") : QStringLiteral("false"))
-                                   .arg(reply.displayText.size()));
+                                   .arg(source, finalizedReply.shouldSpeak ? QStringLiteral("true") : QStringLiteral("false"))
+                                   .arg(finalizedReply.displayText.size()));
     }
     if (logPromptResponsePair) {
-        logPromptResponsePair(reply.displayText, source, status);
+        logPromptResponsePair(finalizedReply.displayText, source, effectiveStatus);
     }
     if (setStatus) {
-        setStatus(status);
+        setStatus(effectiveStatus);
     }
-    if (reply.shouldSpeak && !reply.spokenText.isEmpty() && m_ttsEngine) {
+    if (finalizedReply.shouldSpeak && !finalizedReply.spokenText.isEmpty() && m_ttsEngine) {
         if (refreshConversationSession) {
             refreshConversationSession();
         }
-        m_ttsEngine->speakText(reply.spokenText);
+        m_ttsEngine->speakText(finalizedReply.spokenText);
         return true;
     }
     return false;

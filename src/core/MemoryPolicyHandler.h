@@ -18,6 +18,13 @@ public:
     void captureExplicitMemoryFromInput(const QString &input) const;
 
 private:
+    void storeDerivedMemory(MemoryType type,
+                            const QString &key,
+                            const QString &value,
+                            const QStringList &tags = {},
+                            const QString &source = QStringLiteral("conversation")) const;
+    void captureImplicitMemoryFromInput(const QString &input) const;
+
     IdentityProfileService *m_identityProfileService = nullptr;
     MemoryStore *m_memoryStore = nullptr;
 };

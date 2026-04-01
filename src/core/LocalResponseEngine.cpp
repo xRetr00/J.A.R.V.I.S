@@ -101,6 +101,11 @@ QString sanitizeLocalResponse(QString text)
 
     return text.simplified();
 }
+
+bool isExpressiveMode(ResponseMode mode)
+{
+    return mode == ResponseMode::Chat || mode == ResponseMode::Summarize || mode == ResponseMode::Act;
+}
 }
 
 LocalResponseEngine::LocalResponseEngine(QObject *parent)
@@ -131,33 +136,51 @@ bool LocalResponseEngine::initialize()
     return !m_responses.isEmpty();
 }
 
-QString LocalResponseEngine::respondToIntent(LocalIntent intent, const LocalResponseContext &context)
+QString LocalResponseEngine::respondToIntent(LocalIntent intent, const LocalResponseContext &context, ResponseMode mode)
 {
+    if (!isExpressiveMode(mode)) {
+        return conciseResponseForMode(mode, QStringLiteral("How can I help?"));
+    }
     return renderTemplate(chooseVariant(resolveGroup(intent, context)), context);
 }
 
-QString LocalResponseEngine::respondToError(const QString &errorKey, const LocalResponseContext &context)
+QString LocalResponseEngine::respondToError(const QString &errorKey, const LocalResponseContext &context, ResponseMode mode)
 {
+    if (mode == ResponseMode::Confirm) {
+        return conciseResponseForMode(mode, QStringLiteral("I need confirmation before I continue."));
+    }
     return renderTemplate(chooseVariant(errorKey), context);
 }
 
-QString LocalResponseEngine::acknowledgement(const QString &target, const LocalResponseContext &context)
+QString LocalResponseEngine::acknowledgement(const QString &target, const LocalResponseContext &context, ResponseMode mode)
 {
+    if (!isExpressiveMode(mode)) {
+        return conciseResponseForMode(mode, QStringLiteral("Working on it."));
+    }
     return renderTemplate(chooseVariant(QStringLiteral("acknowledgement")), context, target);
 }
 
-QString LocalResponseEngine::wakeWordReady(const LocalResponseContext &context)
+QString LocalResponseEngine::wakeWordReady(const LocalResponseContext &context, ResponseMode mode)
 {
+    if (!isExpressiveMode(mode)) {
+        return conciseResponseForMode(mode, QStringLiteral("Ready."));
+    }
     return renderTemplate(chooseVariant(QStringLiteral("wakeword_ready")), context);
 }
 
-QString LocalResponseEngine::currentTimeResponse(const LocalResponseContext &context)
+QString LocalResponseEngine::currentTimeResponse(const LocalResponseContext &context, ResponseMode mode)
 {
+    if (!isExpressiveMode(mode)) {
+        return conciseResponseForMode(mode, QStringLiteral("It is %1.").arg(context.currentTime));
+    }
     return renderTemplate(chooseVariant(QStringLiteral("time_status")), context);
 }
 
-QString LocalResponseEngine::currentDateResponse(const LocalResponseContext &context)
+QString LocalResponseEngine::currentDateResponse(const LocalResponseContext &context, ResponseMode mode)
 {
+    if (!isExpressiveMode(mode)) {
+        return conciseResponseForMode(mode, QStringLiteral("Today is %1.").arg(context.currentDate));
+    }
     return renderTemplate(chooseVariant(QStringLiteral("date_status")), context);
 }
 
@@ -182,7 +205,7 @@ QString LocalResponseEngine::resolveGroup(LocalIntent intent, const LocalRespons
 QString LocalResponseEngine::renderTemplate(const QString &variant, const LocalResponseContext &context, const QString &target) const
 {
     QString text = variant;
-    const QString fallbackName = context.userName.isEmpty() ? QStringLiteral("sir") : context.userName;
+    const QString fallbackName = context.userName.isEmpty() ? QStringLiteral("there") : context.userName;
     text.replace(QStringLiteral("{assistant_name}"), context.assistantName);
     text.replace(QStringLiteral("{user_name}"), fallbackName);
     text.replace(QStringLiteral("{time_of_day}"), context.timeOfDay);
@@ -215,4 +238,18 @@ QString LocalResponseEngine::chooseVariant(const QString &group)
 
     m_lastIndexByGroup[group] = nextIndex;
     return variants.at(nextIndex);
+}
+
+QString LocalResponseEngine::conciseResponseForMode(ResponseMode mode, const QString &defaultText) const
+{
+    switch (mode) {
+    case ResponseMode::Confirm:
+        return QStringLiteral("Please confirm first.");
+    case ResponseMode::Recover:
+        return QStringLiteral("I hit a blocker.");
+    case ResponseMode::Clarify:
+        return QStringLiteral("I need one detail.");
+    default:
+        return defaultText;
+    }
 }

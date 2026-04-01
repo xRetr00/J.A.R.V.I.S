@@ -1,0 +1,134 @@
+#include <QtTest>
+
+#include "core/AssistantBehaviorPolicy.h"
+#include "core/InputRouter.h"
+
+class AssistantBehaviorPolicyTests : public QObject
+{
+    Q_OBJECT
+
+private slots:
+    void buildsMemoryContextLanes();
+    void prioritizesGroundedToolsBeforeRiskyTools();
+    void createsActWithProgressSessionForBackgroundTasks();
+    void requiresConfirmationForImplicitRiskyActions();
+    void decidesRouteFromPolicyContext();
+    void acceptsExplicitConfirmationReply();
+    void recognizesRejectionReply();
+};
+
+void AssistantBehaviorPolicyTests::buildsMemoryContextLanes()
+{
+    AssistantBehaviorPolicy policy;
+    const MemoryContext context = policy.buildMemoryContext(
+        QStringLiteral("What am I working on?"),
+        {
+            MemoryRecord{.type = QStringLiteral("preference"), .key = QStringLiteral("general_preference"), .value = QStringLiteral("short answers")},
+            MemoryRecord{.type = QStringLiteral("context"), .key = QStringLiteral("current_project"), .value = QStringLiteral("Vaxil behavior refactor")},
+            MemoryRecord{.type = QStringLiteral("fact"), .key = QStringLiteral("recent_note"), .value = QStringLiteral("Need to revisit tool narration")}
+        });
+
+    QCOMPARE(context.profile.size(), 1);
+    QCOMPARE(context.activeCommitments.size(), 1);
+    QCOMPARE(context.episodic.size(), 1);
+}
+
+void AssistantBehaviorPolicyTests::prioritizesGroundedToolsBeforeRiskyTools()
+{
+    AssistantBehaviorPolicy policy;
+    const QList<AgentToolSpec> selected = policy.selectRelevantTools(
+        QStringLiteral("check the latest release notes and summarize them"),
+        IntentType::GENERAL_CHAT,
+        {
+            {QStringLiteral("file_write"), {}, {}},
+            {QStringLiteral("web_search"), {}, {}},
+            {QStringLiteral("browser_open"), {}, {}},
+            {QStringLiteral("memory_search"), {}, {}}
+        });
+
+    QVERIFY(!selected.isEmpty());
+    QCOMPARE(selected.first().name, QStringLiteral("web_search"));
+}
+
+void AssistantBehaviorPolicyTests::createsActWithProgressSessionForBackgroundTasks()
+{
+    AssistantBehaviorPolicy policy;
+    InputRouteDecision decision;
+    decision.kind = InputRouteKind::BackgroundTasks;
+    decision.intent = IntentType::READ_FILE;
+
+    const ToolPlan plan = policy.buildToolPlan(
+        QStringLiteral("read the startup log"),
+        IntentType::READ_FILE,
+        {
+            {QStringLiteral("file_read"), {}, {}},
+            {QStringLiteral("log_tail"), {}, {}}
+        });
+    const TrustDecision trust = policy.assessTrust(QStringLiteral("read the startup log"), decision, plan);
+    const ActionSession session = policy.createActionSession(
+        QStringLiteral("read the startup log"),
+        decision,
+        plan,
+        trust);
+
+    QCOMPARE(session.responseMode, ResponseMode::ActWithProgress);
+    QVERIFY(!session.preamble.isEmpty());
+    QVERIFY(session.shouldAnnounceProgress);
+}
+
+void AssistantBehaviorPolicyTests::requiresConfirmationForImplicitRiskyActions()
+{
+    AssistantBehaviorPolicy policy;
+    InputRouteDecision decision;
+    decision.kind = InputRouteKind::BackgroundTasks;
+    decision.intent = IntentType::GENERAL_CHAT;
+
+    const ToolPlan plan = policy.buildToolPlan(
+        QStringLiteral("maybe make that available for me"),
+        IntentType::GENERAL_CHAT,
+        {
+            {QStringLiteral("skill_install"), {}, {}},
+            {QStringLiteral("web_search"), {}, {}}
+        });
+    const TrustDecision trust = policy.assessTrust(
+        QStringLiteral("maybe make that available for me"),
+        decision,
+        plan);
+
+    QVERIFY(trust.highRisk);
+    QVERIFY(trust.requiresConfirmation);
+}
+
+void AssistantBehaviorPolicyTests::decidesRouteFromPolicyContext()
+{
+    AssistantBehaviorPolicy policy;
+    InputRouterContext context;
+    context.agentEnabled = true;
+    context.explicitWebSearch = true;
+    context.explicitWebQuery = QStringLiteral("latest Vaxil release notes");
+
+    const InputRouteDecision decision = policy.decideRoute(context);
+    QCOMPARE(decision.kind, InputRouteKind::BackgroundTasks);
+    QCOMPARE(decision.tasks.size(), 1);
+    QCOMPARE(decision.tasks.first().type, QStringLiteral("web_search"));
+}
+
+void AssistantBehaviorPolicyTests::acceptsExplicitConfirmationReply()
+{
+    AssistantBehaviorPolicy policy;
+    ActionSession session;
+    session.userRequest = QStringLiteral("open the browser and install that skill");
+
+    QVERIFY(policy.isConfirmationReply(QStringLiteral("yes, go ahead"), session));
+    QVERIFY(policy.isConfirmationReply(QStringLiteral("open it"), session));
+}
+
+void AssistantBehaviorPolicyTests::recognizesRejectionReply()
+{
+    AssistantBehaviorPolicy policy;
+    QVERIFY(policy.isRejectionReply(QStringLiteral("no, cancel that")));
+    QVERIFY(!policy.isRejectionReply(QStringLiteral("tell me more")));
+}
+
+QTEST_APPLESS_MAIN(AssistantBehaviorPolicyTests)
+#include "AssistantBehaviorPolicyTests.moc"

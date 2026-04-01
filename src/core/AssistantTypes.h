@@ -81,6 +81,22 @@ enum class LocalIntent {
     Unknown
 };
 
+enum class ResponseMode {
+    Chat,
+    Clarify,
+    Act,
+    ActWithProgress,
+    Recover,
+    Summarize,
+    Confirm
+};
+
+enum class MemoryLane {
+    Profile,
+    Episodic,
+    ActiveCommitment
+};
+
 enum class GestureLifecycleState {
     Idle,
     Detecting,
@@ -347,6 +363,66 @@ struct MemoryRecord {
     float confidence = 0.0f;
     QString source;
     QString updatedAt;
+};
+
+struct MemoryContext {
+    QList<MemoryRecord> profile;
+    QList<MemoryRecord> episodic;
+    QList<MemoryRecord> activeCommitments;
+
+    [[nodiscard]] bool isEmpty() const
+    {
+        return profile.isEmpty() && episodic.isEmpty() && activeCommitments.isEmpty();
+    }
+
+    [[nodiscard]] QList<MemoryRecord> promptRecords() const
+    {
+        QList<MemoryRecord> records = activeCommitments;
+        records.append(profile);
+        records.append(episodic);
+        return records;
+    }
+};
+
+struct ToolPlanStep {
+    QString toolName;
+    int affordanceScore = 0;
+    int riskScore = 0;
+    bool requiresGrounding = false;
+    bool sideEffecting = false;
+    QString reason;
+};
+
+struct ToolPlan {
+    QString goal;
+    QList<ToolPlanStep> candidates;
+    QStringList orderedToolNames;
+    bool requiresGrounding = false;
+    bool sideEffecting = false;
+    QString rationale;
+};
+
+struct TrustDecision {
+    bool highRisk = false;
+    bool requiresConfirmation = false;
+    QString reason;
+    QString userMessage;
+};
+
+struct ActionSession {
+    QString id;
+    QString userRequest;
+    QString goal;
+    ResponseMode responseMode = ResponseMode::Chat;
+    QString preamble;
+    QString progress;
+    QString successSummary;
+    QString failureSummary;
+    QString nextStepHint;
+    QStringList selectedTools;
+    bool shouldAnnounceProgress = false;
+    TrustDecision trust;
+    ToolPlan toolPlan;
 };
 
 struct AssistantIdentity {

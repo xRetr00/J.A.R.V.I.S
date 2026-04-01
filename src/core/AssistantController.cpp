@@ -30,6 +30,8 @@
 #include "core/agent/IntentDetector.h"
 #include "core/agent/IntentEngine.h"
 #include "core/AiRequestCoordinator.h"
+#include "core/AssistantBehaviorPolicy.h"
+#include "core/ExecutionNarrator.h"
 #include "core/InputRouter.h"
 #include "core/IntentRouter.h"
 #include "core/LocalResponseEngine.h"
@@ -148,6 +150,13 @@ QString compactUrlForSurface(const QString &urlText)
     }
 
     return compactSurfaceText(trimmed, 48);
+}
+
+MemoryContext fallbackMemoryContext(const QList<MemoryRecord> &memory)
+{
+    MemoryContext context;
+    context.episodic = memory;
+    return context;
 }
 
 QString normalizeForRouting(QString text)
@@ -1202,10 +1211,12 @@ AssistantController::AssistantController(
     m_promptAdapter = new PromptAdapter(this);
     m_streamAssembler = new StreamAssembler(this);
     m_memoryStore = new MemoryStore(this);
-    m_inputRouter = std::make_unique<InputRouter>();
+    m_assistantBehaviorPolicy = std::make_unique<AssistantBehaviorPolicy>();
+    m_inputRouter = std::make_unique<InputRouter>(m_assistantBehaviorPolicy.get());
     m_aiRequestCoordinator = std::make_unique<AiRequestCoordinator>(m_settings, m_reasoningRouter);
+    m_executionNarrator = std::make_unique<ExecutionNarrator>();
     m_memoryPolicyHandler = std::make_unique<MemoryPolicyHandler>(m_identityProfileService, m_memoryStore);
-    m_toolCoordinator = std::make_unique<ToolCoordinator>(m_loggingService);
+    m_toolCoordinator = std::make_unique<ToolCoordinator>(m_loggingService, m_executionNarrator.get());
     m_skillStore = new SkillStore(this);
     m_agentToolbox = new AgentToolbox(m_settings, m_memoryStore, m_skillStore, m_loggingService, this);
     m_deviceManager = new DeviceManager(this);
@@ -1475,7 +1486,10 @@ void AssistantController::initialize()
                 ++m_consecutiveSessionMisses;
                 refreshConversationSession();
             }
-            deliverLocalResponse(QStringLiteral("I didn't catch that."), QStringLiteral("Please repeat"), true);
+            deliverLocalResponse(
+                m_executionNarrator->clarificationPrompt(m_activeActionSession),
+                QStringLiteral("Please repeat"),
+                true);
             return;
         }
 
@@ -1616,7 +1630,10 @@ void AssistantController::initialize()
             refreshConversationSession();
             setSurfaceError(QStringLiteral("assistant"), compactSurfaceText(errorText));
             deliverLocalResponse(
-                m_localResponseEngine->respondToError(errorGroup, buildLocalResponseContext()),
+                m_localResponseEngine->respondToError(
+                    errorGroup,
+                    buildLocalResponseContext(),
+                    m_activeActionSession.responseMode),
                 errorText,
                 true);
         }
@@ -1747,6 +1764,13 @@ InputRouterContext AssistantController::buildInputRouteContext(const QString &ro
                                                               LocalIntent localIntent,
                                                               const AiAvailability &availability,
                                                               bool visionRelevantQuery,
+                                                              bool wakeOnly,
+                                                              bool shouldEndConversation,
+                                                              bool isTimeQuery,
+                                                              bool isDateQuery,
+                                                              bool hasDeterministicTask,
+                                                              const AgentTask &deterministicTask,
+                                                              const QString &deterministicSpoken,
                                                               qint64 nowMs) const
 {
     Q_UNUSED(nowMs);
@@ -1763,6 +1787,13 @@ InputRouterContext AssistantController::buildInputRouteContext(const QString &ro
     }
 
     InputRouterContext routeContext;
+    routeContext.wakeOnly = wakeOnly;
+    routeContext.shouldEndConversation = shouldEndConversation;
+    routeContext.isTimeQuery = isTimeQuery;
+    routeContext.isDateQuery = isDateQuery;
+    routeContext.hasDeterministicTask = hasDeterministicTask;
+    routeContext.deterministicTask = deterministicTask;
+    routeContext.deterministicSpoken = deterministicSpoken;
     routeContext.backgroundIntentReady = detectedIntent.confidence > 0.8f && !detectedIntent.tasks.isEmpty();
     routeContext.backgroundTasks = detectedIntent.tasks;
     routeContext.backgroundSpokenMessage = detectedIntent.spokenMessage;
@@ -1791,44 +1822,111 @@ InputRouterContext AssistantController::buildInputRouteContext(const QString &ro
 bool AssistantController::executeRouteDecision(const InputRouteDecision &decision,
                                                const QString &routedInput,
                                                LocalIntent localIntent,
+                                               bool confirmationGranted,
                                                qint64 nowMs)
 {
+    const QList<AgentToolSpec> availableTools = m_agentToolbox ? m_agentToolbox->builtInTools() : QList<AgentToolSpec>{};
+    const ToolPlan toolPlan = m_assistantBehaviorPolicy
+        ? m_assistantBehaviorPolicy->buildToolPlan(routedInput, decision.intent, availableTools)
+        : ToolPlan{};
+    TrustDecision trustDecision = m_assistantBehaviorPolicy
+        ? m_assistantBehaviorPolicy->assessTrust(routedInput, decision, toolPlan)
+        : TrustDecision{};
+    if (confirmationGranted) {
+        trustDecision.requiresConfirmation = false;
+        trustDecision.userMessage.clear();
+    }
+    m_activeActionSession = m_assistantBehaviorPolicy
+        ? m_assistantBehaviorPolicy->createActionSession(routedInput, decision, toolPlan, trustDecision)
+        : ActionSession{};
+
+    if (!confirmationGranted
+        && m_assistantBehaviorPolicy
+        && m_activeActionSession.trust.requiresConfirmation
+        && requiresConfirmationFor(decision)) {
+        storePendingConfirmation(decision, routedInput, localIntent);
+        deliverLocalResponse(
+            m_executionNarrator
+                ? m_executionNarrator->confirmationPrompt(m_activeActionSession)
+                : m_activeActionSession.preamble,
+            m_executionNarrator
+                ? m_executionNarrator->statusForSession(m_activeActionSession, QStringLiteral("Confirmation needed"))
+                : QStringLiteral("Confirmation needed"),
+            true);
+        return true;
+    }
+
     switch (decision.kind) {
     case InputRouteKind::LocalResponse: {
         QString response = decision.message;
-        if (response.isEmpty() && (localIntent == LocalIntent::Greeting || localIntent == LocalIntent::SmallTalk)) {
-            response = m_localResponseEngine->respondToIntent(localIntent, buildLocalResponseContext());
+        const LocalResponseContext context = buildLocalResponseContext();
+        if (decision.status == QStringLiteral("Conversation ended")) {
+            endConversationSession();
+        }
+        if (response.isEmpty() && decision.status == QStringLiteral("Listening")) {
+            response = m_localResponseEngine->wakeWordReady(context, m_activeActionSession.responseMode);
+        } else if (response.isEmpty() && decision.status == QStringLiteral("Conversation ended")) {
+            response = m_executionNarrator->gestureReply(QStringLiteral("conversation_end"));
+        } else if (response.isEmpty() && decision.status == QStringLiteral("Local time response")) {
+            response = m_localResponseEngine->currentTimeResponse(context, m_activeActionSession.responseMode);
+        } else if (response.isEmpty() && decision.status == QStringLiteral("Local date response")) {
+            response = m_localResponseEngine->currentDateResponse(context, m_activeActionSession.responseMode);
+        } else if (response.isEmpty() && (localIntent == LocalIntent::Greeting || localIntent == LocalIntent::SmallTalk)) {
+            response = m_localResponseEngine->respondToIntent(localIntent, context, m_activeActionSession.responseMode);
         }
         if (decision.status == QStringLiteral("Vision response")) {
             m_lastVisionQueryMs = nowMs;
         }
         if (response.isEmpty()) {
-            response = m_localResponseEngine->respondToError(QStringLiteral("error_invalid"), buildLocalResponseContext());
+            response = m_localResponseEngine->respondToError(QStringLiteral("error_invalid"), context, m_activeActionSession.responseMode);
         }
-        deliverLocalResponse(response, decision.status.isEmpty() ? QStringLiteral("Local response") : decision.status, decision.speak);
+        const QString status = decision.status.isEmpty() && m_executionNarrator
+            ? m_executionNarrator->statusForSession(m_activeActionSession, QStringLiteral("Local response"))
+            : (decision.status.isEmpty() ? QStringLiteral("Local response") : decision.status);
+        deliverLocalResponse(response, status, decision.speak);
         return true;
     }
     case InputRouteKind::AgentCapabilityError:
         deliverLocalResponse(
-            m_localResponseEngine->respondToError(QStringLiteral("ai_offline"), buildLocalResponseContext()),
+            m_localResponseEngine->respondToError(
+                QStringLiteral("ai_offline"),
+                buildLocalResponseContext(),
+                m_activeActionSession.responseMode),
             QStringLiteral("AI unavailable"),
             true);
         return true;
     case InputRouteKind::BackgroundTasks:
-    case InputRouteKind::DeterministicTasks:
+    case InputRouteKind::DeterministicTasks: {
         if (decision.tasks.isEmpty()) {
             return false;
         }
         dispatchBackgroundTasks(decision.tasks);
+        const QString preamble = decision.message.isEmpty() && m_executionNarrator
+            ? m_executionNarrator->preActionText(m_activeActionSession, QStringLiteral("All right, I'm handling that now."))
+            : (decision.message.isEmpty() ? QStringLiteral("All right, I'm handling that now.") : decision.message);
+        const QString status = decision.status.isEmpty() && m_executionNarrator
+            ? m_executionNarrator->statusForSession(m_activeActionSession, QStringLiteral("Background task queued"))
+            : (decision.status.isEmpty() ? QStringLiteral("Background task queued") : decision.status);
         deliverLocalResponse(
-            decision.message.isEmpty() ? QStringLiteral("All right, I'm handling that now.") : decision.message,
-            decision.status.isEmpty() ? QStringLiteral("Background task queued") : decision.status,
+            preamble,
+            status,
             decision.speak);
         return true;
+    }
     case InputRouteKind::AgentConversation:
+        if (m_activeActionSession.shouldAnnounceProgress) {
+            setStatus(m_executionNarrator
+                ? m_executionNarrator->statusForSession(m_activeActionSession, QStringLiteral("Working on request"))
+                : QStringLiteral("Working on request"));
+        }
         startAgentConversationRequest(routedInput, decision.intent);
         return true;
     case InputRouteKind::CommandExtraction:
+        if (m_activeActionSession.shouldAnnounceProgress) {
+            setStatus(m_executionNarrator
+                ? m_executionNarrator->statusForSession(m_activeActionSession, QStringLiteral("Working on request"))
+                : QStringLiteral("Working on request"));
+        }
         startCommandRequest(routedInput);
         return true;
     case InputRouteKind::Conversation:
@@ -1848,6 +1946,10 @@ void AssistantController::submitText(const QString &text)
 {
     const QString trimmed = text.trimmed();
     if (trimmed.isEmpty()) {
+        return;
+    }
+
+    if (handlePendingConfirmationInput(trimmed)) {
         return;
     }
 
@@ -1883,47 +1985,9 @@ void AssistantController::submitText(const QString &text)
     }
     m_memoryPolicyHandler->processUserTurn(trimmed, effectiveInput);
 
-    if (wakeDetected && routedInput.isEmpty()) {
-        m_followUpListeningAfterWakeAck = true;
-        deliverLocalResponse(
-            m_localResponseEngine->wakeWordReady(buildLocalResponseContext()),
-            QStringLiteral("Listening"),
-            false);
-        return;
-    }
-
-    if (shouldEndConversationSession(effectiveInput)) {
-        endConversationSession();
-        deliverLocalResponse(QStringLiteral("Standing by."), QStringLiteral("Conversation ended"), true);
-        return;
-    }
-
-    if (isCurrentTimeQuery(routedInput)) {
-        deliverLocalResponse(
-            m_localResponseEngine->currentTimeResponse(buildLocalResponseContext()),
-            QStringLiteral("Local time response"),
-            true);
-        return;
-    }
-
-    if (isCurrentDateQuery(routedInput)) {
-        deliverLocalResponse(
-            m_localResponseEngine->currentDateResponse(buildLocalResponseContext()),
-            QStringLiteral("Local date response"),
-            true);
-        return;
-    }
-
     AgentTask deterministicTask;
     QString deterministicSpoken;
-    if (buildDeterministicComputerTask(routedInput, &deterministicTask, &deterministicSpoken)) {
-        dispatchBackgroundTasks({deterministicTask});
-        deliverLocalResponse(
-            deterministicSpoken,
-            QStringLiteral("Background task queued"),
-            true);
-        return;
-    }
+    const bool hasDeterministicTask = buildDeterministicComputerTask(routedInput, &deterministicTask, &deterministicSpoken);
 
     const IntentResult mlIntent = m_intentEngine->classify(routedInput);
     const IntentResult detectedIntent = m_backgroundIntentDetector->detect(routedInput, QDir::currentPath());
@@ -1947,6 +2011,13 @@ void AssistantController::submitText(const QString &text)
     const bool recentVisionQuery = (nowMs - m_lastVisionQueryMs) <= 12000;
     const bool visionRelevantQuery = isVisionRelevantQuery(routedInput)
         || (recentVisionQuery && isVisionFollowUpQuery(routedInput));
+    const bool shouldEndConversation = shouldEndConversationSession(effectiveInput);
+    const bool isTimeQuery = isCurrentTimeQuery(routedInput);
+    const bool isDateQuery = isCurrentDateQuery(routedInput);
+    const bool wakeOnly = wakeDetected && routedInput.isEmpty();
+    if (wakeOnly) {
+        m_followUpListeningAfterWakeAck = true;
+    }
     const InputRouterContext routeContext = buildInputRouteContext(
         routedInput,
         detectedIntent,
@@ -1954,9 +2025,16 @@ void AssistantController::submitText(const QString &text)
         intent,
         availability,
         visionRelevantQuery,
+        wakeOnly,
+        shouldEndConversation,
+        isTimeQuery,
+        isDateQuery,
+        hasDeterministicTask,
+        deterministicTask,
+        deterministicSpoken,
         nowMs);
     const InputRouteDecision decision = m_inputRouter->decide(routeContext);
-    if (!executeRouteDecision(decision, routedInput, intent, nowMs)) {
+    if (!executeRouteDecision(decision, routedInput, intent, false, nowMs)) {
         startConversationRequest(routedInput);
     }
 }
@@ -3007,6 +3085,7 @@ bool AssistantController::finalizeReply(const QString &source,
     const bool spoke = m_responseFinalizer->finalizeResponse(
         source,
         reply,
+        m_activeActionSession,
         &m_responseText,
         [this]() { emit responseTextChanged(); },
         [this]() { refreshConversationSession(); },
@@ -3076,14 +3155,33 @@ void AssistantController::startConversationRequest(const QString &input)
             .arg(modelId, userFacingPromptForLogging(input).left(240)));
     }
 
+    if (m_assistantBehaviorPolicy) {
+        InputRouteDecision decision;
+        decision.kind = InputRouteKind::Conversation;
+        const ToolPlan plan = m_assistantBehaviorPolicy->buildToolPlan(
+            input,
+            IntentType::GENERAL_CHAT,
+            m_agentToolbox ? m_agentToolbox->builtInTools() : QList<AgentToolSpec>{});
+        const TrustDecision trust = m_assistantBehaviorPolicy->assessTrust(input, decision, plan);
+        m_activeActionSession = m_assistantBehaviorPolicy->createActionSession(input, decision, plan, trust);
+    }
+
+    const QList<MemoryRecord> memoryRecords = m_memoryPolicyHandler->requestMemory(input, runtimeToolStatusMemory(m_settings));
+    const MemoryContext memoryContext = m_assistantBehaviorPolicy
+        ? m_assistantBehaviorPolicy->buildMemoryContext(input, memoryRecords)
+        : fallbackMemoryContext(memoryRecords);
+
     const ConversationRequestContext requestContext{
         .modelId = modelId,
         .input = input,
         .history = m_memoryStore->recentMessages(8),
-        .memory = m_memoryPolicyHandler->requestMemory(input, runtimeToolStatusMemory(m_settings)),
+        .memory = memoryContext,
         .identity = m_identityProfileService->identity(),
         .userProfile = m_identityProfileService->userProfile(),
         .visionContext = buildVisionPromptContext(input, IntentType::GENERAL_CHAT),
+        .responseMode = m_activeActionSession.responseMode,
+        .sessionGoal = m_activeActionSession.goal,
+        .nextStepHint = m_activeActionSession.nextStepHint,
         .sampling = samplingProfile(),
         .streaming = m_settings->streamingEnabled(),
         .timeoutMs = effectiveRequestTimeoutMs(m_settings)
@@ -3113,10 +3211,22 @@ void AssistantController::startAgentConversationRequest(const QString &input, In
     m_previousAgentResponseId.clear();
     m_agentTrace.clear();
     emit agentTraceChanged();
-    const QList<AgentToolSpec> relevantTools = m_promptAdapter->getRelevantTools(
-        input,
-        expectedIntent,
-        m_agentToolbox->builtInTools());
+    const QList<AgentToolSpec> availableTools = m_agentToolbox ? m_agentToolbox->builtInTools() : QList<AgentToolSpec>{};
+    const ToolPlan toolPlan = m_assistantBehaviorPolicy
+        ? m_assistantBehaviorPolicy->buildToolPlan(input, expectedIntent, availableTools)
+        : ToolPlan{};
+    InputRouteDecision routeDecision;
+    routeDecision.kind = InputRouteKind::AgentConversation;
+    routeDecision.intent = expectedIntent;
+    const TrustDecision trustDecision = m_assistantBehaviorPolicy
+        ? m_assistantBehaviorPolicy->assessTrust(input, routeDecision, toolPlan)
+        : TrustDecision{};
+    m_activeActionSession = m_assistantBehaviorPolicy
+        ? m_assistantBehaviorPolicy->createActionSession(input, routeDecision, toolPlan, trustDecision)
+        : ActionSession{};
+    const QList<AgentToolSpec> relevantTools = m_assistantBehaviorPolicy
+        ? m_assistantBehaviorPolicy->selectRelevantTools(input, expectedIntent, availableTools)
+        : m_promptAdapter->getRelevantTools(input, expectedIntent, availableTools);
     const AgentTransportMode transportMode = m_aiRequestCoordinator->resolveAgentTransport(m_agentCapabilities, modelId);
     const bool directToolCalling = transportMode == AgentTransportMode::Responses;
     m_activeAgentUsesResponses = directToolCalling;
@@ -3134,23 +3244,34 @@ void AssistantController::startAgentConversationRequest(const QString &input, In
 
     if (transportMode == AgentTransportMode::CapabilityError) {
         deliverLocalResponse(
-            m_localResponseEngine->respondToError(QStringLiteral("error_capability"), buildLocalResponseContext()),
+            m_localResponseEngine->respondToError(
+                QStringLiteral("error_capability"),
+                buildLocalResponseContext(),
+                m_activeActionSession.responseMode),
             m_aiRequestCoordinator->capabilityErrorText(m_agentCapabilities, modelId),
             true);
         return;
     }
 
+    const QList<MemoryRecord> memoryRecords = m_memoryPolicyHandler->requestMemory(input, runtimeToolStatusMemory(m_settings));
+    const MemoryContext memoryContext = m_assistantBehaviorPolicy
+        ? m_assistantBehaviorPolicy->buildMemoryContext(input, memoryRecords)
+        : fallbackMemoryContext(memoryRecords);
+
     const AgentRequestContext requestContext{
         .modelId = modelId,
         .input = input,
         .intent = expectedIntent,
-        .memory = m_memoryPolicyHandler->requestMemory(input, runtimeToolStatusMemory(m_settings)),
+        .memory = memoryContext,
         .skills = m_skillStore->listSkills(),
         .tools = relevantTools,
         .identity = m_identityProfileService->identity(),
         .userProfile = m_identityProfileService->userProfile(),
         .workspaceRoot = QDir::currentPath(),
         .visionContext = buildVisionPromptContext(input, expectedIntent),
+        .responseMode = m_activeActionSession.responseMode,
+        .sessionGoal = m_activeActionSession.goal,
+        .nextStepHint = m_activeActionSession.nextStepHint,
         .sampling = samplingProfile(),
         .mode = mode,
         .memoryAutoWrite = m_settings->memoryAutoWrite(),
@@ -3173,30 +3294,38 @@ void AssistantController::continueAgentConversation(const QList<AgentToolResult>
     }
 
     ++m_activeAgentIteration;
-    QList<AgentToolSpec> relevantTools = m_promptAdapter->getRelevantTools(
-        m_lastAgentInput,
-        m_lastAgentIntent,
-        m_agentToolbox->builtInTools());
+    const QList<AgentToolSpec> availableTools = m_agentToolbox ? m_agentToolbox->builtInTools() : QList<AgentToolSpec>{};
+    QList<AgentToolSpec> relevantTools = m_assistantBehaviorPolicy
+        ? m_assistantBehaviorPolicy->selectRelevantTools(m_lastAgentInput, m_lastAgentIntent, availableTools)
+        : m_promptAdapter->getRelevantTools(m_lastAgentInput, m_lastAgentIntent, availableTools);
     if (relevantTools.isEmpty()) {
-        relevantTools = m_agentToolbox->builtInTools();
+        relevantTools = availableTools;
     }
 
     const QString visionContext = buildVisionPromptContext(m_lastAgentInput, m_lastAgentIntent);
     const QString modelId = m_aiRequestCoordinator->resolveModelId(availableModelIds());
     if (modelId.isEmpty()) {
         deliverLocalResponse(
-            m_localResponseEngine->respondToError(QStringLiteral("ai_offline"), buildLocalResponseContext()),
+            m_localResponseEngine->respondToError(
+                QStringLiteral("ai_offline"),
+                buildLocalResponseContext(),
+                m_activeActionSession.responseMode),
             QStringLiteral("No local AI backend model selected"),
             true);
         return;
     }
+
+    const QList<MemoryRecord> memoryRecords = m_memoryPolicyHandler->requestMemory(m_lastAgentInput, runtimeToolStatusMemory(m_settings));
+    const MemoryContext memoryContext = m_assistantBehaviorPolicy
+        ? m_assistantBehaviorPolicy->buildMemoryContext(m_lastAgentInput, memoryRecords)
+        : fallbackMemoryContext(memoryRecords);
 
     const AgentRequestContext requestContext{
         .modelId = modelId,
         .input = m_lastAgentInput,
         .previousResponseId = m_previousAgentResponseId,
         .intent = m_lastAgentIntent,
-        .memory = m_memoryPolicyHandler->requestMemory(m_lastAgentInput, runtimeToolStatusMemory(m_settings)),
+        .memory = memoryContext,
         .skills = m_skillStore->listSkills(),
         .tools = relevantTools,
         .toolResults = results,
@@ -3204,6 +3333,9 @@ void AssistantController::continueAgentConversation(const QList<AgentToolResult>
         .userProfile = m_identityProfileService->userProfile(),
         .workspaceRoot = QDir::currentPath(),
         .visionContext = visionContext,
+        .responseMode = m_activeActionSession.responseMode,
+        .sessionGoal = m_activeActionSession.goal,
+        .nextStepHint = m_activeActionSession.nextStepHint,
         .sampling = samplingProfile(),
         .mode = m_activeReasoningMode,
         .memoryAutoWrite = m_settings->memoryAutoWrite(),
@@ -3457,7 +3589,12 @@ void AssistantController::handleGestureFarewell()
         endConversationSession();
     }
 
-    deliverLocalResponse(QStringLiteral("Bye sir."), QStringLiteral("Gesture farewell"), true);
+    deliverLocalResponse(
+        m_executionNarrator
+            ? m_executionNarrator->gestureReply(QStringLiteral("farewell"))
+            : QStringLiteral("Bye."),
+        QStringLiteral("Gesture farewell"),
+        true);
     endConversationSession();
 }
 
@@ -3467,7 +3604,19 @@ void AssistantController::handleGestureConfirm()
         stopListening();
     }
 
-    deliverLocalResponse(QStringLiteral("Confirmed."), QStringLiteral("Gesture confirm"), true);
+    if (m_hasPendingConfirmation) {
+        const InputRouteDecision pendingDecision = m_pendingRouteDecision;
+        const QString pendingInput = m_pendingRouteInput;
+        const LocalIntent pendingLocalIntent = m_pendingLocalIntent;
+        clearPendingConfirmation();
+        executeRouteDecision(pendingDecision, pendingInput, pendingLocalIntent, true, QDateTime::currentMSecsSinceEpoch());
+        return;
+    }
+
+    deliverLocalResponse(
+        m_executionNarrator->gestureReply(QStringLiteral("confirm")),
+        QStringLiteral("Gesture confirm"),
+        true);
 }
 
 void AssistantController::handleGestureReject()
@@ -3478,7 +3627,24 @@ void AssistantController::handleGestureReject()
         cancelActiveRequest();
     }
 
-    deliverLocalResponse(QStringLiteral("Rejected."), QStringLiteral("Gesture reject"), true);
+    if (m_hasPendingConfirmation) {
+        const ActionSession pendingSession = m_pendingActionSession;
+        clearPendingConfirmation();
+        deliverLocalResponse(
+            m_executionNarrator
+                ? m_executionNarrator->confirmationCanceled(pendingSession)
+                : QStringLiteral("Okay, I won't run that action."),
+            QStringLiteral("Action canceled"),
+            true);
+        return;
+    }
+
+    deliverLocalResponse(
+        m_executionNarrator
+            ? m_executionNarrator->gestureReply(QStringLiteral("reject"))
+            : QStringLiteral("Canceled."),
+        QStringLiteral("Gesture reject"),
+        true);
 }
 
 void AssistantController::startCommandRequest(const QString &input)
@@ -3492,6 +3658,16 @@ void AssistantController::startCommandRequest(const QString &input)
     }
 
     m_activeRequestKind = RequestKind::CommandExtraction;
+    if (m_assistantBehaviorPolicy) {
+        InputRouteDecision decision;
+        decision.kind = InputRouteKind::CommandExtraction;
+        const ToolPlan plan = m_assistantBehaviorPolicy->buildToolPlan(
+            input,
+            IntentType::GENERAL_CHAT,
+            m_agentToolbox ? m_agentToolbox->builtInTools() : QList<AgentToolSpec>{});
+        const TrustDecision trust = m_assistantBehaviorPolicy->assessTrust(input, decision, plan);
+        m_activeActionSession = m_assistantBehaviorPolicy->createActionSession(input, decision, plan, trust);
+    }
     if (m_loggingService) {
         m_loggingService->info(QStringLiteral("Starting command extraction request. model=\"%1\" input=\"%2\"")
             .arg(modelId, input.left(240)));
@@ -3504,6 +3680,8 @@ void AssistantController::startCommandRequest(const QString &input)
             .input = input,
             .identity = m_identityProfileService->identity(),
             .userProfile = m_identityProfileService->userProfile(),
+            .responseMode = m_activeActionSession.responseMode,
+            .sessionGoal = m_activeActionSession.goal,
             .timeoutMs = effectiveRequestTimeoutMs(m_settings),
             .temperature = m_settings->toolUseTemperature(),
             .topP = m_settings->conversationTopP(),
@@ -3531,7 +3709,12 @@ void AssistantController::handleHybridAgentFinished(const QString &payload)
     if (json.is_discarded() || !json.is_object()) {
         appendAgentTrace(QStringLiteral("validation"), QStringLiteral("Hybrid payload rejected"), QStringLiteral("The model returned invalid JSON."), false);
         deliverLocalResponse(
-            m_localResponseEngine->respondToError(QStringLiteral("error_invalid"), buildLocalResponseContext()),
+            m_executionNarrator
+                ? m_executionNarrator->validationFailure(m_activeActionSession)
+                : m_localResponseEngine->respondToError(
+                    QStringLiteral("error_invalid"),
+                    buildLocalResponseContext(),
+                    m_activeActionSession.responseMode),
             QStringLiteral("The chat adapter returned invalid JSON."),
             true);
         return;
@@ -3569,9 +3752,7 @@ void AssistantController::handleHybridAgentFinished(const QString &payload)
                          QStringLiteral("A tool-backed intent was returned without a valid tool call."),
                          false);
         deliverLocalResponse(
-            message.isEmpty()
-                ? QStringLiteral("I need to use a tool for that, but I didn't get a valid tool call back. Please try again with the path or target.")
-                : message,
+            m_executionNarrator->validationFailure(m_activeActionSession),
             QStringLiteral("Adapter tool call invalid"),
             true);
         return;
@@ -3590,9 +3771,12 @@ void AssistantController::handleHybridAgentFinished(const QString &payload)
         m_memoryPolicyHandler->captureExplicitMemoryFromInput(m_lastAgentInput);
     }
 
-    const SpokenReply reply = parseSpokenReply(message.isEmpty()
-                                                   ? QStringLiteral("I finished that request.")
-                                                   : message);
+    const SpokenReply reply = parseSpokenReply(
+        message.isEmpty()
+            ? (m_executionNarrator
+                ? m_executionNarrator->outcomeSummary(m_activeActionSession, true, QStringLiteral("I finished that request."))
+                : QStringLiteral("I finished that request."))
+            : message);
     finalizeReply(QStringLiteral("agent"),
                   reply,
                   QStringLiteral("Response ready"),
@@ -3618,7 +3802,12 @@ void AssistantController::handleAgentResponse(const AgentResponse &response)
         m_memoryPolicyHandler->captureExplicitMemoryFromInput(m_lastAgentInput);
     }
 
-    const SpokenReply reply = parseSpokenReply(response.outputText);
+    const SpokenReply reply = parseSpokenReply(
+        response.outputText.trimmed().isEmpty()
+            ? (m_executionNarrator
+                ? m_executionNarrator->outcomeSummary(m_activeActionSession, true, QStringLiteral("I finished that request."))
+                : QStringLiteral("I finished that request."))
+            : response.outputText);
     finalizeReply(QStringLiteral("agent"),
                   reply,
                   QStringLiteral("Response ready"),
@@ -3654,9 +3843,8 @@ void AssistantController::handleCommandFinished(const QString &text)
             .arg(command.intent, command.target, command.action)
             .arg(command.confidence, 0, 'f', 2));
     }
-    const QString message = m_localResponseEngine->acknowledgement(command.target, buildLocalResponseContext())
-        + QStringLiteral(" ")
-        + result;
+    const QString message = m_executionNarrator
+        ->commandSummary(m_activeActionSession, command.target, result);
     SpokenReply reply;
     reply.displayText = message;
     reply.spokenText = message;
@@ -3768,6 +3956,74 @@ void AssistantController::startWebSearchSummaryRequest(const BackgroundTaskResul
 
     m_lastPromptForAiLog = followUp->logPrompt;
     startConversationRequest(followUp->synthesisInput);
+}
+
+bool AssistantController::handlePendingConfirmationInput(const QString &input)
+{
+    if (!m_hasPendingConfirmation || m_assistantBehaviorPolicy == nullptr) {
+        return false;
+    }
+
+    if (m_assistantBehaviorPolicy->isConfirmationReply(input, m_pendingActionSession)) {
+        const InputRouteDecision pendingDecision = m_pendingRouteDecision;
+        const QString pendingInput = m_pendingRouteInput;
+        const LocalIntent pendingLocalIntent = m_pendingLocalIntent;
+        clearPendingConfirmation();
+        executeRouteDecision(pendingDecision, pendingInput, pendingLocalIntent, true, QDateTime::currentMSecsSinceEpoch());
+        return true;
+    }
+
+    if (m_assistantBehaviorPolicy->isRejectionReply(input)) {
+        const ActionSession pendingSession = m_pendingActionSession;
+        clearPendingConfirmation();
+        deliverLocalResponse(
+            m_executionNarrator
+                ? m_executionNarrator->confirmationCanceled(pendingSession)
+                : QStringLiteral("Okay, I won't run that action."),
+            QStringLiteral("Action canceled"),
+            true);
+        return true;
+    }
+
+    clearPendingConfirmation();
+    return false;
+}
+
+void AssistantController::storePendingConfirmation(const InputRouteDecision &decision,
+                                                   const QString &input,
+                                                   LocalIntent localIntent)
+{
+    m_hasPendingConfirmation = true;
+    m_pendingActionSession = m_activeActionSession;
+    m_pendingRouteDecision = decision;
+    m_pendingRouteInput = input;
+    m_pendingLocalIntent = localIntent;
+}
+
+void AssistantController::clearPendingConfirmation()
+{
+    m_hasPendingConfirmation = false;
+    m_pendingActionSession = ActionSession{};
+    m_pendingRouteDecision = InputRouteDecision{};
+    m_pendingRouteInput.clear();
+    m_pendingLocalIntent = LocalIntent::Unknown;
+}
+
+bool AssistantController::requiresConfirmationFor(const InputRouteDecision &decision) const
+{
+    switch (decision.kind) {
+    case InputRouteKind::BackgroundTasks:
+    case InputRouteKind::DeterministicTasks:
+    case InputRouteKind::AgentConversation:
+    case InputRouteKind::CommandExtraction:
+        return true;
+    case InputRouteKind::None:
+    case InputRouteKind::LocalResponse:
+    case InputRouteKind::Conversation:
+    case InputRouteKind::AgentCapabilityError:
+    default:
+        return false;
+    }
 }
 
 QStringList AssistantController::backgroundAllowedRoots() const

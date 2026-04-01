@@ -14,9 +14,12 @@ public:
     QList<AiMessage> buildConversationMessages(
         const QString &input,
         const QList<AiMessage> &history,
-        const QList<MemoryRecord> &memory,
+        const MemoryContext &memory,
         const AssistantIdentity &identity,
         const UserProfile &userProfile,
+        ResponseMode responseMode,
+        const QString &sessionGoal,
+        const QString &nextStepHint,
         ReasoningMode mode,
         const QString &visionContext = QString()) const;
 
@@ -24,33 +27,41 @@ public:
         const QString &input,
         const AssistantIdentity &identity,
         const UserProfile &userProfile,
+        ResponseMode responseMode,
+        const QString &sessionGoal,
         ReasoningMode mode) const;
 
     QList<AiMessage> buildHybridAgentMessages(
         const QString &input,
-        const QList<MemoryRecord> &memory,
+        const MemoryContext &memory,
         const AssistantIdentity &identity,
         const UserProfile &userProfile,
         const QString &workspaceRoot,
         IntentType intent,
         const QList<AgentToolSpec> &availableTools,
+        ResponseMode responseMode,
+        const QString &sessionGoal,
+        const QString &nextStepHint,
         ReasoningMode mode,
         const QString &visionContext = QString()) const;
 
     QList<AiMessage> buildHybridAgentContinuationMessages(
         const QString &input,
         const QList<AgentToolResult> &results,
-        const QList<MemoryRecord> &memory,
+        const MemoryContext &memory,
         const AssistantIdentity &identity,
         const UserProfile &userProfile,
         const QString &workspaceRoot,
         IntentType intent,
         const QList<AgentToolSpec> &availableTools,
+        ResponseMode responseMode,
+        const QString &sessionGoal,
+        const QString &nextStepHint,
         ReasoningMode mode,
         const QString &visionContext = QString()) const;
 
     QString buildAgentInstructions(
-        const QList<MemoryRecord> &memory,
+        const MemoryContext &memory,
         const QList<SkillManifest> &skills,
         const QList<AgentToolSpec> &availableTools,
         const AssistantIdentity &identity,
@@ -58,6 +69,9 @@ public:
         const QString &workspaceRoot,
         IntentType intent,
         bool memoryAutoWrite,
+        ResponseMode responseMode,
+        const QString &sessionGoal,
+        const QString &nextStepHint,
         const QString &visionContext = QString()) const;
 
     QList<AgentToolSpec> getRelevantTools(const QString &input,
@@ -66,7 +80,7 @@ public:
     QString buildAgentWorldContext(
         IntentType intent,
         const QList<AgentToolSpec> &availableTools,
-        const QList<MemoryRecord> &memory,
+        const MemoryContext &memory,
         const QString &workspaceRoot,
         const QString &visionContext = QString()) const;
     QString applyReasoningMode(const QString &input, ReasoningMode mode) const;
@@ -77,5 +91,5 @@ private:
     QString buildLogsContext(const QString &workspaceRoot) const;
     QString buildCapabilityRulesContext(IntentType intent) const;
     QString buildFewShotExamples(IntentType intent) const;
-    QString buildMemorySummary(const QList<MemoryRecord> &memory) const;
+    QString buildMemorySummary(const MemoryContext &memory) const;
 };

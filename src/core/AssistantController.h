@@ -36,6 +36,8 @@ class WakeWordEngine;
 class VoicePipelineRuntime;
 class WorldStateCache;
 class AiRequestCoordinator;
+class AssistantBehaviorPolicy;
+class ExecutionNarrator;
 class InputRouter;
 class MemoryPolicyHandler;
 class ResponseFinalizer;
@@ -220,10 +222,18 @@ private:
                                               LocalIntent localIntent,
                                               const AiAvailability &availability,
                                               bool visionRelevantQuery,
+                                              bool wakeOnly,
+                                              bool shouldEndConversation,
+                                              bool isTimeQuery,
+                                              bool isDateQuery,
+                                              bool hasDeterministicTask,
+                                              const AgentTask &deterministicTask,
+                                              const QString &deterministicSpoken,
                                               qint64 nowMs) const;
     bool executeRouteDecision(const InputRouteDecision &decision,
                               const QString &routedInput,
                               LocalIntent localIntent,
+                              bool confirmationGranted,
                               qint64 nowMs);
     bool shouldIgnoreAmbiguousTranscript(const QString &transcript) const;
     bool shouldEndConversationSession(const QString &input) const;
@@ -262,6 +272,12 @@ private:
     void setSurfaceError(const QString &source, const QString &primary, const QString &secondary = QString());
     void clearSurfaceError(const QString &source = QString());
     void startWebSearchSummaryRequest(const BackgroundTaskResult &result);
+    bool handlePendingConfirmationInput(const QString &input);
+    void storePendingConfirmation(const InputRouteDecision &decision,
+                                  const QString &input,
+                                  LocalIntent localIntent);
+    void clearPendingConfirmation();
+    bool requiresConfirmationFor(const InputRouteDecision &decision) const;
     QStringList backgroundAllowedRoots() const;
     void logPromptResponsePair(const QString &response, const QString &source, const QString &status = QString());
     void appendAgentTrace(const QString &kind, const QString &title, const QString &detail, bool success = true);
@@ -283,6 +299,8 @@ private:
     MemoryStore *m_memoryStore = nullptr;
     std::unique_ptr<InputRouter> m_inputRouter;
     std::unique_ptr<AiRequestCoordinator> m_aiRequestCoordinator;
+    std::unique_ptr<AssistantBehaviorPolicy> m_assistantBehaviorPolicy;
+    std::unique_ptr<ExecutionNarrator> m_executionNarrator;
     std::unique_ptr<MemoryPolicyHandler> m_memoryPolicyHandler;
     std::unique_ptr<ToolCoordinator> m_toolCoordinator;
     SkillStore *m_skillStore = nullptr;
@@ -319,6 +337,12 @@ private:
     IntentType m_lastAgentIntent = IntentType::GENERAL_CHAT;
     ReasoningMode m_activeReasoningMode = ReasoningMode::Balanced;
     bool m_activeAgentUsesResponses = false;
+    ActionSession m_activeActionSession;
+    bool m_hasPendingConfirmation = false;
+    ActionSession m_pendingActionSession;
+    InputRouteDecision m_pendingRouteDecision;
+    QString m_pendingRouteInput;
+    LocalIntent m_pendingLocalIntent = LocalIntent::Unknown;
     QString m_previousAgentResponseId;
     int m_activeAgentIteration = 0;
     AgentCapabilitySet m_agentCapabilities;

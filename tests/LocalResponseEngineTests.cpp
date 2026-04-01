@@ -16,6 +16,8 @@ private slots:
     void rendersCurrentTime();
     void avoidsImmediateRepetitionWhenVariantsExist();
     void localResponsesDoNotExposeInternalPromptText();
+    void localResponsesDoNotFallbackToSir();
+    void localResponsesRespectConfirmMode();
 };
 
 void LocalResponseEngineTests::classifiesGreeting()
@@ -123,6 +125,35 @@ void LocalResponseEngineTests::localResponsesDoNotExposeInternalPromptText()
     QVERIFY(!text.contains(QStringLiteral("tone"), Qt::CaseInsensitive));
     QVERIFY(!text.contains(QStringLiteral("addressing style"), Qt::CaseInsensitive));
     QVERIFY(!text.contains(QStringLiteral("system prompt"), Qt::CaseInsensitive));
+}
+
+void LocalResponseEngineTests::localResponsesDoNotFallbackToSir()
+{
+    LocalResponseEngine engine;
+    QVERIFY(engine.initialize());
+
+    const QString text = engine.respondToIntent(LocalIntent::Greeting, {
+        .assistantName = QStringLiteral("Vaxil"),
+        .timeOfDay = QStringLiteral("morning"),
+        .systemState = QStringLiteral("IDLE")
+    });
+
+    QVERIFY(!text.contains(QStringLiteral("sir"), Qt::CaseInsensitive));
+}
+
+void LocalResponseEngineTests::localResponsesRespectConfirmMode()
+{
+    LocalResponseEngine engine;
+    QVERIFY(engine.initialize());
+
+    const QString text = engine.respondToIntent(LocalIntent::Greeting, {
+        .assistantName = QStringLiteral("Vaxil"),
+        .userName = QStringLiteral("Alex"),
+        .timeOfDay = QStringLiteral("morning"),
+        .systemState = QStringLiteral("IDLE")
+    }, ResponseMode::Confirm);
+
+    QCOMPARE(text, QStringLiteral("Please confirm first."));
 }
 
 QTEST_APPLESS_MAIN(LocalResponseEngineTests)

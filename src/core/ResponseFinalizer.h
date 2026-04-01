@@ -4,6 +4,8 @@
 
 #include <QString>
 
+#include "core/AssistantTypes.h"
+
 class LoggingService;
 class MemoryStore;
 class TtsEngine;
@@ -19,6 +21,7 @@ public:
 
     bool finalizeResponse(const QString &source,
                           const SpokenReply &reply,
+                          const ActionSession &session,
                           QString *responseText,
                           const std::function<void()> &emitResponseChanged,
                           const std::function<void()> &refreshConversationSession,

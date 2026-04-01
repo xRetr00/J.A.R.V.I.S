@@ -251,7 +251,9 @@ set(JARVIS_SOURCES
     src/core/agent/IntentDetector.cpp
     src/core/agent/IntentEngine.cpp
     src/core/AiRequestCoordinator.cpp
+    src/core/AssistantBehaviorPolicy.cpp
     src/core/AssistantController.cpp
+    src/core/ExecutionNarrator.cpp
     src/core/InputRouter.cpp
     src/core/IntentRouter.cpp
     src/core/MemoryPolicyHandler.cpp
@@ -314,9 +316,11 @@ set(JARVIS_HEADERS
     src/core/agent/IntentDetector.h
     src/core/agent/IntentEngine.h
     src/core/AiRequestCoordinator.h
+    src/core/AssistantBehaviorPolicy.h
     src/core/AssistantController.h
     src/core/AssistantTypes.h
     src/core/ComputerControl.h
+    src/core/ExecutionNarrator.h
     src/core/InputRouter.h
     src/core/IntentRouter.h
     src/core/LocalResponseEngine.h
@@ -390,6 +394,12 @@ target_include_directories(jarvis_lib
     PRIVATE
         ${libfvad_SOURCE_DIR}/include
 )
+if(MSVC)
+    target_compile_options(jarvis_lib PRIVATE /FS)
+    set_target_properties(jarvis_lib PROPERTIES
+        MSVC_DEBUG_INFORMATION_FORMAT "$<$<CONFIG:Debug,RelWithDebInfo>:Embedded>"
+    )
+endif()
 target_compile_definitions(jarvis_lib PUBLIC JARVIS_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 set(JARVIS_HAS_ONNXRUNTIME 0)
 set(JARVIS_HAS_SHERPA_ONNX 0)
@@ -716,6 +726,20 @@ if(JARVIS_BUILD_TESTS)
     add_test(NAME jarvis_ai_services_tests COMMAND jarvis_ai_services_tests)
     set_tests_properties(jarvis_ai_services_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
     jarvis_copy_optional_runtime_libraries(jarvis_ai_services_tests)
+
+    qt_add_executable(jarvis_behavior_policy_tests
+        tests/AssistantBehaviorPolicyTests.cpp
+    )
+
+    target_link_libraries(jarvis_behavior_policy_tests
+        PRIVATE
+            jarvis_lib
+            Qt6::Test
+    )
+
+    add_test(NAME jarvis_behavior_policy_tests COMMAND jarvis_behavior_policy_tests)
+    set_tests_properties(jarvis_behavior_policy_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_behavior_policy_tests)
 
     qt_add_executable(jarvis_local_response_tests
         tests/LocalResponseEngineTests.cpp

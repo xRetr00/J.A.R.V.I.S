@@ -92,6 +92,9 @@ quint64 AiRequestCoordinator::startConversationRequest(AiBackendClient *backendC
         context.memory,
         context.identity,
         context.userProfile,
+        context.responseMode,
+        context.sessionGoal,
+        context.nextStepHint,
         mode,
         context.visionContext);
 
@@ -130,6 +133,9 @@ AgentStartRequestResult AiRequestCoordinator::startAgentRequest(AiBackendClient 
                 context.workspaceRoot,
                 context.intent,
                 context.memoryAutoWrite,
+                context.responseMode,
+                context.sessionGoal,
+                context.nextStepHint,
                 context.visionContext),
             .inputText = context.input,
             .previousResponseId = {},
@@ -151,6 +157,9 @@ AgentStartRequestResult AiRequestCoordinator::startAgentRequest(AiBackendClient 
         context.workspaceRoot,
         context.intent,
         context.tools,
+        context.responseMode,
+        context.sessionGoal,
+        context.nextStepHint,
         context.mode,
         context.visionContext);
 
@@ -188,6 +197,9 @@ quint64 AiRequestCoordinator::continueAgentRequest(AiBackendClient *backendClien
                 context.workspaceRoot,
                 context.intent,
                 context.memoryAutoWrite,
+                context.responseMode,
+                context.sessionGoal,
+                context.nextStepHint,
                 context.visionContext),
             .inputText = {},
             .previousResponseId = context.previousResponseId,
@@ -209,6 +221,9 @@ quint64 AiRequestCoordinator::continueAgentRequest(AiBackendClient *backendClien
         context.workspaceRoot,
         context.intent,
         context.tools,
+        context.responseMode,
+        context.sessionGoal,
+        context.nextStepHint,
         context.mode,
         context.visionContext);
 
@@ -237,6 +252,8 @@ quint64 AiRequestCoordinator::startCommandRequest(AiBackendClient *backendClient
             context.input,
             context.identity,
             context.userProfile,
+            context.responseMode,
+            context.sessionGoal,
             ReasoningMode::Fast),
         context.modelId,
         {.mode = ReasoningMode::Fast,

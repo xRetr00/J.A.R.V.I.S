@@ -11,6 +11,7 @@
 #include "core/AssistantTypes.h"
 
 class AgentToolbox;
+class ExecutionNarrator;
 class LoggingService;
 class TaskDispatcher;
 
@@ -38,7 +39,8 @@ struct WebSearchFollowUp {
 class ToolCoordinator
 {
 public:
-    explicit ToolCoordinator(LoggingService *loggingService = nullptr);
+    explicit ToolCoordinator(LoggingService *loggingService = nullptr,
+                             const ExecutionNarrator *executionNarrator = nullptr);
 
     QList<BackgroundTaskResult> backgroundTaskResults() const;
     QString latestTaskToast() const;
@@ -71,6 +73,7 @@ private:
     QPair<QString, QString> backgroundTaskSurfaceCopy(const AgentTask &task) const;
 
     LoggingService *m_loggingService = nullptr;
+    const ExecutionNarrator *m_executionNarrator = nullptr;
     QList<BackgroundTaskResult> m_backgroundTaskResults;
     QString m_latestTaskToast;
     QString m_latestTaskToastTone = QStringLiteral("status");

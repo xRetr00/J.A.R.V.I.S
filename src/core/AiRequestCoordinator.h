@@ -17,10 +17,13 @@ struct ConversationRequestContext {
     QString modelId;
     QString input;
     QList<AiMessage> history;
-    QList<MemoryRecord> memory;
+    MemoryContext memory;
     AssistantIdentity identity;
     UserProfile userProfile;
     QString visionContext;
+    ResponseMode responseMode = ResponseMode::Chat;
+    QString sessionGoal;
+    QString nextStepHint;
     SamplingProfile sampling;
     bool streaming = true;
     int timeoutMs = 12000;
@@ -31,7 +34,7 @@ struct AgentRequestContext {
     QString input;
     QString previousResponseId;
     IntentType intent = IntentType::GENERAL_CHAT;
-    QList<MemoryRecord> memory;
+    MemoryContext memory;
     QList<SkillManifest> skills;
     QList<AgentToolSpec> tools;
     QList<AgentToolResult> toolResults;
@@ -39,6 +42,9 @@ struct AgentRequestContext {
     UserProfile userProfile;
     QString workspaceRoot;
     QString visionContext;
+    ResponseMode responseMode = ResponseMode::Chat;
+    QString sessionGoal;
+    QString nextStepHint;
     SamplingProfile sampling;
     ReasoningMode mode = ReasoningMode::Balanced;
     bool memoryAutoWrite = false;
@@ -50,6 +56,8 @@ struct CommandRequestContext {
     QString input;
     AssistantIdentity identity;
     UserProfile userProfile;
+    ResponseMode responseMode = ResponseMode::Act;
+    QString sessionGoal;
     int timeoutMs = 12000;
     double temperature = 0.2;
     std::optional<double> topP;

@@ -3,95 +3,17 @@
 #include <algorithm>
 
 #include <QDateTime>
-#include <QDir>
-#include <QFileInfo>
 #include <QJsonDocument>
-#include <QUrl>
 
 #include "agent/AgentToolbox.h"
+#include "core/ExecutionNarrator.h"
 #include "core/tasks/TaskDispatcher.h"
 #include "logging/LoggingService.h"
 
-namespace {
-QString compactSurfaceText(QString text, int maxLength = 72)
-{
-    text = text.simplified();
-    if (text.size() > maxLength) {
-        text = text.left(maxLength - 3).trimmed() + QStringLiteral("...");
-    }
-    return text;
-}
-
-QString formatDurationForSurface(int totalSeconds)
-{
-    if (totalSeconds <= 0) {
-        return {};
-    }
-
-    if (totalSeconds >= 3600) {
-        const int hours = totalSeconds / 3600;
-        const int minutes = (totalSeconds % 3600) / 60;
-        return minutes > 0
-            ? QStringLiteral("%1 hr %2 min").arg(hours).arg(minutes)
-            : QStringLiteral("%1 hr").arg(hours);
-    }
-
-    if (totalSeconds >= 60) {
-        const int minutes = totalSeconds / 60;
-        const int seconds = totalSeconds % 60;
-        return seconds > 0
-            ? QStringLiteral("%1 min %2 sec").arg(minutes).arg(seconds)
-            : QStringLiteral("%1 min").arg(minutes);
-    }
-
-    return QStringLiteral("%1 sec").arg(totalSeconds);
-}
-
-QString firstNonEmptyArg(const QJsonObject &args, const QStringList &keys)
-{
-    for (const QString &key : keys) {
-        const QString value = args.value(key).toString().trimmed();
-        if (!value.isEmpty()) {
-            return value;
-        }
-    }
-    return {};
-}
-
-QString compactPathForSurface(const QString &pathText)
-{
-    const QString trimmed = pathText.trimmed();
-    if (trimmed.isEmpty()) {
-        return {};
-    }
-
-    const QFileInfo info(trimmed);
-    const QString fileName = info.fileName().trimmed();
-    if (!fileName.isEmpty()) {
-        return compactSurfaceText(fileName, 56);
-    }
-
-    return compactSurfaceText(trimmed, 56);
-}
-
-QString compactUrlForSurface(const QString &urlText)
-{
-    const QString trimmed = urlText.trimmed();
-    if (trimmed.isEmpty()) {
-        return {};
-    }
-
-    const QUrl url(trimmed);
-    if (url.isValid() && !url.host().trimmed().isEmpty()) {
-        return compactSurfaceText(url.host(), 48);
-    }
-
-    return compactSurfaceText(trimmed, 48);
-}
-}
-
-ToolCoordinator::ToolCoordinator(LoggingService *loggingService)
+ToolCoordinator::ToolCoordinator(LoggingService *loggingService,
+                                 const ExecutionNarrator *executionNarrator)
     : m_loggingService(loggingService)
+    , m_executionNarrator(executionNarrator)
 {
 }
 
@@ -252,7 +174,9 @@ ToolResultHandling ToolCoordinator::handleTaskResult(const QJsonObject &resultOb
     handling.resultsChanged = backgroundPanelVisible;
 
     m_latestTaskToastTaskId = result.taskId;
-    m_latestTaskToast = result.summary.isEmpty() ? result.title : result.summary;
+    m_latestTaskToast = m_executionNarrator
+        ? m_executionNarrator->summarizeBackgroundResult(result)
+        : (result.summary.isEmpty() ? result.title : result.summary);
     m_latestTaskToastTone = result.success ? QStringLiteral("response") : QStringLiteral("error");
     m_latestTaskToastType = result.type;
     handling.toastChanged = true;
@@ -283,7 +207,10 @@ QList<AgentToolResult> ToolCoordinator::executeAgentToolCalls(
         }
         const AgentToolResult result = agentToolbox->execute(toolCall);
         if (traceCallback) {
-            traceCallback(QStringLiteral("tool_result"), result.toolName, result.output.left(800), result.success);
+            const QString detail = m_executionNarrator
+                ? m_executionNarrator->summarizeToolResult(result)
+                : result.output.left(800);
+            traceCallback(QStringLiteral("tool_result"), result.toolName, detail.left(800), result.success);
         }
         results.push_back(result);
     }
@@ -325,7 +252,9 @@ std::optional<WebSearchFollowUp> ToolCoordinator::buildWebSearchFollowUp(const B
     WebSearchFollowUp followUp;
     if (!reliable) {
         followUp.deliverLocalResponse = true;
-        followUp.localResponseText = QStringLiteral("I couldn't verify reliable web sources for that yet. Please try a more specific query or ask for source details.");
+        followUp.localResponseText = m_executionNarrator
+            ? m_executionNarrator->webSearchLowConfidence(result)
+            : QStringLiteral("I couldn't verify reliable web sources for that yet. Please try a more specific query or ask for source details.");
         followUp.localResponseStatus = reliabilityReason.isEmpty()
             ? QStringLiteral("Web search low confidence")
             : reliabilityReason;
@@ -405,71 +334,8 @@ bool ToolCoordinator::refreshBackgroundTaskSurface()
 
 QPair<QString, QString> ToolCoordinator::backgroundTaskSurfaceCopy(const AgentTask &task) const
 {
-    const QJsonObject &args = task.args;
-    const QString type = task.type.trimmed().toLower();
-
-    if (type == QStringLiteral("web_search")) {
-        return {
-            QStringLiteral("Searching the web..."),
-            compactSurfaceText(firstNonEmptyArg(args, {QStringLiteral("query"), QStringLiteral("q")}), 64)
-        };
+    if (m_executionNarrator != nullptr) {
+        return m_executionNarrator->describeBackgroundTask(task);
     }
-
-    if (type == QStringLiteral("dir_list")) {
-        return {
-            QStringLiteral("Listing files..."),
-            compactPathForSurface(firstNonEmptyArg(args, {QStringLiteral("path"), QStringLiteral("directory"), QStringLiteral("dir")}))
-        };
-    }
-
-    if (type == QStringLiteral("file_read")) {
-        return {
-            QStringLiteral("Opening file..."),
-            compactPathForSurface(firstNonEmptyArg(args, {QStringLiteral("path"), QStringLiteral("file"), QStringLiteral("filename")}))
-        };
-    }
-
-    if (type == QStringLiteral("file_write") || type == QStringLiteral("computer_write_file")) {
-        return {
-            QStringLiteral("Writing file..."),
-            compactPathForSurface(firstNonEmptyArg(args, {QStringLiteral("path"), QStringLiteral("file"), QStringLiteral("filename")}))
-        };
-    }
-
-    if (type == QStringLiteral("memory_write")) {
-        return {
-            QStringLiteral("Saving memory..."),
-            compactSurfaceText(firstNonEmptyArg(args, {QStringLiteral("summary"), QStringLiteral("title"), QStringLiteral("memory"), QStringLiteral("content")}), 60)
-        };
-    }
-
-    if (type == QStringLiteral("computer_open_app")) {
-        return {
-            QStringLiteral("Opening app..."),
-            compactSurfaceText(firstNonEmptyArg(args, {QStringLiteral("app"), QStringLiteral("name"), QStringLiteral("application")}), 48)
-        };
-    }
-
-    if (type == QStringLiteral("computer_open_url") || type == QStringLiteral("browser_open")) {
-        return {
-            QStringLiteral("Opening link..."),
-            compactUrlForSurface(firstNonEmptyArg(args, {QStringLiteral("url"), QStringLiteral("link")}))
-        };
-    }
-
-    if (type == QStringLiteral("computer_set_timer")) {
-        QString secondary;
-        const int seconds = args.value(QStringLiteral("seconds")).toInt();
-        if (seconds > 0) {
-            secondary = formatDurationForSurface(seconds);
-        } else {
-            secondary = compactSurfaceText(firstNonEmptyArg(args, {QStringLiteral("duration"), QStringLiteral("label")}), 48);
-        }
-        return {QStringLiteral("Setting timer..."), secondary};
-    }
-
-    return {
-        QStringLiteral("Tool running..."),
-        compactSurfaceText(firstNonEmptyArg(args, {QStringLiteral("query"), QStringLiteral("path"), QStringLiteral("file"), QStringLiteral("url"), QStringLiteral("name")}), 56)
-    };
+    return {};
 }

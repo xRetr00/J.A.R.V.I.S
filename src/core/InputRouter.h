@@ -2,6 +2,8 @@
 
 #include "core/AssistantTypes.h"
 
+class AssistantBehaviorPolicy;
+
 struct InputRouterContext {
     bool wakeOnly = false;
     bool shouldEndConversation = false;
@@ -35,5 +37,9 @@ struct InputRouterContext {
 class InputRouter
 {
 public:
+    explicit InputRouter(const AssistantBehaviorPolicy *behaviorPolicy = nullptr);
     InputRouteDecision decide(const InputRouterContext &context) const;
+
+private:
+    const AssistantBehaviorPolicy *m_behaviorPolicy = nullptr;
 };
