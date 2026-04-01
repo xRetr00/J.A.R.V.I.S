@@ -19,6 +19,7 @@ private slots:
     void promptAdapterBuildsHybridContinuationEnvelope();
     void promptAdapterSelectsComputerToolsForGeneralChat();
     void promptAdapterPrefersPlaywrightForBrowserRequests();
+    void promptAdapterForbidsFalseCapabilityDenialsAndHonorifics();
     void spokenReplyParsesStructuredPayload();
     void spokenReplyFallsBackToSanitizedPlainText();
     void spokenReplyStripsUnclosedThinkBlocks();
@@ -273,6 +274,32 @@ void AiServicesTests::promptAdapterPrefersPlaywrightForBrowserRequests()
 
     QVERIFY(messages.first().content.contains(QStringLiteral("browser_open should be the first choice")));
     QVERIFY(messages.first().content.contains(QStringLiteral("computer_open_url is the fallback")));
+}
+
+void AiServicesTests::promptAdapterForbidsFalseCapabilityDenialsAndHonorifics()
+{
+    PromptAdapter adapter;
+
+    const auto messages = adapter.buildConversationMessages(
+        QStringLiteral("Did you create the file already?"),
+        {},
+        {},
+        {
+            .assistantName = QStringLiteral("Vaxil"),
+            .personality = QStringLiteral("calm"),
+            .tone = QStringLiteral("confident"),
+            .addressingStyle = QStringLiteral("direct")
+        },
+        {},
+        ResponseMode::Chat,
+        QString(),
+        QStringLiteral("Ground the answer in retrieved evidence before responding."),
+        ReasoningMode::Balanced);
+
+    const QString systemPrompt = messages.first().content;
+    QVERIFY(systemPrompt.contains(QStringLiteral("Do not call the user sir")));
+    QVERIFY(systemPrompt.contains(QStringLiteral("Do not claim you lack access to files, apps, the browser, or local state")));
+    QVERIFY(systemPrompt.contains(QStringLiteral("If the user asks whether something was created, opened, written, or changed")));
 }
 
 void AiServicesTests::spokenReplyParsesStructuredPayload()

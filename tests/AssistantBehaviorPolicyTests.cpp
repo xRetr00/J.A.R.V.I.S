@@ -13,6 +13,7 @@ private slots:
     void createsActWithProgressSessionForBackgroundTasks();
     void requiresConfirmationForImplicitRiskyActions();
     void decidesRouteFromPolicyContext();
+    void routesHighConfidenceToolIntentToAgent();
     void acceptsExplicitConfirmationReply();
     void recognizesRejectionReply();
 };
@@ -111,6 +112,20 @@ void AssistantBehaviorPolicyTests::decidesRouteFromPolicyContext()
     QCOMPARE(decision.kind, InputRouteKind::BackgroundTasks);
     QCOMPARE(decision.tasks.size(), 1);
     QCOMPARE(decision.tasks.first().type, QStringLiteral("web_search"));
+}
+
+void AssistantBehaviorPolicyTests::routesHighConfidenceToolIntentToAgent()
+{
+    AssistantBehaviorPolicy policy;
+    InputRouterContext context;
+    context.agentEnabled = true;
+    context.aiAvailable = true;
+    context.effectiveIntent = IntentType::WRITE_FILE;
+    context.effectiveIntentConfidence = 0.93f;
+
+    const InputRouteDecision decision = policy.decideRoute(context);
+    QCOMPARE(decision.kind, InputRouteKind::AgentConversation);
+    QCOMPARE(decision.intent, IntentType::WRITE_FILE);
 }
 
 void AssistantBehaviorPolicyTests::acceptsExplicitConfirmationReply()

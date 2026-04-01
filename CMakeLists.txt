@@ -741,6 +741,20 @@ if(JARVIS_BUILD_TESTS)
     set_tests_properties(jarvis_behavior_policy_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
     jarvis_copy_optional_runtime_libraries(jarvis_behavior_policy_tests)
 
+    qt_add_executable(jarvis_execution_narrator_tests
+        tests/ExecutionNarratorTests.cpp
+    )
+
+    target_link_libraries(jarvis_execution_narrator_tests
+        PRIVATE
+            jarvis_lib
+            Qt6::Test
+    )
+
+    add_test(NAME jarvis_execution_narrator_tests COMMAND jarvis_execution_narrator_tests)
+    set_tests_properties(jarvis_execution_narrator_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_execution_narrator_tests)
+
     qt_add_executable(jarvis_local_response_tests
         tests/LocalResponseEngineTests.cpp
     )
@@ -810,6 +824,20 @@ if(JARVIS_BUILD_TESTS)
     add_test(NAME jarvis_memory_tests COMMAND jarvis_memory_tests)
     set_tests_properties(jarvis_memory_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
     jarvis_copy_optional_runtime_libraries(jarvis_memory_tests)
+
+    qt_add_executable(jarvis_response_finalizer_tests
+        tests/ResponseFinalizerTests.cpp
+    )
+
+    target_link_libraries(jarvis_response_finalizer_tests
+        PRIVATE
+            jarvis_lib
+            Qt6::Test
+    )
+
+    add_test(NAME jarvis_response_finalizer_tests COMMAND jarvis_response_finalizer_tests)
+    set_tests_properties(jarvis_response_finalizer_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_response_finalizer_tests)
 
     qt_add_executable(jarvis_settings_tests
         tests/AppSettingsTests.cpp

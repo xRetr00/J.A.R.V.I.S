@@ -394,7 +394,6 @@ InputRouteDecision AssistantBehaviorPolicy::decideRoute(const InputRouterContext
 
     if (context.effectiveIntent != IntentType::GENERAL_CHAT
         && context.effectiveIntentConfidence > 0.4f
-        && context.effectiveIntentConfidence <= 0.8f
         && context.agentEnabled) {
         decision.kind = InputRouteKind::AgentConversation;
         decision.intent = context.effectiveIntent;

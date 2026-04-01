@@ -6,6 +6,18 @@
 #include "tts/TtsEngine.h"
 
 namespace {
+bool isDisplaySafeHint(const QString &hint)
+{
+    const QString lowered = hint.trimmed().toLower();
+    return !lowered.contains(QStringLiteral("ground the answer"))
+        && !lowered.contains(QStringLiteral("retrieved evidence"))
+        && !lowered.contains(QStringLiteral("inspect and verify state"))
+        && !lowered.contains(QStringLiteral("side-effecting action"))
+        && !lowered.contains(QStringLiteral("smallest useful tool surface"))
+        && !lowered.contains(QStringLiteral("request changes state"))
+        && !lowered.contains(QStringLiteral("keep execution explicit"));
+}
+
 QString modeAwareStatus(const ActionSession &session, const QString &status)
 {
     if (!status.trimmed().isEmpty() && status != QStringLiteral("Response ready")) {
@@ -33,7 +45,9 @@ QString modeAwareStatus(const ActionSession &session, const QString &status)
 
 bool shouldAppendHint(const ActionSession &session, const QString &text)
 {
-    if (session.responseMode == ResponseMode::Chat || session.nextStepHint.trimmed().isEmpty()) {
+    if (session.responseMode == ResponseMode::Chat
+        || session.nextStepHint.trimmed().isEmpty()
+        || !isDisplaySafeHint(session.nextStepHint)) {
         return false;
     }
 

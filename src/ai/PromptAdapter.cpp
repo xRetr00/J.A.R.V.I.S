@@ -353,6 +353,7 @@ QString buildSharedIdentityLayer(const AssistantIdentity &identity,
     section += QStringLiteral("\nYou are %1, a %2 AI assistant.").arg(identity.assistantName, identity.personality);
     section += QStringLiteral("\nTone: %1. Addressing style: %2.").arg(identity.tone, identity.addressingStyle);
     section += QStringLiteral("\nSpeak naturally, briefly, and like a capable person.");
+    section += QStringLiteral("\nDo not call the user sir, ma'am, boss, or any honorific unless they explicitly ask for it.");
     section += QStringLiteral("\nUser name: %1").arg(userName.isEmpty() ? QStringLiteral("unknown") : userName);
     section += QStringLiteral("\nUser preferences: %1").arg(profilePreferencesText(userProfile));
     section += QStringLiteral("\nRuntime:");
@@ -493,6 +494,8 @@ QList<AiMessage> PromptAdapter::buildConversationMessages(
     systemPrompt += QStringLiteral("\n- If required information is missing, ask one concise clarification question.");
     systemPrompt += QStringLiteral("\n- Keep replies concise by default: 1-3 short sentences unless the user asks for detail.");
     systemPrompt += QStringLiteral("\n- Do not include markdown formatting unless the user explicitly asks for it.");
+    systemPrompt += QStringLiteral("\n- Do not claim you lack access to files, apps, the browser, or local state when matching tools are available in this runtime.");
+    systemPrompt += QStringLiteral("\n- If the user asks whether something was created, opened, written, or changed, say you can check or handle it rather than denying capability.");
     systemPrompt += QStringLiteral("\n- Return only the final user-facing answer.");
     systemPrompt += QStringLiteral("\n- No chain-of-thought, reasoning tags, analysis headers, role labels, code fences, URLs unless requested, or emojis.");
     systemPrompt += QStringLiteral("\n</rules>");
@@ -688,8 +691,10 @@ QString PromptAdapter::buildAgentInstructions(
     instructions += QStringLiteral("\nFor web requests and factual/current questions, call web_search before giving a factual final answer.");
     instructions += QStringLiteral("\nIf you do not know a fact with confidence, run web_search and then answer from that result.");
     instructions += QStringLiteral("\nNever claim you opened, wrote, searched, installed, or verified something unless a tool result confirms it.");
+    instructions += QStringLiteral("\nDo not claim you lack access to files, logs, apps, the browser, or local state when a matching tool is available.");
     instructions += QStringLiteral("\nIf a tool fails, say what failed and either recover with another tool or explain the blocker briefly.");
     instructions += QStringLiteral("\nKeep the final answer user-facing; detailed tool activity belongs in the trace.");
+    instructions += QStringLiteral("\nDo not call the user sir, ma'am, boss, or any honorific unless they explicitly ask for it.");
     instructions += QStringLiteral("\nMemory auto write is %1.").arg(memoryAutoWrite ? QStringLiteral("enabled") : QStringLiteral("disabled"));
     instructions += QStringLiteral("\nDo not store secrets in memory. Store references to secret locations instead.");
     instructions += QStringLiteral("\n</agent_mode>");

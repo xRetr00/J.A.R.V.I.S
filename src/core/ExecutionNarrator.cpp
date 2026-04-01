@@ -4,6 +4,18 @@
 #include <QUrl>
 
 namespace {
+bool isInternalPlanningHint(const QString &hint)
+{
+    const QString lowered = hint.trimmed().toLower();
+    return lowered.contains(QStringLiteral("ground the answer"))
+        || lowered.contains(QStringLiteral("retrieved evidence"))
+        || lowered.contains(QStringLiteral("inspect and verify state"))
+        || lowered.contains(QStringLiteral("side-effecting action"))
+        || lowered.contains(QStringLiteral("smallest useful tool surface"))
+        || lowered.contains(QStringLiteral("request changes state"))
+        || lowered.contains(QStringLiteral("keep execution explicit"));
+}
+
 QString firstNonEmptyArg(const QJsonObject &args, const QStringList &keys)
 {
     for (const QString &key : keys) {
@@ -160,7 +172,10 @@ QString ExecutionNarrator::appendNextStepHint(const QString &text, const ActionS
 {
     const QString trimmedText = text.trimmed();
     const QString trimmedHint = session.nextStepHint.trimmed();
-    if (trimmedHint.isEmpty() || session.responseMode == ResponseMode::Chat || trimmedText.contains(trimmedHint)) {
+    if (trimmedHint.isEmpty()
+        || isInternalPlanningHint(trimmedHint)
+        || session.responseMode == ResponseMode::Chat
+        || trimmedText.contains(trimmedHint)) {
         return trimmedText;
     }
     return QStringLiteral("%1 %2").arg(trimmedText, trimmedHint);

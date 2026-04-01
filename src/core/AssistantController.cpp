@@ -770,7 +770,7 @@ bool buildDeterministicComputerTask(const QString &input, AgentTask *task, QStri
             task->type = QStringLiteral("browser_open");
             task->args = QJsonObject{{QStringLiteral("url"), QStringLiteral("https://www.youtube.com/results?search_query=%1").arg(encoded)}};
             task->priority = 90;
-            *spoken = QStringLiteral("Opening YouTube search results with Playwright.");
+            *spoken = QStringLiteral("I'm opening those YouTube results now.");
             return true;
         }
     }
@@ -779,7 +779,7 @@ bool buildDeterministicComputerTask(const QString &input, AgentTask *task, QStri
         task->type = QStringLiteral("browser_open");
         task->args = QJsonObject{{QStringLiteral("url"), QStringLiteral("https://www.youtube.com")}};
         task->priority = 85;
-        *spoken = QStringLiteral("Opening YouTube with Playwright.");
+        *spoken = QStringLiteral("I'm opening YouTube now.");
         return true;
     }
 
@@ -792,7 +792,7 @@ bool buildDeterministicComputerTask(const QString &input, AgentTask *task, QStri
             {QStringLiteral("message"), QStringLiteral("Time is up.")}
         };
         task->priority = 88;
-        *spoken = QStringLiteral("Timer set.");
+        *spoken = QStringLiteral("I'm setting that timer now.");
         return true;
     }
 
@@ -816,7 +816,7 @@ bool buildDeterministicComputerTask(const QString &input, AgentTask *task, QStri
             {QStringLiteral("base_dir"), baseDir}
         };
         task->priority = 87;
-        *spoken = QStringLiteral("Creating the file now.");
+        *spoken = QStringLiteral("I'm creating that file now.");
         return true;
     }
 
@@ -838,10 +838,10 @@ bool buildDeterministicComputerTask(const QString &input, AgentTask *task, QStri
         if (!query.isEmpty()) {
             const QString encoded = QString::fromUtf8(QUrl::toPercentEncoding(query)).replace(QStringLiteral("%20"), QStringLiteral("+"));
             task->args = QJsonObject{{QStringLiteral("url"), QStringLiteral("https://www.google.com/search?q=%1").arg(encoded)}};
-            *spoken = QStringLiteral("Opening browser search results with Playwright.");
+            *spoken = QStringLiteral("I'm opening those search results now.");
         } else {
             task->args = QJsonObject{{QStringLiteral("url"), QStringLiteral("https://www.google.com")}};
-            *spoken = QStringLiteral("Opening the browser with Playwright.");
+            *spoken = QStringLiteral("I'm opening the browser now.");
         }
         task->priority = 84;
         return true;
@@ -1901,9 +1901,12 @@ bool AssistantController::executeRouteDecision(const InputRouteDecision &decisio
             return false;
         }
         dispatchBackgroundTasks(decision.tasks);
-        const QString preamble = decision.message.isEmpty() && m_executionNarrator
-            ? m_executionNarrator->preActionText(m_activeActionSession, QStringLiteral("All right, I'm handling that now."))
-            : (decision.message.isEmpty() ? QStringLiteral("All right, I'm handling that now.") : decision.message);
+        const QString fallbackPreamble = decision.message.isEmpty()
+            ? QStringLiteral("All right, I'm handling that now.")
+            : decision.message;
+        const QString preamble = m_executionNarrator
+            ? m_executionNarrator->preActionText(m_activeActionSession, fallbackPreamble)
+            : fallbackPreamble;
         const QString status = decision.status.isEmpty() && m_executionNarrator
             ? m_executionNarrator->statusForSession(m_activeActionSession, QStringLiteral("Background task queued"))
             : (decision.status.isEmpty() ? QStringLiteral("Background task queued") : decision.status);
