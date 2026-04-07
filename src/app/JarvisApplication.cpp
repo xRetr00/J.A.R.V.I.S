@@ -6,8 +6,10 @@
 #include <QDateTime>
 #include <QDebug>
 #include <QCoreApplication>
+#include <QEvent>
 #include <QMenu>
 #include <QIcon>
+#include <QMetaObject>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQmlError>
@@ -130,6 +132,34 @@ JarvisApplication::JarvisApplication(QObject *parent)
 }
 
 JarvisApplication::~JarvisApplication() = default;
+
+bool JarvisApplication::eventFilter(QObject *watched, QEvent *event)
+{
+    if (event != nullptr && event->type() == QEvent::Hide) {
+        auto *window = qobject_cast<QWindow *>(watched);
+        const bool isManagedDesktopWindow = window != nullptr
+            && (window == m_settingsWindow
+                || window == m_setupWindow
+                || window == m_toolsWindow
+                || window == m_fullUiWindow);
+        if (isManagedDesktopWindow
+            && event->spontaneous()
+            && window->windowState().testFlag(Qt::WindowMinimized)) {
+            QPointer<QWindow> guardedWindow(window);
+            QMetaObject::invokeMethod(this, [guardedWindow]() {
+                if (!guardedWindow || guardedWindow->isVisible()) {
+                    return;
+                }
+                if (!guardedWindow->windowState().testFlag(Qt::WindowMinimized)) {
+                    return;
+                }
+                guardedWindow->showMinimized();
+            }, Qt::QueuedConnection);
+        }
+    }
+
+    return QObject::eventFilter(watched, event);
+}
 
 bool JarvisApplication::initialize()
 {
@@ -264,6 +294,13 @@ bool JarvisApplication::initialize()
                 });
     };
 
+    const auto installMinimizeGuard = [this](QQuickWindow *window) {
+        if (window == nullptr) {
+            return;
+        }
+        window->installEventFilter(this);
+    };
+
     if (auto *window = qobject_cast<QQuickWindow *>(m_engine->rootObjects().first())) {
         m_mainWindow = window;
         registerWindowDiagnostics(window, QStringLiteral("overlay_window"));
@@ -279,6 +316,7 @@ bool JarvisApplication::initialize()
         m_settingsWindow = qobject_cast<QQuickWindow *>(m_engine->rootObjects().at(1));
         if (m_settingsWindow) {
             registerWindowDiagnostics(m_settingsWindow, QStringLiteral("settings_window"));
+            installMinimizeGuard(m_settingsWindow);
             if (!appIcon.isNull()) {
                 m_settingsWindow->setIcon(appIcon);
             }
@@ -289,6 +327,7 @@ bool JarvisApplication::initialize()
         m_setupWindow = qobject_cast<QQuickWindow *>(m_engine->rootObjects().at(2));
         if (m_setupWindow) {
             registerWindowDiagnostics(m_setupWindow, QStringLiteral("setup_window"));
+            installMinimizeGuard(m_setupWindow);
             if (!appIcon.isNull()) {
                 m_setupWindow->setIcon(appIcon);
             }
@@ -299,6 +338,7 @@ bool JarvisApplication::initialize()
         m_toolsWindow = qobject_cast<QQuickWindow *>(m_engine->rootObjects().at(3));
         if (m_toolsWindow) {
             registerWindowDiagnostics(m_toolsWindow, QStringLiteral("tools_window"));
+            installMinimizeGuard(m_toolsWindow);
             if (!appIcon.isNull()) {
                 m_toolsWindow->setIcon(appIcon);
             }
@@ -309,6 +349,7 @@ bool JarvisApplication::initialize()
         m_fullUiWindow = qobject_cast<QQuickWindow *>(m_engine->rootObjects().at(4));
         if (m_fullUiWindow) {
             registerWindowDiagnostics(m_fullUiWindow, QStringLiteral("full_ui_window"));
+            installMinimizeGuard(m_fullUiWindow);
             if (!appIcon.isNull()) {
                 m_fullUiWindow->setIcon(appIcon);
             }

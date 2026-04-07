@@ -14,6 +14,7 @@ Window {
     visible: false
     title: settingsVm.assistantName + " Command Deck"
     color: "#04070c"
+    flags: Qt.Window
 
     property real dpiScale: Math.max(1.0, Screen.devicePixelRatio)
     property int maxLogEntries: 5
@@ -61,6 +62,11 @@ Window {
             return (blinkOn ? "*" : " ") + " SPEAKING"
         }
         return (blinkOn ? "*" : " ") + " IDLE"
+    }
+
+    onClosing: function(close) {
+        close.accepted = false
+        hide()
     }
 
     onVisibleChanged: {

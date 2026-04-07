@@ -58,3 +58,5 @@ __pycache__/
 config/user_profile.json
 bin/logs/
 third_party/
+Vaxil_II/
+PLAN.md

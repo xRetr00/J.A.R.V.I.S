@@ -21,6 +21,7 @@ class SettingsViewModel;
 class QSystemTrayIcon;
 class TaskViewModel;
 class QWindow;
+class QEvent;
 
 class JarvisApplication : public QObject
 {
@@ -30,6 +31,9 @@ public:
     explicit JarvisApplication(QObject *parent = nullptr);
     ~JarvisApplication() override;
     bool initialize();
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     std::unique_ptr<AppSettings> m_settings;
