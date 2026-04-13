@@ -43,6 +43,7 @@ Window {
     property color textSecondaryColor: useDarkText ? "#2b4056" : "#bfd3ea"
     property color textMutedColor: useDarkText ? "#3f5871" : "#7f9fc7"
     property color textOutlineColor: useDarkText ? "#80ffffff" : "#90060d14"
+    property double currentEpochMs: Date.now()
 
     onClosing: function(close) {
         close.accepted = false
@@ -128,6 +129,21 @@ Window {
         return "compact"
     }
 
+    function focusModeBadgeText() {
+        if (!agentVm.focusModeEnabled) {
+            return ""
+        }
+
+        const suffix = agentVm.focusModeAllowCriticalAlerts ? "Critical only" : "Silent"
+        if (agentVm.focusModeUntilEpochMs <= 0) {
+            return "Focus Mode · " + suffix
+        }
+
+        const remainingMs = Math.max(0, agentVm.focusModeUntilEpochMs - currentEpochMs)
+        const remainingMinutes = Math.max(1, Math.ceil(remainingMs / 60000))
+        return "Focus " + remainingMinutes + "m · " + suffix
+    }
+
     JarvisUi.AnimationController {
         id: motion
         stateName: agentVm.stateName
@@ -142,6 +158,13 @@ Window {
         context: Qt.ApplicationShortcut
         enabled: root.visible
         onActivated: agentVm.interruptSpeechAndListen()
+    }
+
+    Timer {
+        interval: 30000
+        repeat: true
+        running: root.visible && agentVm.focusModeEnabled && agentVm.focusModeUntilEpochMs > 0
+        onTriggered: root.currentEpochMs = Date.now()
     }
 
     Item {
@@ -176,6 +199,26 @@ Window {
                 Layout.alignment: Qt.AlignRight
                 surfaceState: agentVm.assistantSurfaceState
                 dpiScale: root.dpiScale
+            }
+
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                spacing: Math.round(8 * root.dpiScale)
+                visible: agentVm.focusModeEnabled || agentVm.privateModeEnabled
+
+                JarvisUi.CompanionModeBadge {
+                    text: root.focusModeBadgeText()
+                    dpiScale: root.dpiScale
+                    fillColor: "#15314c"
+                    borderColor: "#3f759e"
+                }
+
+                JarvisUi.CompanionModeBadge {
+                    text: agentVm.privateModeEnabled ? "Private Mode" : ""
+                    dpiScale: root.dpiScale
+                    fillColor: "#1d2a3b"
+                    borderColor: "#596c87"
+                }
             }
 
             JarvisUi.AssistantStatusSurface {
@@ -368,6 +411,14 @@ Window {
             onClicked: agentVm.interruptSpeechAndListen()
         }
 
+    }
+
+    Connections {
+        target: agentVm
+
+        function onModeStateChanged() {
+            root.currentEpochMs = Date.now()
+        }
     }
 
     Connections {

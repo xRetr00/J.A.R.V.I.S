@@ -21,6 +21,10 @@ class AgentViewModel : public QObject
     Q_PROPERTY(bool overlayVisible READ overlayVisible NOTIFY overlayVisibleChanged)
     Q_PROPERTY(double presenceOffsetX READ presenceOffsetX NOTIFY presenceOffsetChanged)
     Q_PROPERTY(double presenceOffsetY READ presenceOffsetY NOTIFY presenceOffsetChanged)
+    Q_PROPERTY(bool focusModeEnabled READ focusModeEnabled NOTIFY modeStateChanged)
+    Q_PROPERTY(bool focusModeAllowCriticalAlerts READ focusModeAllowCriticalAlerts NOTIFY modeStateChanged)
+    Q_PROPERTY(qlonglong focusModeUntilEpochMs READ focusModeUntilEpochMs NOTIFY modeStateChanged)
+    Q_PROPERTY(bool privateModeEnabled READ privateModeEnabled NOTIFY modeStateChanged)
     Q_PROPERTY(QString assistantName READ assistantName NOTIFY profileChanged)
     Q_PROPERTY(QString userName READ userName NOTIFY profileChanged)
 
@@ -58,6 +62,10 @@ public:
     bool overlayVisible() const;
     double presenceOffsetX() const;
     double presenceOffsetY() const;
+    bool focusModeEnabled() const;
+    bool focusModeAllowCriticalAlerts() const;
+    qlonglong focusModeUntilEpochMs() const;
+    bool privateModeEnabled() const;
     QString assistantName() const;
     QString userName() const;
 
@@ -78,6 +86,7 @@ signals:
     void wakeTriggerTokenChanged();
     void overlayVisibleChanged();
     void presenceOffsetChanged();
+    void modeStateChanged();
     void profileChanged();
 
 private:

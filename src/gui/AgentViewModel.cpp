@@ -22,6 +22,7 @@ AgentViewModel::AgentViewModel(BackendFacade *backend, QObject *parent)
     connect(m_backend, &BackendFacade::wakeTriggerTokenChanged, this, &AgentViewModel::wakeTriggerTokenChanged);
     connect(m_backend, &BackendFacade::overlayVisibleChanged, this, &AgentViewModel::overlayVisibleChanged);
     connect(m_backend, &BackendFacade::presenceOffsetChanged, this, &AgentViewModel::presenceOffsetChanged);
+    connect(m_backend, &BackendFacade::settingsChanged, this, &AgentViewModel::modeStateChanged);
     connect(m_backend, &BackendFacade::profileChanged, this, &AgentViewModel::profileChanged);
 }
 
@@ -88,6 +89,26 @@ double AgentViewModel::presenceOffsetX() const
 double AgentViewModel::presenceOffsetY() const
 {
     return m_backend ? m_backend->presenceOffsetY() : 0.0;
+}
+
+bool AgentViewModel::focusModeEnabled() const
+{
+    return m_backend && m_backend->focusModeEnabled();
+}
+
+bool AgentViewModel::focusModeAllowCriticalAlerts() const
+{
+    return m_backend && m_backend->focusModeAllowCriticalAlerts();
+}
+
+qlonglong AgentViewModel::focusModeUntilEpochMs() const
+{
+    return m_backend ? m_backend->focusModeUntilEpochMs() : 0;
+}
+
+bool AgentViewModel::privateModeEnabled() const
+{
+    return m_backend && m_backend->privateModeEnabled();
 }
 
 QString AgentViewModel::assistantName() const
