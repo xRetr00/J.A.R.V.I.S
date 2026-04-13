@@ -896,12 +896,15 @@ if(JARVIS_BUILD_TESTS)
 
     qt_add_executable(jarvis_settings_tests
         tests/AppSettingsTests.cpp
+        src/settings/AppSettings.cpp
     )
 
+    target_include_directories(jarvis_settings_tests PRIVATE src)
     target_link_libraries(jarvis_settings_tests
         PRIVATE
-            jarvis_lib
+            Qt6::Core
             Qt6::Test
+            nlohmann_json::nlohmann_json
     )
 
     add_test(NAME jarvis_settings_tests COMMAND jarvis_settings_tests)
@@ -910,11 +913,13 @@ if(JARVIS_BUILD_TESTS)
 
     qt_add_executable(jarvis_cooldown_tests
         tests/CooldownEngineTests.cpp
+        src/cognition/CooldownEngine.cpp
     )
 
+    target_include_directories(jarvis_cooldown_tests PRIVATE src)
     target_link_libraries(jarvis_cooldown_tests
         PRIVATE
-            jarvis_lib
+            Qt6::Core
             Qt6::Test
     )
 
@@ -924,11 +929,14 @@ if(JARVIS_BUILD_TESTS)
 
     qt_add_executable(jarvis_behavioral_ledger_tests
         tests/BehavioralEventLedgerTests.cpp
+        src/telemetry/BehavioralEventLedger.cpp
     )
 
+    target_include_directories(jarvis_behavioral_ledger_tests PRIVATE src)
     target_link_libraries(jarvis_behavioral_ledger_tests
         PRIVATE
-            jarvis_lib
+            Qt6::Core
+            Qt6::Sql
             Qt6::Test
     )
 

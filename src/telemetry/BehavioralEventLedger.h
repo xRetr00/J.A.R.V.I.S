@@ -9,7 +9,7 @@
 class BehavioralEventLedger
 {
 public:
-    explicit BehavioralEventLedger(QString rootPath = QString());
+    explicit BehavioralEventLedger(QString rootPath = QString(), bool sqliteEnabled = true);
 
     [[nodiscard]] bool initialize();
     [[nodiscard]] bool recordEvent(const BehaviorTraceEvent &event) const;
@@ -28,5 +28,7 @@ private:
     QString m_rootPath;
     QString m_databasePath;
     QString m_ndjsonPath;
+    QString m_connectionName;
+    bool m_sqliteEnabled = true;
     mutable QMutex m_mutex;
 };

@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>
+#include <QJsonObject>
 #include <QMutexLocker>
 #include <QSqlDatabase>
 #include <QSqlQuery>
@@ -53,9 +54,11 @@ constexpr auto kSchemaSql =
     ")";
 }
 
-BehavioralEventLedger::BehavioralEventLedger(QString rootPath)
+BehavioralEventLedger::BehavioralEventLedger(QString rootPath, bool sqliteEnabled)
     : m_rootPath(rootPath.trimmed())
 {
+    m_connectionName = connectionName();
+    m_sqliteEnabled = sqliteEnabled;
     if (m_rootPath.isEmpty()) {
         m_rootPath = defaultRootPath();
     }
@@ -79,18 +82,32 @@ bool BehavioralEventLedger::initialize()
         ndjsonFile.close();
     }
 
-    const QString name = connectionName();
+    QFile databaseFile(m_databasePath);
+    if (!databaseFile.exists()) {
+        if (!databaseFile.open(QIODevice::WriteOnly)) {
+            return false;
+        }
+        databaseFile.close();
+    }
+
+    if (!m_sqliteEnabled || !QSqlDatabase::drivers().contains(QStringLiteral("QSQLITE"))) {
+        return true;
+    }
+
     bool schemaOk = true;
     {
-        QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), name);
+        QSqlDatabase db = QSqlDatabase::contains(m_connectionName)
+            ? QSqlDatabase::database(m_connectionName)
+            : QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), m_connectionName);
         db.setDatabaseName(m_databasePath);
         if (db.open()) {
-            QSqlQuery query(db);
-            schemaOk = query.exec(QString::fromUtf8(kSchemaSql));
+            {
+                QSqlQuery query(db);
+                schemaOk = query.exec(QString::fromUtf8(kSchemaSql));
+            }
             db.close();
         }
     }
-    QSqlDatabase::removeDatabase(name);
     return schemaOk;
 }
 
@@ -102,13 +119,16 @@ bool BehavioralEventLedger::recordEvent(const BehaviorTraceEvent &event) const
     }
 
     const bool ndjsonOk = appendNdjsonLocked(event);
-    const bool sqliteOk = recordSqliteLocked(event);
+    const bool sqliteOk = m_sqliteEnabled ? recordSqliteLocked(event) : false;
     return ndjsonOk || sqliteOk;
 }
 
 QList<BehaviorTraceEvent> BehavioralEventLedger::recentEvents(int limit) const
 {
     QMutexLocker locker(&m_mutex);
+    if (!m_sqliteEnabled || !QSqlDatabase::drivers().contains(QStringLiteral("QSQLITE"))) {
+        return {};
+    }
     return recentEventsSqliteLocked(limit);
 }
 
@@ -144,14 +164,19 @@ bool BehavioralEventLedger::appendNdjsonLocked(const BehaviorTraceEvent &event) 
 
 bool BehavioralEventLedger::recordSqliteLocked(const BehaviorTraceEvent &event) const
 {
-    const QString name = connectionName();
     bool ok = false;
     {
-        QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), name);
+        QSqlDatabase db = QSqlDatabase::contains(m_connectionName)
+            ? QSqlDatabase::database(m_connectionName)
+            : QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), m_connectionName);
         db.setDatabaseName(m_databasePath);
         if (db.open()) {
-            QSqlQuery schemaQuery(db);
-            if (schemaQuery.exec(QString::fromUtf8(kSchemaSql))) {
+            bool schemaOk = false;
+            {
+                QSqlQuery schemaQuery(db);
+                schemaOk = schemaQuery.exec(QString::fromUtf8(kSchemaSql));
+            }
+            if (schemaOk) {
                 QSqlQuery insertQuery(db);
                 insertQuery.prepare(QStringLiteral(
                     "INSERT OR REPLACE INTO behavioral_events ("
@@ -173,32 +198,33 @@ bool BehavioralEventLedger::recordSqliteLocked(const BehaviorTraceEvent &event) 
             db.close();
         }
     }
-    QSqlDatabase::removeDatabase(name);
     return ok;
 }
 
 QList<BehaviorTraceEvent> BehavioralEventLedger::recentEventsSqliteLocked(int limit) const
 {
     QList<BehaviorTraceEvent> events;
-    const QString name = connectionName();
     {
-        QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), name);
+        QSqlDatabase db = QSqlDatabase::contains(m_connectionName)
+            ? QSqlDatabase::database(m_connectionName)
+            : QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), m_connectionName);
         db.setDatabaseName(m_databasePath);
         if (db.open()) {
-            QSqlQuery query(db);
-            query.prepare(QStringLiteral(
-                "SELECT event_id, session_id, trace_id, thread_id, capability_id, actor, stage, family, reason_code, timestamp_utc, payload_json "
-                "FROM behavioral_events ORDER BY timestamp_utc DESC LIMIT ?"));
-            query.addBindValue(qMax(1, limit));
-            if (query.exec()) {
-                while (query.next()) {
-                    events.push_back(eventFromQuery(query));
+            {
+                QSqlQuery query(db);
+                query.prepare(QStringLiteral(
+                    "SELECT event_id, session_id, trace_id, thread_id, capability_id, actor, stage, family, reason_code, timestamp_utc, payload_json "
+                    "FROM behavioral_events ORDER BY timestamp_utc DESC LIMIT ?"));
+                query.addBindValue(qMax(1, limit));
+                if (query.exec()) {
+                    while (query.next()) {
+                        events.push_back(eventFromQuery(query));
+                    }
                 }
             }
             db.close();
         }
     }
-    QSqlDatabase::removeDatabase(name);
     return events;
 }
 

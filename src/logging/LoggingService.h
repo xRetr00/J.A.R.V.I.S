@@ -23,6 +23,7 @@ class LoggingService : public QObject
 
 public:
     explicit LoggingService(QObject *parent = nullptr);
+    ~LoggingService() override;
 
     bool initialize();
     void info(const QString &message) const;

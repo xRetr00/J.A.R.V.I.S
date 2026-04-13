@@ -82,6 +82,8 @@ LoggingService::LoggingService(QObject *parent)
 {
 }
 
+LoggingService::~LoggingService() = default;
+
 bool LoggingService::initialize()
 {
     const auto root = QCoreApplication::applicationDirPath() + QStringLiteral("/logs");

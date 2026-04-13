@@ -144,13 +144,13 @@ bool JarvisApplication::eventFilter(QObject *watched, QEvent *event)
                 || window == m_fullUiWindow);
         if (isManagedDesktopWindow
             && event->spontaneous()
-            && window->windowState().testFlag(Qt::WindowMinimized)) {
+            && (window->windowState() & Qt::WindowMinimized)) {
             QPointer<QWindow> guardedWindow(window);
             QMetaObject::invokeMethod(this, [guardedWindow]() {
                 if (!guardedWindow || guardedWindow->isVisible()) {
                     return;
                 }
-                if (!guardedWindow->windowState().testFlag(Qt::WindowMinimized)) {
+                if (!(guardedWindow->windowState() & Qt::WindowMinimized)) {
                     return;
                 }
                 guardedWindow->showMinimized();
