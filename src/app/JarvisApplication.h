@@ -15,6 +15,7 @@ class LoggingService;
 class NativeHotkeyFilter;
 #endif
 class OverlayController;
+class DesktopPerceptionMonitor;
 class QQmlApplicationEngine;
 class QQuickWindow;
 class SettingsViewModel;
@@ -41,6 +42,7 @@ private:
     std::unique_ptr<LoggingService> m_loggingService;
     std::unique_ptr<AssistantController> m_assistantController;
     std::unique_ptr<OverlayController> m_overlayController;
+    std::unique_ptr<DesktopPerceptionMonitor> m_desktopPerceptionMonitor;
     std::unique_ptr<BackendFacade> m_backendFacade;
     std::unique_ptr<AgentViewModel> m_agentViewModel;
     std::unique_ptr<SettingsViewModel> m_settingsViewModel;

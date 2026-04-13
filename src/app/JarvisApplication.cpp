@@ -29,6 +29,7 @@
 #include "gui/TaskViewModel.h"
 #include "logging/LoggingService.h"
 #include "overlay/OverlayController.h"
+#include "perception/DesktopPerceptionMonitor.h"
 #include "platform/PlatformRuntime.h"
 #include "settings/AppSettings.h"
 #include "settings/IdentityProfileService.h"
@@ -213,6 +214,10 @@ bool JarvisApplication::initialize()
         m_identityProfileService.get(),
         m_loggingService.get());
     m_overlayController = std::make_unique<OverlayController>();
+    m_desktopPerceptionMonitor = std::make_unique<DesktopPerceptionMonitor>(
+        m_settings.get(),
+        m_loggingService.get(),
+        this);
     m_backendFacade = std::make_unique<BackendFacade>(
         m_settings.get(),
         m_identityProfileService.get(),
@@ -457,6 +462,18 @@ bool JarvisApplication::initialize()
     QCoreApplication::instance()->installNativeEventFilter(m_hotkeyFilter.get());
 #endif
     auto *trayMenu = new QMenu();
+    const auto showTrayNotification = [this](const QString &title,
+                                             const QString &message,
+                                             QSystemTrayIcon::MessageIcon icon,
+                                             int timeoutMs,
+                                             const QString &priority) {
+        if (m_trayIcon) {
+            m_trayIcon->showMessage(title, message, icon, timeoutMs);
+        }
+        if (m_desktopPerceptionMonitor) {
+            m_desktopPerceptionMonitor->recordNotification(title, message, priority);
+        }
+    };
     trayMenu->addAction(QStringLiteral("Toggle UI"), [toggleActiveUi]() {
         toggleActiveUi();
     });
@@ -511,7 +528,7 @@ bool JarvisApplication::initialize()
     auto lastBlockedIssueNotified = QSharedPointer<QString>::create(QString());
     auto lastBlockedNotificationAtMs = QSharedPointer<qint64>::create(0);
     const PlatformCapabilities platformCapabilities = PlatformRuntime::currentCapabilities();
-    const auto updateStartupPresentation = [this, startupAnnouncementSent, lastStartupIssue, lastBlockedIssueNotified, lastBlockedNotificationAtMs, platformCapabilities]() {
+    const auto updateStartupPresentation = [this, startupAnnouncementSent, lastStartupIssue, lastBlockedIssueNotified, lastBlockedNotificationAtMs, platformCapabilities, showTrayNotification]() {
         if (!m_settings->initialSetupCompleted()) {
             return;
         }
@@ -525,11 +542,12 @@ bool JarvisApplication::initialize()
                     ? QStringLiteral("Running in tray. Use Ctrl+Alt+J or the tray icon.")
                     : QStringLiteral("Running in tray. Use the tray icon to toggle the overlay.");
                 qInfo() << "Startup complete. App is running in the tray." << readyMessage;
-                m_trayIcon->showMessage(
+                showTrayNotification(
                     QStringLiteral("Vaxil"),
                     readyMessage,
                     QSystemTrayIcon::Information,
-                    5000);
+                    5000,
+                    QStringLiteral("low"));
                 *startupAnnouncementSent = true;
                 *lastStartupIssue = QString();
             }
@@ -551,11 +569,12 @@ bool JarvisApplication::initialize()
             const bool cooldownElapsed = (nowMs - *lastBlockedNotificationAtMs) >= kBlockedNotificationCooldownMs;
             if (issueChanged || cooldownElapsed) {
                 qWarning() << "Startup blocked:" << issue;
-                m_trayIcon->showMessage(
+                showTrayNotification(
                     QStringLiteral("Vaxil"),
                     issue.isEmpty() ? QStringLiteral("Startup is blocked. Open setup to fix the missing components.") : issue,
                     QSystemTrayIcon::Warning,
-                    7000);
+                    7000,
+                    QStringLiteral("high"));
                 *lastBlockedIssueNotified = issue;
                 *lastBlockedNotificationAtMs = nowMs;
             }
@@ -598,5 +617,8 @@ bool JarvisApplication::initialize()
             m_toolsWindow->requestActivate();
         }
     });
+    if (m_desktopPerceptionMonitor) {
+        m_desktopPerceptionMonitor->start();
+    }
     return true;
 }

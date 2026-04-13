@@ -1,0 +1,25 @@
+#pragma once
+
+#include <QString>
+
+#include "companion/contracts/CompanionContextSnapshot.h"
+
+class DesktopContextThreadBuilder
+{
+public:
+    [[nodiscard]] static CompanionContextSnapshot fromActiveWindow(const QString &appId,
+                                                                   const QString &windowTitle);
+    [[nodiscard]] static CompanionContextSnapshot fromClipboard(const QString &appId,
+                                                                const QString &windowTitle,
+                                                                const QString &clipboardPreview);
+    [[nodiscard]] static CompanionContextSnapshot fromNotification(const QString &title,
+                                                                   const QString &message,
+                                                                   const QString &priority,
+                                                                   const QString &sourceAppId = QStringLiteral("vaxil"));
+
+private:
+    [[nodiscard]] static QString normalizedAppFamily(const QString &appId);
+    [[nodiscard]] static QString inferTopic(const QString &primaryText,
+                                            const QString &secondaryText = QString());
+    [[nodiscard]] static QString normalizeSegment(QString value);
+};

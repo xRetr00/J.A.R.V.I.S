@@ -1,0 +1,66 @@
+#pragma once
+
+#include <QObject>
+
+#include "cognition/CooldownEngine.h"
+#include "companion/contracts/CompanionContextSnapshot.h"
+#include "companion/contracts/CooldownState.h"
+
+class AppSettings;
+class LoggingService;
+class QClipboard;
+class QTimer;
+
+class DesktopPerceptionMonitor : public QObject
+{
+    Q_OBJECT
+
+public:
+    DesktopPerceptionMonitor(AppSettings *settings, LoggingService *loggingService, QObject *parent = nullptr);
+
+    void start();
+    void recordNotification(const QString &title,
+                            const QString &message,
+                            const QString &priority,
+                            const QString &source = QStringLiteral("tray"));
+
+private:
+    struct ActiveWindowSnapshot
+    {
+        QString appId;
+        QString windowTitle;
+
+        [[nodiscard]] QString fingerprint() const
+        {
+            return appId + QStringLiteral("::") + windowTitle;
+        }
+    };
+
+    void pollActiveWindow();
+    void handleClipboardChanged();
+    void recordPerception(const QString &reasonCode,
+                          const QString &priority,
+                          double confidence,
+                          double novelty,
+                          const QVariantMap &payload,
+                          const CompanionContextSnapshot &context) const;
+    void evaluateCooldown(const QString &reasonCode,
+                          const QString &priority,
+                          double confidence,
+                          double novelty,
+                          const CompanionContextSnapshot &context);
+    [[nodiscard]] ActiveWindowSnapshot currentActiveWindow() const;
+    [[nodiscard]] QString clipboardPreview() const;
+    [[nodiscard]] QVariantMap basePayload(const QVariantMap &payload) const;
+    [[nodiscard]] FocusModeState currentFocusMode() const;
+
+    AppSettings *m_settings = nullptr;
+    LoggingService *m_loggingService = nullptr;
+    QClipboard *m_clipboard = nullptr;
+    QTimer *m_windowPollTimer = nullptr;
+    mutable CooldownEngine m_cooldownEngine;
+    mutable CooldownState m_cooldownState;
+    QString m_sessionId;
+    QString m_lastWindowFingerprint;
+    QString m_lastClipboardFingerprint;
+};

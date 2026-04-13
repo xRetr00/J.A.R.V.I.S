@@ -1,0 +1,277 @@
+#include "perception/DesktopPerceptionMonitor.h"
+
+#include <QApplication>
+#include <QClipboard>
+#include <QDateTime>
+#include <QMimeData>
+#include <QTimer>
+#include <QUuid>
+
+#include "companion/contracts/BehaviorTraceEvent.h"
+#include "companion/contracts/CompanionContextSnapshot.h"
+#include "companion/contracts/FocusModeState.h"
+#include "logging/LoggingService.h"
+#include "perception/DesktopContextThreadBuilder.h"
+#include "settings/AppSettings.h"
+
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
+
+namespace {
+QString currentTraceId()
+{
+    return QUuid::createUuid().toString(QUuid::WithoutBraces);
+}
+}
+
+DesktopPerceptionMonitor::DesktopPerceptionMonitor(AppSettings *settings,
+                                                   LoggingService *loggingService,
+                                                   QObject *parent)
+    : QObject(parent)
+    , m_settings(settings)
+    , m_loggingService(loggingService)
+    , m_clipboard(QApplication::clipboard())
+    , m_windowPollTimer(new QTimer(this))
+    , m_sessionId(QUuid::createUuid().toString(QUuid::WithoutBraces))
+{
+    m_windowPollTimer->setInterval(1500);
+    connect(m_windowPollTimer, &QTimer::timeout, this, &DesktopPerceptionMonitor::pollActiveWindow);
+
+    if (m_clipboard != nullptr) {
+        connect(m_clipboard, &QClipboard::dataChanged, this, &DesktopPerceptionMonitor::handleClipboardChanged);
+    }
+}
+
+void DesktopPerceptionMonitor::start()
+{
+    m_windowPollTimer->start();
+    pollActiveWindow();
+}
+
+void DesktopPerceptionMonitor::recordNotification(const QString &title,
+                                                  const QString &message,
+                                                  const QString &priority,
+                                                  const QString &source)
+{
+    if (m_loggingService == nullptr) {
+        return;
+    }
+
+    const CompanionContextSnapshot context = DesktopContextThreadBuilder::fromNotification(title, message, priority);
+    QVariantMap payload = context.toVariantMap();
+    payload.insert(QStringLiteral("source"), source.trimmed().isEmpty() ? QStringLiteral("tray") : source.trimmed());
+    recordPerception(QStringLiteral("perception.notification"), priority, context.confidence, 0.82, payload, context);
+    evaluateCooldown(QStringLiteral("perception.notification"), priority, context.confidence, 0.82, context);
+}
+
+void DesktopPerceptionMonitor::pollActiveWindow()
+{
+    const ActiveWindowSnapshot snapshot = currentActiveWindow();
+    if (snapshot.appId.isEmpty() || snapshot.windowTitle.isEmpty()) {
+        return;
+    }
+
+    const QString fingerprint = snapshot.fingerprint();
+    if (fingerprint == m_lastWindowFingerprint) {
+        return;
+    }
+    m_lastWindowFingerprint = fingerprint;
+
+    const CompanionContextSnapshot context = DesktopContextThreadBuilder::fromActiveWindow(snapshot.appId, snapshot.windowTitle);
+    QVariantMap payload = context.toVariantMap();
+    payload.insert(QStringLiteral("appId"), snapshot.appId);
+    payload.insert(QStringLiteral("windowTitle"), snapshot.windowTitle);
+    const double novelty = context.threadId.value == m_cooldownState.threadId ? 0.38 : 0.92;
+    recordPerception(QStringLiteral("perception.active_window.changed"), QStringLiteral("low"), context.confidence, novelty, payload, context);
+    evaluateCooldown(QStringLiteral("perception.active_window.changed"), QStringLiteral("low"), context.confidence, novelty, context);
+}
+
+void DesktopPerceptionMonitor::handleClipboardChanged()
+{
+    if (m_loggingService == nullptr || m_clipboard == nullptr) {
+        return;
+    }
+
+    const QString preview = clipboardPreview();
+    if (preview.isEmpty()) {
+        return;
+    }
+
+    if (preview == m_lastClipboardFingerprint) {
+        return;
+    }
+    m_lastClipboardFingerprint = preview;
+
+    const ActiveWindowSnapshot activeWindow = currentActiveWindow();
+    const CompanionContextSnapshot context = DesktopContextThreadBuilder::fromClipboard(
+        activeWindow.appId,
+        activeWindow.windowTitle,
+        preview);
+    QVariantMap payload = context.toVariantMap();
+    payload.insert(QStringLiteral("formats"), m_clipboard->mimeData()->formats());
+    recordPerception(QStringLiteral("perception.clipboard.changed"), QStringLiteral("medium"), context.confidence, 0.76, payload, context);
+    evaluateCooldown(QStringLiteral("perception.clipboard.changed"), QStringLiteral("medium"), context.confidence, 0.76, context);
+}
+
+void DesktopPerceptionMonitor::recordPerception(const QString &reasonCode,
+                                                const QString &priority,
+                                                double confidence,
+                                                double novelty,
+                                                const QVariantMap &payload,
+                                                const CompanionContextSnapshot &context) const
+{
+    if (m_loggingService == nullptr) {
+        return;
+    }
+
+    BehaviorTraceEvent event = BehaviorTraceEvent::create(
+        QStringLiteral("perception"),
+        QStringLiteral("observed"),
+        reasonCode,
+        basePayload(payload),
+        QStringLiteral("system"));
+    event.sessionId = m_sessionId;
+    event.traceId = currentTraceId();
+    event.threadId = context.threadId.value;
+    event.capabilityId = QStringLiteral("desktop_perception");
+    event.payload.insert(QStringLiteral("priority"), priority);
+    event.payload.insert(QStringLiteral("confidence"), confidence);
+    event.payload.insert(QStringLiteral("novelty"), novelty);
+    m_loggingService->logBehaviorEvent(event);
+}
+
+void DesktopPerceptionMonitor::evaluateCooldown(const QString &reasonCode,
+                                                const QString &priority,
+                                                double confidence,
+                                                double novelty,
+                                                const CompanionContextSnapshot &context)
+{
+    if (m_loggingService == nullptr) {
+        return;
+    }
+
+    const CooldownEngine::Input input{
+        context,
+        m_cooldownState,
+        currentFocusMode(),
+        priority,
+        confidence,
+        novelty,
+        QDateTime::currentMSecsSinceEpoch()
+    };
+    const BehaviorDecision decision = m_cooldownEngine.evaluate(input);
+    const QString previousThreadId = m_cooldownState.threadId;
+    m_cooldownState = m_cooldownEngine.advanceState(input, decision);
+
+    BehaviorTraceEvent event = BehaviorTraceEvent::create(
+        QStringLiteral("cooldown"),
+        QStringLiteral("evaluated"),
+        decision.reasonCode,
+        decision.toVariantMap(),
+        QStringLiteral("system"));
+    event.sessionId = m_sessionId;
+    event.traceId = currentTraceId();
+    event.threadId = context.threadId.value;
+    event.capabilityId = QStringLiteral("cooldown_engine");
+    event.payload.insert(QStringLiteral("triggerReason"), reasonCode);
+    event.payload.insert(QStringLiteral("context"), context.toVariantMap());
+    event.payload.insert(QStringLiteral("state"), m_cooldownState.toVariantMap());
+    m_loggingService->logBehaviorEvent(event);
+
+    if (previousThreadId != context.threadId.value) {
+        BehaviorTraceEvent threadEvent = BehaviorTraceEvent::create(
+            QStringLiteral("context_thread"),
+            QStringLiteral("updated"),
+            QStringLiteral("context_thread.changed"),
+            context.toVariantMap(),
+            QStringLiteral("system"));
+        threadEvent.sessionId = m_sessionId;
+        threadEvent.traceId = currentTraceId();
+        threadEvent.threadId = context.threadId.value;
+        threadEvent.capabilityId = QStringLiteral("desktop_perception");
+        m_loggingService->logBehaviorEvent(threadEvent);
+    }
+}
+
+DesktopPerceptionMonitor::ActiveWindowSnapshot DesktopPerceptionMonitor::currentActiveWindow() const
+{
+    ActiveWindowSnapshot snapshot;
+#ifdef Q_OS_WIN
+    HWND windowHandle = GetForegroundWindow();
+    if (windowHandle == nullptr) {
+        return snapshot;
+    }
+
+    wchar_t titleBuffer[512];
+    const int titleLength = GetWindowTextW(windowHandle, titleBuffer, static_cast<int>(std::size(titleBuffer)));
+    if (titleLength <= 0) {
+        return snapshot;
+    }
+    snapshot.windowTitle = QString::fromWCharArray(titleBuffer, titleLength).simplified();
+
+    DWORD processId = 0;
+    GetWindowThreadProcessId(windowHandle, &processId);
+    if (processId == 0) {
+        return snapshot;
+    }
+
+    HANDLE processHandle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, processId);
+    if (processHandle == nullptr) {
+        return snapshot;
+    }
+
+    wchar_t pathBuffer[MAX_PATH];
+    DWORD pathLength = MAX_PATH;
+    if (QueryFullProcessImageNameW(processHandle, 0, pathBuffer, &pathLength) != 0) {
+        snapshot.appId = QString::fromWCharArray(pathBuffer, static_cast<int>(pathLength));
+    }
+    CloseHandle(processHandle);
+#endif
+    return snapshot;
+}
+
+QString DesktopPerceptionMonitor::clipboardPreview() const
+{
+    if (m_clipboard == nullptr || m_clipboard->mimeData() == nullptr) {
+        return {};
+    }
+
+    if (m_settings != nullptr && m_settings->privateModeEnabled()) {
+        return QStringLiteral("private_mode_redacted");
+    }
+
+    const QString text = m_clipboard->text(QClipboard::Clipboard).simplified();
+    if (!text.isEmpty()) {
+        return text.left(160);
+    }
+
+    const QStringList formats = m_clipboard->mimeData()->formats();
+    if (formats.isEmpty()) {
+        return {};
+    }
+    return QStringLiteral("non_text:%1").arg(formats.first());
+}
+
+QVariantMap DesktopPerceptionMonitor::basePayload(const QVariantMap &payload) const
+{
+    QVariantMap merged = payload;
+    merged.insert(QStringLiteral("focusModeEnabled"), m_settings != nullptr && m_settings->focusModeEnabled());
+    merged.insert(QStringLiteral("privateModeEnabled"), m_settings != nullptr && m_settings->privateModeEnabled());
+    return merged;
+}
+
+FocusModeState DesktopPerceptionMonitor::currentFocusMode() const
+{
+    FocusModeState state;
+    if (m_settings == nullptr) {
+        return state;
+    }
+
+    state.enabled = m_settings->focusModeEnabled();
+    state.allowCriticalAlerts = m_settings->focusModeAllowCriticalAlerts();
+    state.durationMinutes = m_settings->focusModeDurationMinutes();
+    state.untilEpochMs = m_settings->focusModeUntilEpochMs();
+    state.source = QStringLiteral("settings");
+    return state;
+}

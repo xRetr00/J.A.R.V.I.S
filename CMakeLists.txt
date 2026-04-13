@@ -278,6 +278,8 @@ set(JARVIS_SOURCES
     src/memory/MemoryManager.cpp
     src/memory/MemoryStore.cpp
     src/overlay/OverlayController.cpp
+    src/perception/DesktopContextThreadBuilder.cpp
+    src/perception/DesktopPerceptionMonitor.cpp
     src/platform/PlatformRuntime.cpp
     src/python/PythonRuntimeManager.cpp
     src/settings/AppSettings.cpp
@@ -368,6 +370,8 @@ set(JARVIS_HEADERS
     src/memory/MemoryStore.h
     src/gui/TaskViewModel.h
     src/overlay/OverlayController.h
+    src/perception/DesktopContextThreadBuilder.h
+    src/perception/DesktopPerceptionMonitor.h
     src/platform/ComputerControlBackend.h
     src/platform/PlatformCapabilities.h
     src/platform/PlatformRuntime.h
@@ -982,6 +986,18 @@ if(JARVIS_BUILD_TESTS)
     add_test(NAME jarvis_skill_store_tests COMMAND jarvis_skill_store_tests)
     set_tests_properties(jarvis_skill_store_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
     jarvis_copy_optional_runtime_libraries(jarvis_skill_store_tests)
+
+    qt_add_executable(jarvis_desktop_context_tests
+        tests/DesktopContextThreadBuilderTests.cpp
+        src/perception/DesktopContextThreadBuilder.cpp
+    )
+
+    target_include_directories(jarvis_desktop_context_tests PRIVATE src)
+    target_link_libraries(jarvis_desktop_context_tests PRIVATE Qt6::Core Qt6::Test)
+
+    add_test(NAME jarvis_desktop_context_tests COMMAND jarvis_desktop_context_tests)
+    set_tests_properties(jarvis_desktop_context_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_desktop_context_tests)
 
     qt_add_executable(jarvis_python_runtime_tests
         tests/PythonRuntimeTests.cpp
