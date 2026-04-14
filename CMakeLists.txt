@@ -264,7 +264,9 @@ set(JARVIS_SOURCES
     src/core/ResponseFinalizer.cpp
     src/core/ToolCoordinator.cpp
     src/cognition/CooldownEngine.cpp
+    src/cognition/DesktopContextSelectionBuilder.cpp
     src/cognition/FocusModePolicy.cpp
+    src/cognition/ProactiveSurfaceGate.cpp
     src/core/tasks/TaskDispatcher.cpp
     src/core/tasks/ToolWorker.cpp
     src/core/tools/ToolExecutionService.cpp
@@ -280,6 +282,7 @@ set(JARVIS_SOURCES
     src/overlay/OverlayController.cpp
     src/perception/DesktopContextThreadBuilder.cpp
     src/perception/DesktopPerceptionMonitor.cpp
+    src/perception/WindowsUiAutomationProbe.cpp
     src/platform/PlatformRuntime.cpp
     src/python/PythonRuntimeManager.cpp
     src/settings/AppSettings.cpp
@@ -291,6 +294,7 @@ set(JARVIS_SOURCES
     src/tts/PiperTtsEngine.cpp
     src/tts/WorkerTtsEngine.cpp
     src/telemetry/BehavioralEventLedger.cpp
+    src/telemetry/SelectionTelemetryBuilder.cpp
     src/vision/VisionIngestService.cpp
     src/vision/GestureInterpreter.cpp
     src/vision/GestureStateMachine.cpp
@@ -335,7 +339,9 @@ set(JARVIS_HEADERS
     src/core/ResponseFinalizer.h
     src/core/ToolCoordinator.h
     src/cognition/CooldownEngine.h
+    src/cognition/DesktopContextSelectionBuilder.h
     src/cognition/FocusModePolicy.h
+    src/cognition/ProactiveSurfaceGate.h
     src/core/tasks/TaskDispatcher.h
     src/core/tasks/ToolWorker.h
     src/core/tools/ToolExecutionService.h
@@ -372,6 +378,7 @@ set(JARVIS_HEADERS
     src/overlay/OverlayController.h
     src/perception/DesktopContextThreadBuilder.h
     src/perception/DesktopPerceptionMonitor.h
+    src/perception/WindowsUiAutomationProbe.h
     src/platform/ComputerControlBackend.h
     src/platform/PlatformCapabilities.h
     src/platform/PlatformRuntime.h
@@ -383,6 +390,7 @@ set(JARVIS_HEADERS
     src/stt/SpeechRecognizer.h
     src/stt/RuntimeSpeechRecognizer.h
     src/telemetry/BehavioralEventLedger.h
+    src/telemetry/SelectionTelemetryBuilder.h
     src/tools/ToolManager.h
     src/tts/TtsEngine.h
     src/tts/PiperTtsEngine.h
@@ -579,6 +587,10 @@ endif()
 
 if(TARGET rnnoise)
     target_link_libraries(jarvis_lib PUBLIC rnnoise)
+endif()
+
+if(WIN32)
+    target_link_libraries(jarvis_lib PUBLIC Ole32 OleAut32 Uiautomationcore)
 endif()
 
 if(Python3_EXECUTABLE)
@@ -998,6 +1010,30 @@ if(JARVIS_BUILD_TESTS)
     add_test(NAME jarvis_desktop_context_tests COMMAND jarvis_desktop_context_tests)
     set_tests_properties(jarvis_desktop_context_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
     jarvis_copy_optional_runtime_libraries(jarvis_desktop_context_tests)
+
+    qt_add_executable(jarvis_desktop_selection_tests
+        tests/DesktopContextSelectionBuilderTests.cpp
+        src/cognition/DesktopContextSelectionBuilder.cpp
+    )
+
+    target_include_directories(jarvis_desktop_selection_tests PRIVATE src)
+    target_link_libraries(jarvis_desktop_selection_tests PRIVATE Qt6::Core Qt6::Test nlohmann_json::nlohmann_json)
+
+    add_test(NAME jarvis_desktop_selection_tests COMMAND jarvis_desktop_selection_tests)
+    set_tests_properties(jarvis_desktop_selection_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_desktop_selection_tests)
+
+    qt_add_executable(jarvis_proactive_surface_tests
+        tests/ProactiveSurfaceGateTests.cpp
+        src/cognition/ProactiveSurfaceGate.cpp
+    )
+
+    target_include_directories(jarvis_proactive_surface_tests PRIVATE src)
+    target_link_libraries(jarvis_proactive_surface_tests PRIVATE Qt6::Core Qt6::Test nlohmann_json::nlohmann_json)
+
+    add_test(NAME jarvis_proactive_surface_tests COMMAND jarvis_proactive_surface_tests)
+    set_tests_properties(jarvis_proactive_surface_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_proactive_surface_tests)
 
     qt_add_executable(jarvis_python_runtime_tests
         tests/PythonRuntimeTests.cpp

@@ -4,6 +4,7 @@
 #include <QClipboard>
 #include <QDateTime>
 #include <QMimeData>
+#include <QRegularExpression>
 #include <QTimer>
 #include <QUuid>
 
@@ -12,6 +13,7 @@
 #include "companion/contracts/FocusModeState.h"
 #include "logging/LoggingService.h"
 #include "perception/DesktopContextThreadBuilder.h"
+#include "perception/WindowsUiAutomationProbe.h"
 #include "settings/AppSettings.h"
 
 #ifdef Q_OS_WIN
@@ -79,10 +81,14 @@ void DesktopPerceptionMonitor::pollActiveWindow()
     }
     m_lastWindowFingerprint = fingerprint;
 
-    const CompanionContextSnapshot context = DesktopContextThreadBuilder::fromActiveWindow(snapshot.appId, snapshot.windowTitle);
+    const CompanionContextSnapshot context = DesktopContextThreadBuilder::fromActiveWindow(
+        snapshot.appId,
+        snapshot.windowTitle,
+        snapshot.metadata);
     QVariantMap payload = context.toVariantMap();
     payload.insert(QStringLiteral("appId"), snapshot.appId);
     payload.insert(QStringLiteral("windowTitle"), snapshot.windowTitle);
+    payload.insert(QStringLiteral("windowMetadata"), snapshot.metadata);
     const double novelty = context.threadId.value == m_cooldownState.threadId ? 0.38 : 0.92;
     recordPerception(QStringLiteral("perception.active_window.changed"), QStringLiteral("low"), context.confidence, novelty, payload, context);
     evaluateCooldown(QStringLiteral("perception.active_window.changed"), QStringLiteral("low"), context.confidence, novelty, context);
@@ -96,7 +102,7 @@ void DesktopPerceptionMonitor::handleClipboardChanged()
     }
 
     const QString preview = clipboardPreview();
-    if (preview.isEmpty()) {
+    if (shouldIgnoreClipboardPreview(preview)) {
         return;
     }
 
@@ -115,6 +121,28 @@ void DesktopPerceptionMonitor::handleClipboardChanged()
     recordPerception(QStringLiteral("perception.clipboard.changed"), QStringLiteral("medium"), context.confidence, 0.76, payload, context);
     evaluateCooldown(QStringLiteral("perception.clipboard.changed"), QStringLiteral("medium"), context.confidence, 0.76, context);
     emit desktopContextUpdated(DesktopContextThreadBuilder::describeContext(context), context.toVariantMap());
+}
+
+bool DesktopPerceptionMonitor::shouldIgnoreClipboardPreview(const QString &preview) const
+{
+    if (preview.isEmpty()) {
+        return true;
+    }
+
+    if (m_settings != nullptr && m_settings->privateModeEnabled()) {
+        return true;
+    }
+
+    if (preview.startsWith(QStringLiteral("non_text:application/x-"), Qt::CaseInsensitive)
+        || preview.startsWith(QStringLiteral("non_text:com.apple."), Qt::CaseInsensitive)) {
+        return true;
+    }
+
+    if (preview.size() < 4 && !preview.contains(QRegularExpression(QStringLiteral("\\d")))) {
+        return true;
+    }
+
+    return false;
 }
 
 void DesktopPerceptionMonitor::recordPerception(const QString &reasonCode,
@@ -230,6 +258,12 @@ DesktopPerceptionMonitor::ActiveWindowSnapshot DesktopPerceptionMonitor::current
         snapshot.appId = QString::fromWCharArray(pathBuffer, static_cast<int>(pathLength));
     }
     CloseHandle(processHandle);
+
+    if (m_settings == nullptr || !m_settings->privateModeEnabled()) {
+        snapshot.metadata = WindowsUiAutomationProbe::probeWindowMetadata(
+            reinterpret_cast<quintptr>(windowHandle),
+            snapshot.appId);
+    }
 #endif
     return snapshot;
 }

@@ -8,6 +8,9 @@ class DesktopContextThreadBuilderTests : public QObject
 
 private slots:
     void buildsActiveWindowContext();
+    void buildsBrowserWindowContext();
+    void prefersUiAutomationMetadataWhenAvailable();
+    void preservesMetadataConfidenceAndRedactionMarkers();
     void buildsClipboardContext();
     void buildsNotificationContext();
 };
@@ -24,6 +27,58 @@ void DesktopContextThreadBuilderTests::buildsActiveWindowContext()
     QCOMPARE(snapshot.topic, QStringLiteral("plan_md"));
     QCOMPARE(snapshot.recentIntent, QStringLiteral("reference current file"));
     QVERIFY(DesktopContextThreadBuilder::describeContext(snapshot).contains(QStringLiteral("editor file")));
+}
+
+void DesktopContextThreadBuilderTests::buildsBrowserWindowContext()
+{
+    const CompanionContextSnapshot snapshot = DesktopContextThreadBuilder::fromActiveWindow(
+        QStringLiteral("C:/Program Files/Google/Chrome/Application/chrome.exe"),
+        QStringLiteral("ChatGPT | OpenAI - Google Chrome"));
+
+    QCOMPARE(snapshot.appId, QStringLiteral("chrome"));
+    QCOMPARE(snapshot.taskId, QStringLiteral("browser_tab"));
+    QCOMPARE(snapshot.metadata.value(QStringLiteral("documentContext")).toString(), QStringLiteral("ChatGPT"));
+    QCOMPARE(snapshot.metadata.value(QStringLiteral("siteContext")).toString(), QStringLiteral("OpenAI"));
+    QCOMPARE(snapshot.topic, QStringLiteral("chatgpt"));
+    QVERIFY(DesktopContextThreadBuilder::describeContext(snapshot).contains(QStringLiteral("on OpenAI")));
+}
+
+void DesktopContextThreadBuilderTests::prefersUiAutomationMetadataWhenAvailable()
+{
+    QVariantMap metadata;
+    metadata.insert(QStringLiteral("documentContext"), QStringLiteral("AssistantController.cpp"));
+    metadata.insert(QStringLiteral("workspaceContext"), QStringLiteral("Vaxil"));
+    metadata.insert(QStringLiteral("automationSource"), QStringLiteral("uia"));
+
+    const CompanionContextSnapshot snapshot = DesktopContextThreadBuilder::fromActiveWindow(
+        QStringLiteral("C:/Program Files/Microsoft VS Code/Code.exe"),
+        QStringLiteral("README.md - Visual Studio Code"),
+        metadata);
+
+    QCOMPARE(snapshot.metadata.value(QStringLiteral("documentContext")).toString(), QStringLiteral("AssistantController.cpp"));
+    QCOMPARE(snapshot.metadata.value(QStringLiteral("workspaceContext")).toString(), QStringLiteral("Vaxil"));
+    QCOMPARE(snapshot.topic, QStringLiteral("assistantcontroller_cpp"));
+    QVERIFY(snapshot.confidence > 0.8);
+}
+
+void DesktopContextThreadBuilderTests::preservesMetadataConfidenceAndRedactionMarkers()
+{
+    QVariantMap metadata;
+    metadata.insert(QStringLiteral("documentContext"), QStringLiteral("ChatGPT"));
+    metadata.insert(QStringLiteral("metadataConfidence"), 0.67);
+    metadata.insert(QStringLiteral("metadataQuality"), QStringLiteral("medium"));
+    metadata.insert(QStringLiteral("metadataRedacted"), true);
+    metadata.insert(QStringLiteral("redactionReason"), QStringLiteral("phrase_too_long"));
+
+    const CompanionContextSnapshot snapshot = DesktopContextThreadBuilder::fromActiveWindow(
+        QStringLiteral("C:/Program Files/Google/Chrome/Application/chrome.exe"),
+        QStringLiteral("ChatGPT | OpenAI - Google Chrome"),
+        metadata);
+
+    QCOMPARE(snapshot.confidence, 0.67);
+    QVERIFY(snapshot.metadata.value(QStringLiteral("metadataRedacted")).toBool());
+    QCOMPARE(snapshot.metadata.value(QStringLiteral("metadataQuality")).toString(), QStringLiteral("medium"));
+    QCOMPARE(snapshot.metadata.value(QStringLiteral("redactionReason")).toString(), QStringLiteral("phrase_too_long"));
 }
 
 void DesktopContextThreadBuilderTests::buildsClipboardContext()

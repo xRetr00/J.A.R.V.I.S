@@ -47,25 +47,66 @@ bool isEditorApp(const QString &appId)
     };
     return editorApps.contains(appId);
 }
+
+QString cleanedChunk(QString value)
+{
+    value = value.simplified();
+    value.remove(QRegularExpression(QStringLiteral("^[\\-|:|•|»/\\s]+")));
+    value.remove(QRegularExpression(QStringLiteral("[\\-|:|•|»/\\s]+$")));
+    return value.simplified();
+}
+
+QStringList splitTitle(QString title)
+{
+    title = title.simplified();
+    if (title.isEmpty()) {
+        return {};
+    }
+
+    QStringList parts = title.split(QRegularExpression(QStringLiteral("\\s+-\\s+")), Qt::SkipEmptyParts);
+    for (QString &part : parts) {
+        part = cleanedChunk(part);
+    }
+    return parts;
+}
 }
 
 CompanionContextSnapshot DesktopContextThreadBuilder::fromActiveWindow(const QString &appId,
-                                                                       const QString &windowTitle)
+                                                                       const QString &windowTitle,
+                                                                       const QVariantMap &externalMetadata)
 {
     CompanionContextSnapshot snapshot;
     snapshot.appId = normalizedAppFamily(appId);
     snapshot.taskId = inferredTaskType(snapshot.appId);
-    snapshot.topic = inferTopic(windowTitle);
+    snapshot.metadata = activeWindowMetadata(snapshot.appId, windowTitle);
+    for (auto it = externalMetadata.constBegin(); it != externalMetadata.constEnd(); ++it) {
+        if (it.value().metaType().id() == QMetaType::QString) {
+            const QString value = it.value().toString().trimmed();
+            if (!value.isEmpty()) {
+                snapshot.metadata.insert(it.key(), value);
+            }
+            continue;
+        }
+        snapshot.metadata.insert(it.key(), it.value());
+    }
+    const QString topicSource = snapshot.metadata.value(QStringLiteral("documentContext")).toString().trimmed();
+    const QString secondarySource = snapshot.metadata.value(QStringLiteral("siteContext")).toString().trimmed().isEmpty()
+        ? snapshot.metadata.value(QStringLiteral("workspaceContext")).toString().trimmed()
+        : snapshot.metadata.value(QStringLiteral("siteContext")).toString().trimmed();
+    snapshot.topic = inferTopic(topicSource.isEmpty() ? windowTitle : topicSource, secondarySource);
     snapshot.recentIntent = snapshot.taskId == QStringLiteral("browser_tab")
         ? QStringLiteral("reference current tab")
         : snapshot.taskId == QStringLiteral("editor_document")
             ? QStringLiteral("reference current file")
             : QStringLiteral("reference current window");
-    snapshot.confidence = 0.78;
+    const double metadataConfidence = snapshot.metadata.value(QStringLiteral("metadataConfidence")).toDouble();
+    snapshot.confidence = metadataConfidence > 0.0
+        ? metadataConfidence
+        : (snapshot.metadata.value(QStringLiteral("automationSource")).toString() == QStringLiteral("uia")
+            ? 0.86
+            : 0.78);
     snapshot.threadId = ContextThreadId::fromParts(
         {QStringLiteral("desktop"), snapshot.taskId, snapshot.appId, snapshot.topic});
-    snapshot.metadata.insert(QStringLiteral("documentContext"), firstMeaningfulChunk(windowTitle));
-    snapshot.metadata.insert(QStringLiteral("windowTitle"), windowTitle.simplified());
     return snapshot;
 }
 
@@ -107,16 +148,22 @@ QString DesktopContextThreadBuilder::describeContext(const CompanionContextSnaps
 {
     const QString appLabel = context.appId.trimmed().isEmpty() ? QStringLiteral("unknown app") : context.appId.trimmed();
     const QString documentContext = context.metadata.value(QStringLiteral("documentContext")).toString().trimmed();
+    const QString workspaceContext = context.metadata.value(QStringLiteral("workspaceContext")).toString().trimmed();
+    const QString siteContext = context.metadata.value(QStringLiteral("siteContext")).toString().trimmed();
     const QString clipboardPreview = context.metadata.value(QStringLiteral("clipboardPreview")).toString().trimmed();
     const QString title = context.metadata.value(QStringLiteral("title")).toString().trimmed();
 
     if (context.taskId == QStringLiteral("browser_tab")) {
-        return QStringLiteral("Desktop context: browser tab \"%1\" in %2.")
-            .arg(documentContext.isEmpty() ? context.topic : documentContext, appLabel);
+        const QString subject = documentContext.isEmpty() ? context.topic : documentContext;
+        return siteContext.isEmpty()
+            ? QStringLiteral("Desktop context: browser tab \"%1\" in %2.").arg(subject, appLabel)
+            : QStringLiteral("Desktop context: browser tab \"%1\" on %2 in %3.").arg(subject, siteContext, appLabel);
     }
     if (context.taskId == QStringLiteral("editor_document")) {
-        return QStringLiteral("Desktop context: editor file \"%1\" in %2.")
-            .arg(documentContext.isEmpty() ? context.topic : documentContext, appLabel);
+        const QString subject = documentContext.isEmpty() ? context.topic : documentContext;
+        return workspaceContext.isEmpty()
+            ? QStringLiteral("Desktop context: editor file \"%1\" in %2.").arg(subject, appLabel)
+            : QStringLiteral("Desktop context: editor file \"%1\" in workspace \"%2\" via %3.").arg(subject, workspaceContext, appLabel);
     }
     if (context.taskId == QStringLiteral("clipboard")) {
         return QStringLiteral("Desktop context: clipboard from %1 with preview \"%2\".")
@@ -128,6 +175,41 @@ QString DesktopContextThreadBuilder::describeContext(const CompanionContextSnaps
     }
     return QStringLiteral("Desktop context: focused window \"%1\" in %2.")
         .arg(documentContext.isEmpty() ? context.topic : documentContext, appLabel);
+}
+
+QVariantMap DesktopContextThreadBuilder::activeWindowMetadata(const QString &normalizedAppId,
+                                                              const QString &windowTitle)
+{
+    QVariantMap metadata;
+    metadata.insert(QStringLiteral("windowTitle"), windowTitle.simplified());
+
+    const QStringList parts = splitTitle(windowTitle);
+    const QString firstPart = parts.value(0);
+    const QString secondPart = parts.value(1);
+
+    if (isBrowserApp(normalizedAppId)) {
+        const QStringList browserParts = firstPart.split(QRegularExpression(QStringLiteral("\\s+\\|\\s+")), Qt::SkipEmptyParts);
+        metadata.insert(QStringLiteral("documentContext"), cleanedChunk(browserParts.value(0, firstPart)));
+        if (browserParts.size() > 1) {
+            metadata.insert(QStringLiteral("siteContext"), cleanedChunk(browserParts.last()));
+        } else if (!secondPart.isEmpty()) {
+            metadata.insert(QStringLiteral("siteContext"), secondPart);
+        }
+        return metadata;
+    }
+
+    if (isEditorApp(normalizedAppId)) {
+        metadata.insert(QStringLiteral("documentContext"), cleanedChunk(firstPart.isEmpty() ? firstMeaningfulChunk(windowTitle) : firstPart));
+        if (parts.size() > 2) {
+            metadata.insert(QStringLiteral("workspaceContext"), cleanedChunk(parts.at(1)));
+        } else if (!secondPart.isEmpty() && !secondPart.contains(QStringLiteral("code"), Qt::CaseInsensitive)) {
+            metadata.insert(QStringLiteral("workspaceContext"), cleanedChunk(secondPart));
+        }
+        return metadata;
+    }
+
+    metadata.insert(QStringLiteral("documentContext"), cleanedChunk(firstPart.isEmpty() ? firstMeaningfulChunk(windowTitle) : firstPart));
+    return metadata;
 }
 
 QString DesktopContextThreadBuilder::inferredTaskType(const QString &normalizedAppId)

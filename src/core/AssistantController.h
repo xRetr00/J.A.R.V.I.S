@@ -150,6 +150,7 @@ public slots:
         const QString &audioInputDeviceId,
         const QString &audioOutputDeviceId,
         bool clickThrough);
+    void updateDesktopContext(const QString &summary, const QVariantMap &context);
 
 signals:
     void stateChanged();
@@ -261,12 +262,14 @@ private:
     QString buildVisionPromptContext(const QString &input, IntentType intent) const;
     QString buildDesktopPromptContext(const QString &input, IntentType intent) const;
     QString buildAssistantPromptContext(const QString &input, IntentType intent) const;
+    QString buildDesktopSelectionInput(const QString &input,
+                                       IntentType intent,
+                                       const QString &purpose) const;
     bool shouldUseVisionContext(const QString &input, IntentType intent) const;
     void applyVisionGestureTriggers(const VisionSnapshot &snapshot);
     void handleGestureFarewell();
     void handleGestureConfirm();
     void handleGestureReject();
-    void updateDesktopContext(const QString &summary, const QVariantMap &context);
     void handleConversationFinished(const QString &text);
     void handleHybridAgentFinished(const QString &payload);
     void handleAgentResponse(const AgentResponse &response);

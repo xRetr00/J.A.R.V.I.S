@@ -33,10 +33,15 @@ private:
     {
         QString appId;
         QString windowTitle;
+        QVariantMap metadata;
 
         [[nodiscard]] QString fingerprint() const
         {
-            return appId + QStringLiteral("::") + windowTitle;
+            return appId
+                + QStringLiteral("::") + windowTitle
+                + QStringLiteral("::") + metadata.value(QStringLiteral("documentContext")).toString()
+                + QStringLiteral("::") + metadata.value(QStringLiteral("siteContext")).toString()
+                + QStringLiteral("::") + metadata.value(QStringLiteral("workspaceContext")).toString();
         }
     };
 
@@ -53,6 +58,7 @@ private:
                           double confidence,
                           double novelty,
                           const CompanionContextSnapshot &context);
+    [[nodiscard]] bool shouldIgnoreClipboardPreview(const QString &preview) const;
     [[nodiscard]] ActiveWindowSnapshot currentActiveWindow() const;
     [[nodiscard]] QString clipboardPreview() const;
     [[nodiscard]] QVariantMap basePayload(const QVariantMap &payload) const;

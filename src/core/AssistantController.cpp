@@ -40,6 +40,8 @@
 #include "core/ToolCoordinator.h"
 #include "core/tasks/TaskDispatcher.h"
 #include "core/tasks/ToolWorker.h"
+#include "cognition/DesktopContextSelectionBuilder.h"
+#include "cognition/ProactiveSurfaceGate.h"
 #include "devices/DeviceManager.h"
 #include "logging/LoggingService.h"
 #include "memory/MemoryStore.h"
@@ -47,6 +49,7 @@
 #include "settings/IdentityProfileService.h"
 #include "skills/SkillStore.h"
 #include "stt/RuntimeSpeechRecognizer.h"
+#include "telemetry/SelectionTelemetryBuilder.h"
 #include "tts/TtsEngine.h"
 #include "tts/WorkerTtsEngine.h"
 #include "vision/VisionIngestService.h"
@@ -1992,8 +1995,12 @@ bool AssistantController::executeRouteDecision(const InputRouteDecision &decisio
                                                qint64 nowMs)
 {
     const QList<AgentToolSpec> availableTools = m_agentToolbox ? m_agentToolbox->builtInTools() : QList<AgentToolSpec>{};
+    const QString selectionInput = buildDesktopSelectionInput(
+        routedInput,
+        decision.intent,
+        QStringLiteral("route.tool_plan"));
     const ToolPlan toolPlan = m_assistantBehaviorPolicy
-        ? m_assistantBehaviorPolicy->buildToolPlan(routedInput, decision.intent, availableTools)
+        ? m_assistantBehaviorPolicy->buildToolPlan(selectionInput, decision.intent, availableTools)
         : ToolPlan{};
     TrustDecision trustDecision = m_assistantBehaviorPolicy
         ? m_assistantBehaviorPolicy->assessTrust(routedInput, decision, toolPlan)
@@ -3337,6 +3344,10 @@ void AssistantController::startConversationRequest(const QString &input)
     }
 
     m_activeRequestKind = RequestKind::Conversation;
+    const QString selectionInput = buildDesktopSelectionInput(
+        input,
+        IntentType::GENERAL_CHAT,
+        QStringLiteral("conversation.selection"));
     if (m_loggingService) {
         m_loggingService->info(QStringLiteral("Starting conversation request. model=\"%1\" input=\"%2\"")
             .arg(modelId, userFacingPromptForLogging(input).left(240)));
@@ -3346,17 +3357,33 @@ void AssistantController::startConversationRequest(const QString &input)
         InputRouteDecision decision;
         decision.kind = InputRouteKind::Conversation;
         const ToolPlan plan = m_assistantBehaviorPolicy->buildToolPlan(
-            input,
+            selectionInput,
             IntentType::GENERAL_CHAT,
             m_agentToolbox ? m_agentToolbox->builtInTools() : QList<AgentToolSpec>{});
+        if (m_loggingService) {
+            m_loggingService->logBehaviorEvent(SelectionTelemetryBuilder::toolPlanEvent(
+                QStringLiteral("conversation"),
+                input,
+                m_latestDesktopContext,
+                m_latestDesktopContextSummary,
+                plan));
+        }
         const TrustDecision trust = m_assistantBehaviorPolicy->assessTrust(input, decision, plan);
         m_activeActionSession = m_assistantBehaviorPolicy->createActionSession(input, decision, plan, trust);
     }
 
-    const QList<MemoryRecord> memoryRecords = m_memoryPolicyHandler->requestMemory(input, runtimeToolStatusMemory(m_settings));
+    const QList<MemoryRecord> memoryRecords = m_memoryPolicyHandler->requestMemory(selectionInput, runtimeToolStatusMemory(m_settings));
     const MemoryContext memoryContext = m_assistantBehaviorPolicy
-        ? m_assistantBehaviorPolicy->buildMemoryContext(input, memoryRecords)
+        ? m_assistantBehaviorPolicy->buildMemoryContext(selectionInput, memoryRecords)
         : fallbackMemoryContext(memoryRecords);
+    if (m_loggingService) {
+        m_loggingService->logBehaviorEvent(SelectionTelemetryBuilder::memoryContextEvent(
+            QStringLiteral("conversation"),
+            input,
+            m_latestDesktopContext,
+            m_latestDesktopContextSummary,
+            memoryContext));
+    }
 
     const ConversationRequestContext requestContext{
         .modelId = modelId,
@@ -3399,9 +3426,21 @@ void AssistantController::startAgentConversationRequest(const QString &input, In
     m_agentTrace.clear();
     emit agentTraceChanged();
     const QList<AgentToolSpec> availableTools = m_agentToolbox ? m_agentToolbox->builtInTools() : QList<AgentToolSpec>{};
+    const QString selectionInput = buildDesktopSelectionInput(
+        input,
+        expectedIntent,
+        QStringLiteral("agent.selection"));
     const ToolPlan toolPlan = m_assistantBehaviorPolicy
-        ? m_assistantBehaviorPolicy->buildToolPlan(input, expectedIntent, availableTools)
+        ? m_assistantBehaviorPolicy->buildToolPlan(selectionInput, expectedIntent, availableTools)
         : ToolPlan{};
+    if (m_loggingService) {
+        m_loggingService->logBehaviorEvent(SelectionTelemetryBuilder::toolPlanEvent(
+            QStringLiteral("agent"),
+            input,
+            m_latestDesktopContext,
+            m_latestDesktopContextSummary,
+            toolPlan));
+    }
     InputRouteDecision routeDecision;
     routeDecision.kind = InputRouteKind::AgentConversation;
     routeDecision.intent = expectedIntent;
@@ -3412,8 +3451,16 @@ void AssistantController::startAgentConversationRequest(const QString &input, In
         ? m_assistantBehaviorPolicy->createActionSession(input, routeDecision, toolPlan, trustDecision)
         : ActionSession{};
     const QList<AgentToolSpec> relevantTools = m_assistantBehaviorPolicy
-        ? m_assistantBehaviorPolicy->selectRelevantTools(input, expectedIntent, availableTools)
+        ? m_assistantBehaviorPolicy->selectRelevantTools(selectionInput, expectedIntent, availableTools)
         : m_promptAdapter->getRelevantTools(input, expectedIntent, availableTools);
+    if (m_loggingService) {
+        m_loggingService->logBehaviorEvent(SelectionTelemetryBuilder::toolExposureEvent(
+            QStringLiteral("agent"),
+            input,
+            m_latestDesktopContext,
+            m_latestDesktopContextSummary,
+            relevantTools));
+    }
     const AgentTransportMode transportMode = m_aiRequestCoordinator->resolveAgentTransport(m_agentCapabilities, modelId);
     const bool directToolCalling = transportMode == AgentTransportMode::Responses;
     m_activeAgentUsesResponses = directToolCalling;
@@ -3440,10 +3487,18 @@ void AssistantController::startAgentConversationRequest(const QString &input, In
         return;
     }
 
-    const QList<MemoryRecord> memoryRecords = m_memoryPolicyHandler->requestMemory(input, runtimeToolStatusMemory(m_settings));
+    const QList<MemoryRecord> memoryRecords = m_memoryPolicyHandler->requestMemory(selectionInput, runtimeToolStatusMemory(m_settings));
     const MemoryContext memoryContext = m_assistantBehaviorPolicy
-        ? m_assistantBehaviorPolicy->buildMemoryContext(input, memoryRecords)
+        ? m_assistantBehaviorPolicy->buildMemoryContext(selectionInput, memoryRecords)
         : fallbackMemoryContext(memoryRecords);
+    if (m_loggingService) {
+        m_loggingService->logBehaviorEvent(SelectionTelemetryBuilder::memoryContextEvent(
+            QStringLiteral("agent"),
+            input,
+            m_latestDesktopContext,
+            m_latestDesktopContextSummary,
+            memoryContext));
+    }
 
     const AgentRequestContext requestContext{
         .modelId = modelId,
@@ -3482,9 +3537,21 @@ void AssistantController::continueAgentConversation(const QList<AgentToolResult>
 
     ++m_activeAgentIteration;
     const QList<AgentToolSpec> availableTools = m_agentToolbox ? m_agentToolbox->builtInTools() : QList<AgentToolSpec>{};
+    const QString selectionInput = buildDesktopSelectionInput(
+        m_lastAgentInput,
+        m_lastAgentIntent,
+        QStringLiteral("agent.continuation_selection"));
     QList<AgentToolSpec> relevantTools = m_assistantBehaviorPolicy
-        ? m_assistantBehaviorPolicy->selectRelevantTools(m_lastAgentInput, m_lastAgentIntent, availableTools)
+        ? m_assistantBehaviorPolicy->selectRelevantTools(selectionInput, m_lastAgentIntent, availableTools)
         : m_promptAdapter->getRelevantTools(m_lastAgentInput, m_lastAgentIntent, availableTools);
+    if (m_loggingService) {
+        m_loggingService->logBehaviorEvent(SelectionTelemetryBuilder::toolExposureEvent(
+            QStringLiteral("agent_continuation"),
+            m_lastAgentInput,
+            m_latestDesktopContext,
+            m_latestDesktopContextSummary,
+            relevantTools));
+    }
     if (relevantTools.isEmpty()) {
         relevantTools = availableTools;
     }
@@ -3502,10 +3569,18 @@ void AssistantController::continueAgentConversation(const QList<AgentToolResult>
         return;
     }
 
-    const QList<MemoryRecord> memoryRecords = m_memoryPolicyHandler->requestMemory(m_lastAgentInput, runtimeToolStatusMemory(m_settings));
+    const QList<MemoryRecord> memoryRecords = m_memoryPolicyHandler->requestMemory(selectionInput, runtimeToolStatusMemory(m_settings));
     const MemoryContext memoryContext = m_assistantBehaviorPolicy
-        ? m_assistantBehaviorPolicy->buildMemoryContext(m_lastAgentInput, memoryRecords)
+        ? m_assistantBehaviorPolicy->buildMemoryContext(selectionInput, memoryRecords)
         : fallbackMemoryContext(memoryRecords);
+    if (m_loggingService) {
+        m_loggingService->logBehaviorEvent(SelectionTelemetryBuilder::memoryContextEvent(
+            QStringLiteral("agent_continuation"),
+            m_lastAgentInput,
+            m_latestDesktopContext,
+            m_latestDesktopContextSummary,
+            memoryContext));
+    }
 
     const AgentRequestContext requestContext{
         .modelId = modelId,
@@ -3662,6 +3737,40 @@ QString AssistantController::buildAssistantPromptContext(const QString &input, I
         return desktopContext;
     }
     return desktopContext + QStringLiteral(" Visual context: ") + visionContext;
+}
+
+QString AssistantController::buildDesktopSelectionInput(const QString &input,
+                                                       IntentType intent,
+                                                       const QString &purpose) const
+{
+    const QString selectionInput = DesktopContextSelectionBuilder::buildSelectionInput(
+        input,
+        intent,
+        m_latestDesktopContextSummary,
+        m_latestDesktopContext,
+        m_latestDesktopContextAtMs,
+        QDateTime::currentMSecsSinceEpoch(),
+        m_settings != nullptr && m_settings->privateModeEnabled());
+    if (m_loggingService != nullptr && selectionInput != input) {
+        BehaviorTraceEvent event = BehaviorTraceEvent::create(
+            QStringLiteral("selection_context"),
+            QStringLiteral("compiled"),
+            QStringLiteral("selection.desktop_context_applied"),
+            {
+                {QStringLiteral("purpose"), purpose},
+                {QStringLiteral("intent"), QString::number(static_cast<int>(intent))},
+                {QStringLiteral("desktopSummary"), m_latestDesktopContextSummary},
+                {QStringLiteral("desktopTaskId"), m_latestDesktopContext.value(QStringLiteral("taskId")).toString()},
+                {QStringLiteral("desktopThreadId"), m_latestDesktopContext.value(QStringLiteral("threadId")).toString()},
+                {QStringLiteral("desktopTopic"), m_latestDesktopContext.value(QStringLiteral("topic")).toString()},
+                {QStringLiteral("inputPreview"), input.left(160)}
+            },
+            QStringLiteral("system"));
+        event.capabilityId = QStringLiteral("desktop_context_selector");
+        event.threadId = m_latestDesktopContext.value(QStringLiteral("threadId")).toString();
+        m_loggingService->logBehaviorEvent(event);
+    }
+    return selectionInput;
 }
 
 void AssistantController::updateDesktopContext(const QString &summary, const QVariantMap &context)
@@ -3902,8 +4011,12 @@ void AssistantController::startCommandRequest(const QString &input)
     if (m_assistantBehaviorPolicy) {
         InputRouteDecision decision;
         decision.kind = InputRouteKind::CommandExtraction;
-        const ToolPlan plan = m_assistantBehaviorPolicy->buildToolPlan(
+        const QString selectionInput = buildDesktopSelectionInput(
             input,
+            IntentType::GENERAL_CHAT,
+            QStringLiteral("command.selection"));
+        const ToolPlan plan = m_assistantBehaviorPolicy->buildToolPlan(
+            selectionInput,
             IntentType::GENERAL_CHAT,
             m_agentToolbox ? m_agentToolbox->builtInTools() : QList<AgentToolSpec>{});
         const TrustDecision trust = m_assistantBehaviorPolicy->assessTrust(input, decision, plan);
@@ -4146,7 +4259,37 @@ void AssistantController::recordTaskResult(const QJsonObject &resultObject)
         emit backgroundTaskResultsChanged();
     }
     if (handling.toastChanged) {
-        emit latestTaskToastChanged();
+        const BehaviorDecision toastDecision = ProactiveSurfaceGate::evaluateTaskToast({
+            .result = handling.completedResult.value_or(BackgroundTaskResult{}),
+            .desktopContext = m_latestDesktopContext,
+            .desktopContextAtMs = m_latestDesktopContextAtMs,
+            .focusMode = FocusModeState{
+                .enabled = m_settings != nullptr && m_settings->focusModeEnabled(),
+                .allowCriticalAlerts = m_settings != nullptr && m_settings->focusModeAllowCriticalAlerts(),
+                .durationMinutes = m_settings != nullptr ? m_settings->focusModeDurationMinutes() : 0,
+                .untilEpochMs = m_settings != nullptr ? m_settings->focusModeUntilEpochMs() : 0,
+                .source = QStringLiteral("settings")
+            },
+            .nowMs = QDateTime::currentMSecsSinceEpoch()
+        });
+        if (m_loggingService) {
+            QVariantMap payload = toastDecision.toVariantMap();
+            payload.insert(QStringLiteral("taskId"), handling.completedResult.has_value() ? handling.completedResult->taskId : -1);
+            payload.insert(QStringLiteral("taskType"), handling.completedResult.has_value() ? handling.completedResult->type : QString());
+            payload.insert(QStringLiteral("desktopSummary"), m_latestDesktopContextSummary);
+            BehaviorTraceEvent event = BehaviorTraceEvent::create(
+                QStringLiteral("ui_presentation"),
+                QStringLiteral("gated"),
+                toastDecision.reasonCode,
+                payload,
+                QStringLiteral("system"));
+            event.capabilityId = QStringLiteral("proactive_surface_gate");
+            event.threadId = m_latestDesktopContext.value(QStringLiteral("threadId")).toString();
+            m_loggingService->logBehaviorEvent(event);
+        }
+        if (toastDecision.allowed) {
+            emit latestTaskToastChanged();
+        }
     }
     if (handling.appendTrace) {
         appendAgentTrace(handling.traceKind, handling.traceTitle, handling.traceDetail, handling.traceSuccess);
@@ -4158,6 +4301,20 @@ void AssistantController::recordTaskResult(const QJsonObject &resultObject)
     const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
     rememberActionThreadResult(*handling.completedResult, nowMs);
 
+    const ProactiveSurfaceGate::Input followUpInput{
+        .result = *handling.completedResult,
+        .desktopContext = m_latestDesktopContext,
+        .desktopContextAtMs = m_latestDesktopContextAtMs,
+        .focusMode = FocusModeState{
+            .enabled = m_settings != nullptr && m_settings->focusModeEnabled(),
+            .allowCriticalAlerts = m_settings != nullptr && m_settings->focusModeAllowCriticalAlerts(),
+            .durationMinutes = m_settings != nullptr ? m_settings->focusModeDurationMinutes() : 0,
+            .untilEpochMs = m_settings != nullptr ? m_settings->focusModeUntilEpochMs() : 0,
+            .source = QStringLiteral("settings")
+        },
+        .nowMs = nowMs
+    };
+
     if (m_currentState == AssistantState::Processing) {
         return;
     }
@@ -4165,7 +4322,28 @@ void AssistantController::recordTaskResult(const QJsonObject &resultObject)
     if (m_recentActionThread.has_value()
         && m_recentActionThread->success
         && m_recentActionThread->hasArtifacts()) {
-        startActionThreadCompletionRequest(*m_recentActionThread);
+        const BehaviorDecision completionDecision = ProactiveSurfaceGate::evaluateCompletionFollowUp(
+            followUpInput,
+            true);
+        if (m_loggingService) {
+            QVariantMap payload = completionDecision.toVariantMap();
+            payload.insert(QStringLiteral("taskId"), handling.completedResult->taskId);
+            payload.insert(QStringLiteral("taskType"), handling.completedResult->type);
+            payload.insert(QStringLiteral("desktopSummary"), m_latestDesktopContextSummary);
+            payload.insert(QStringLiteral("surfaceKind"), QStringLiteral("completion_request"));
+            BehaviorTraceEvent event = BehaviorTraceEvent::create(
+                QStringLiteral("ui_presentation"),
+                QStringLiteral("gated_follow_up"),
+                completionDecision.reasonCode,
+                payload,
+                QStringLiteral("system"));
+            event.capabilityId = QStringLiteral("proactive_surface_gate");
+            event.threadId = m_latestDesktopContext.value(QStringLiteral("threadId")).toString();
+            m_loggingService->logBehaviorEvent(event);
+        }
+        if (completionDecision.allowed) {
+            startActionThreadCompletionRequest(*m_recentActionThread);
+        }
         return;
     }
 
@@ -4187,6 +4365,28 @@ void AssistantController::recordTaskResult(const QJsonObject &resultObject)
             fallbackSummary)
         : fallbackSummary;
     if (!message.trimmed().isEmpty()) {
+        const BehaviorDecision followUpDecision = ProactiveSurfaceGate::evaluateCompletionFollowUp(
+            followUpInput,
+            false);
+        if (m_loggingService) {
+            QVariantMap payload = followUpDecision.toVariantMap();
+            payload.insert(QStringLiteral("taskId"), handling.completedResult->taskId);
+            payload.insert(QStringLiteral("taskType"), handling.completedResult->type);
+            payload.insert(QStringLiteral("desktopSummary"), m_latestDesktopContextSummary);
+            payload.insert(QStringLiteral("surfaceKind"), QStringLiteral("spoken_follow_up"));
+            BehaviorTraceEvent event = BehaviorTraceEvent::create(
+                QStringLiteral("ui_presentation"),
+                QStringLiteral("gated_follow_up"),
+                followUpDecision.reasonCode,
+                payload,
+                QStringLiteral("system"));
+            event.capabilityId = QStringLiteral("proactive_surface_gate");
+            event.threadId = m_latestDesktopContext.value(QStringLiteral("threadId")).toString();
+            m_loggingService->logBehaviorEvent(event);
+        }
+        if (!followUpDecision.allowed) {
+            return;
+        }
         const QString status = m_executionNarrator
             ? m_executionNarrator->statusForBackgroundResult(*handling.completedResult)
             : (handling.completedResult->success
