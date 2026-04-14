@@ -63,6 +63,7 @@ void DesktopPerceptionMonitor::recordNotification(const QString &title,
     payload.insert(QStringLiteral("source"), source.trimmed().isEmpty() ? QStringLiteral("tray") : source.trimmed());
     recordPerception(QStringLiteral("perception.notification"), priority, context.confidence, 0.82, payload, context);
     evaluateCooldown(QStringLiteral("perception.notification"), priority, context.confidence, 0.82, context);
+    emit desktopContextUpdated(DesktopContextThreadBuilder::describeContext(context), context.toVariantMap());
 }
 
 void DesktopPerceptionMonitor::pollActiveWindow()
@@ -85,6 +86,7 @@ void DesktopPerceptionMonitor::pollActiveWindow()
     const double novelty = context.threadId.value == m_cooldownState.threadId ? 0.38 : 0.92;
     recordPerception(QStringLiteral("perception.active_window.changed"), QStringLiteral("low"), context.confidence, novelty, payload, context);
     evaluateCooldown(QStringLiteral("perception.active_window.changed"), QStringLiteral("low"), context.confidence, novelty, context);
+    emit desktopContextUpdated(DesktopContextThreadBuilder::describeContext(context), context.toVariantMap());
 }
 
 void DesktopPerceptionMonitor::handleClipboardChanged()
@@ -112,6 +114,7 @@ void DesktopPerceptionMonitor::handleClipboardChanged()
     payload.insert(QStringLiteral("formats"), m_clipboard->mimeData()->formats());
     recordPerception(QStringLiteral("perception.clipboard.changed"), QStringLiteral("medium"), context.confidence, 0.76, payload, context);
     evaluateCooldown(QStringLiteral("perception.clipboard.changed"), QStringLiteral("medium"), context.confidence, 0.76, context);
+    emit desktopContextUpdated(DesktopContextThreadBuilder::describeContext(context), context.toVariantMap());
 }
 
 void DesktopPerceptionMonitor::recordPerception(const QString &reasonCode,

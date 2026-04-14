@@ -224,6 +224,12 @@ bool JarvisApplication::initialize()
         m_assistantController.get(),
         m_overlayController.get(),
         m_loggingService.get());
+    connect(m_desktopPerceptionMonitor.get(), &DesktopPerceptionMonitor::desktopContextUpdated, this,
+            [this](const QString &summary, const QVariantMap &context) {
+                if (m_assistantController) {
+                    m_assistantController->updateDesktopContext(summary, context);
+                }
+            });
     m_agentViewModel = std::make_unique<AgentViewModel>(m_backendFacade.get());
     m_settingsViewModel = std::make_unique<SettingsViewModel>(m_backendFacade.get());
     m_taskViewModel = std::make_unique<TaskViewModel>(m_backendFacade.get());

@@ -2,6 +2,7 @@
 
 #include <QFileInfo>
 #include <QRegularExpression>
+#include <QSet>
 #include <QStringList>
 
 #include "companion/contracts/ContextThreadId.h"
@@ -19,6 +20,33 @@ QString firstMeaningfulChunk(const QString &text)
     }
     return text.simplified();
 }
+
+bool isBrowserApp(const QString &appId)
+{
+    static const QSet<QString> browserApps{
+        QStringLiteral("chrome"),
+        QStringLiteral("edge"),
+        QStringLiteral("firefox"),
+        QStringLiteral("brave"),
+        QStringLiteral("opera")
+    };
+    return browserApps.contains(appId);
+}
+
+bool isEditorApp(const QString &appId)
+{
+    static const QSet<QString> editorApps{
+        QStringLiteral("vscode"),
+        QStringLiteral("cursor"),
+        QStringLiteral("windsurf"),
+        QStringLiteral("notepad"),
+        QStringLiteral("notepad_plus_plus"),
+        QStringLiteral("pycharm"),
+        QStringLiteral("idea"),
+        QStringLiteral("sublime_text")
+    };
+    return editorApps.contains(appId);
+}
 }
 
 CompanionContextSnapshot DesktopContextThreadBuilder::fromActiveWindow(const QString &appId,
@@ -26,11 +54,17 @@ CompanionContextSnapshot DesktopContextThreadBuilder::fromActiveWindow(const QSt
 {
     CompanionContextSnapshot snapshot;
     snapshot.appId = normalizedAppFamily(appId);
-    snapshot.taskId = QStringLiteral("active_window");
+    snapshot.taskId = inferredTaskType(snapshot.appId);
     snapshot.topic = inferTopic(windowTitle);
+    snapshot.recentIntent = snapshot.taskId == QStringLiteral("browser_tab")
+        ? QStringLiteral("reference current tab")
+        : snapshot.taskId == QStringLiteral("editor_document")
+            ? QStringLiteral("reference current file")
+            : QStringLiteral("reference current window");
     snapshot.confidence = 0.78;
     snapshot.threadId = ContextThreadId::fromParts(
-        {QStringLiteral("desktop"), QStringLiteral("window"), snapshot.appId, snapshot.topic});
+        {QStringLiteral("desktop"), snapshot.taskId, snapshot.appId, snapshot.topic});
+    snapshot.metadata.insert(QStringLiteral("documentContext"), firstMeaningfulChunk(windowTitle));
     snapshot.metadata.insert(QStringLiteral("windowTitle"), windowTitle.simplified());
     return snapshot;
 }
@@ -69,6 +103,44 @@ CompanionContextSnapshot DesktopContextThreadBuilder::fromNotification(const QSt
     return snapshot;
 }
 
+QString DesktopContextThreadBuilder::describeContext(const CompanionContextSnapshot &context)
+{
+    const QString appLabel = context.appId.trimmed().isEmpty() ? QStringLiteral("unknown app") : context.appId.trimmed();
+    const QString documentContext = context.metadata.value(QStringLiteral("documentContext")).toString().trimmed();
+    const QString clipboardPreview = context.metadata.value(QStringLiteral("clipboardPreview")).toString().trimmed();
+    const QString title = context.metadata.value(QStringLiteral("title")).toString().trimmed();
+
+    if (context.taskId == QStringLiteral("browser_tab")) {
+        return QStringLiteral("Desktop context: browser tab \"%1\" in %2.")
+            .arg(documentContext.isEmpty() ? context.topic : documentContext, appLabel);
+    }
+    if (context.taskId == QStringLiteral("editor_document")) {
+        return QStringLiteral("Desktop context: editor file \"%1\" in %2.")
+            .arg(documentContext.isEmpty() ? context.topic : documentContext, appLabel);
+    }
+    if (context.taskId == QStringLiteral("clipboard")) {
+        return QStringLiteral("Desktop context: clipboard from %1 with preview \"%2\".")
+            .arg(appLabel, clipboardPreview);
+    }
+    if (context.taskId == QStringLiteral("notification")) {
+        return QStringLiteral("Desktop context: notification \"%1\" from %2.")
+            .arg(title.isEmpty() ? context.topic : title, appLabel);
+    }
+    return QStringLiteral("Desktop context: focused window \"%1\" in %2.")
+        .arg(documentContext.isEmpty() ? context.topic : documentContext, appLabel);
+}
+
+QString DesktopContextThreadBuilder::inferredTaskType(const QString &normalizedAppId)
+{
+    if (isBrowserApp(normalizedAppId)) {
+        return QStringLiteral("browser_tab");
+    }
+    if (isEditorApp(normalizedAppId)) {
+        return QStringLiteral("editor_document");
+    }
+    return QStringLiteral("active_window");
+}
+
 QString DesktopContextThreadBuilder::normalizedAppFamily(const QString &appId)
 {
     const QString baseName = QFileInfo(appId.trimmed()).completeBaseName();
@@ -78,6 +150,9 @@ QString DesktopContextThreadBuilder::normalizedAppFamily(const QString &appId)
     }
     if (normalized == QStringLiteral("msedge")) {
         return QStringLiteral("edge");
+    }
+    if (normalized == QStringLiteral("notepad")) {
+        return QStringLiteral("notepad");
     }
     if (normalized.isEmpty()) {
         return QStringLiteral("unknown_app");

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QVariantMap>
 
 #include "cognition/CooldownEngine.h"
 #include "companion/contracts/CompanionContextSnapshot.h"
@@ -23,6 +24,9 @@ public:
                             const QString &message,
                             const QString &priority,
                             const QString &source = QStringLiteral("tray"));
+
+signals:
+    void desktopContextUpdated(const QString &summary, const QVariantMap &context);
 
 private:
     struct ActiveWindowSnapshot

@@ -259,11 +259,14 @@ private:
     void handleVisionSnapshot(const VisionSnapshot &snapshot);
     QString buildDirectVisionResponse(const QString &input) const;
     QString buildVisionPromptContext(const QString &input, IntentType intent) const;
+    QString buildDesktopPromptContext(const QString &input, IntentType intent) const;
+    QString buildAssistantPromptContext(const QString &input, IntentType intent) const;
     bool shouldUseVisionContext(const QString &input, IntentType intent) const;
     void applyVisionGestureTriggers(const VisionSnapshot &snapshot);
     void handleGestureFarewell();
     void handleGestureConfirm();
     void handleGestureReject();
+    void updateDesktopContext(const QString &summary, const QVariantMap &context);
     void handleConversationFinished(const QString &text);
     void handleHybridAgentFinished(const QString &payload);
     void handleAgentResponse(const AgentResponse &response);
@@ -385,6 +388,9 @@ private:
     bool m_wakeStartRequested = false;
     QString m_lastWakeError;
     QString m_startupBlockingIssue = QStringLiteral("Loading services...");
+    QString m_latestDesktopContextSummary;
+    QVariantMap m_latestDesktopContext;
+    qint64 m_latestDesktopContextAtMs = 0;
     std::unique_ptr<ResponseFinalizer> m_responseFinalizer;
     QThread m_toolWorkerThread;
     QThread m_gestureActionRouterThread;

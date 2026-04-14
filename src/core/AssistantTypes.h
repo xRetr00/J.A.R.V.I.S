@@ -10,6 +10,7 @@
 #include <QJsonObject>
 #include <QStringList>
 #include <QString>
+#include <QVariantMap>
 
 #include <nlohmann/json.hpp>
 

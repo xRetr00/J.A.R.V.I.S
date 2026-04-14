@@ -362,7 +362,7 @@ QString buildSharedIdentityLayer(const AssistantIdentity &identity,
         section += QStringLiteral("\n- wake phrase: Hey Vaxil");
     }
     if (!visionContext.trimmed().isEmpty()) {
-        section += QStringLiteral("\n- current scene summary: %1").arg(visionContext.trimmed());
+        section += QStringLiteral("\n- current environment summary: %1").arg(visionContext.trimmed());
     }
     section += QStringLiteral("\n</identity>");
     return section;

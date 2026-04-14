@@ -19,9 +19,11 @@ void DesktopContextThreadBuilderTests::buildsActiveWindowContext()
         QStringLiteral("PLAN.md - Visual Studio Code"));
 
     QCOMPARE(snapshot.appId, QStringLiteral("vscode"));
-    QCOMPARE(snapshot.taskId, QStringLiteral("active_window"));
-    QVERIFY(snapshot.threadId.value.startsWith(QStringLiteral("desktop::window::vscode::")));
+    QCOMPARE(snapshot.taskId, QStringLiteral("editor_document"));
+    QVERIFY(snapshot.threadId.value.startsWith(QStringLiteral("desktop::editor_document::vscode::")));
     QCOMPARE(snapshot.topic, QStringLiteral("plan_md"));
+    QCOMPARE(snapshot.recentIntent, QStringLiteral("reference current file"));
+    QVERIFY(DesktopContextThreadBuilder::describeContext(snapshot).contains(QStringLiteral("editor file")));
 }
 
 void DesktopContextThreadBuilderTests::buildsClipboardContext()

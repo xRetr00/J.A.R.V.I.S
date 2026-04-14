@@ -16,8 +16,10 @@ public:
                                                                    const QString &message,
                                                                    const QString &priority,
                                                                    const QString &sourceAppId = QStringLiteral("vaxil"));
+    [[nodiscard]] static QString describeContext(const CompanionContextSnapshot &context);
 
 private:
+    [[nodiscard]] static QString inferredTaskType(const QString &normalizedAppId);
     [[nodiscard]] static QString normalizedAppFamily(const QString &appId);
     [[nodiscard]] static QString inferTopic(const QString &primaryText,
                                             const QString &secondaryText = QString());

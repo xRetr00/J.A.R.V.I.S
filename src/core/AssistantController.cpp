@@ -555,6 +555,25 @@ bool startsWithAllowedFollowUpWord(const QStringList &words)
     return allowedStarts.contains(words.first());
 }
 
+bool shouldUseDesktopContextForPrompt(const QString &input, IntentType intent)
+{
+    const QString lowered = input.trimmed().toLower();
+    if (intent != IntentType::GENERAL_CHAT) {
+        return true;
+    }
+
+    return lowered.contains(QStringLiteral("this"))
+        || lowered.contains(QStringLiteral("current"))
+        || lowered.contains(QStringLiteral("here"))
+        || lowered.contains(QStringLiteral("tab"))
+        || lowered.contains(QStringLiteral("page"))
+        || lowered.contains(QStringLiteral("window"))
+        || lowered.contains(QStringLiteral("file"))
+        || lowered.contains(QStringLiteral("document"))
+        || lowered.contains(QStringLiteral("clipboard"))
+        || lowered.contains(QStringLiteral("copied"));
+}
+
 QString firstExistingPath(const QStringList &candidates)
 {
     for (const QString &candidate : candidates) {
@@ -3346,7 +3365,7 @@ void AssistantController::startConversationRequest(const QString &input)
         .memory = memoryContext,
         .identity = m_identityProfileService->identity(),
         .userProfile = m_identityProfileService->userProfile(),
-        .visionContext = buildVisionPromptContext(input, IntentType::GENERAL_CHAT),
+        .visionContext = buildAssistantPromptContext(input, IntentType::GENERAL_CHAT),
         .responseMode = m_activeActionSession.responseMode,
         .sessionGoal = m_activeActionSession.goal,
         .nextStepHint = m_activeActionSession.nextStepHint,
@@ -3436,7 +3455,7 @@ void AssistantController::startAgentConversationRequest(const QString &input, In
         .identity = m_identityProfileService->identity(),
         .userProfile = m_identityProfileService->userProfile(),
         .workspaceRoot = QDir::currentPath(),
-        .visionContext = buildVisionPromptContext(input, expectedIntent),
+        .visionContext = buildAssistantPromptContext(input, expectedIntent),
         .responseMode = m_activeActionSession.responseMode,
         .sessionGoal = m_activeActionSession.goal,
         .nextStepHint = m_activeActionSession.nextStepHint,
@@ -3470,7 +3489,7 @@ void AssistantController::continueAgentConversation(const QList<AgentToolResult>
         relevantTools = availableTools;
     }
 
-    const QString visionContext = buildVisionPromptContext(m_lastAgentInput, m_lastAgentIntent);
+    const QString visionContext = buildAssistantPromptContext(m_lastAgentInput, m_lastAgentIntent);
     const QString modelId = m_aiRequestCoordinator->resolveModelId(availableModelIds());
     if (modelId.isEmpty()) {
         deliverLocalResponse(
@@ -3601,6 +3620,60 @@ QString AssistantController::buildVisionPromptContext(const QString &input, Inte
         context += QStringLiteral(" Gestures: %1.").arg(gestureNames.join(QStringLiteral(", ")));
     }
     return context;
+}
+
+QString AssistantController::buildDesktopPromptContext(const QString &input, IntentType intent) const
+{
+    if (m_settings == nullptr || m_settings->privateModeEnabled()) {
+        return {};
+    }
+    if (m_latestDesktopContextSummary.trimmed().isEmpty()) {
+        return {};
+    }
+
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    if (m_latestDesktopContextAtMs <= 0 || (nowMs - m_latestDesktopContextAtMs) > 90000) {
+        return {};
+    }
+    if (!shouldUseDesktopContextForPrompt(input, intent)) {
+        return {};
+    }
+
+    QString context = m_latestDesktopContextSummary.trimmed();
+    const QString taskId = m_latestDesktopContext.value(QStringLiteral("taskId")).toString().trimmed();
+    const QString threadId = m_latestDesktopContext.value(QStringLiteral("threadId")).toString().trimmed();
+    if (!taskId.isEmpty()) {
+        context += QStringLiteral(" Task type: %1.").arg(taskId);
+    }
+    if (!threadId.isEmpty()) {
+        context += QStringLiteral(" Thread: %1.").arg(threadId);
+    }
+    return context;
+}
+
+QString AssistantController::buildAssistantPromptContext(const QString &input, IntentType intent) const
+{
+    const QString desktopContext = buildDesktopPromptContext(input, intent);
+    const QString visionContext = buildVisionPromptContext(input, intent);
+    if (desktopContext.isEmpty()) {
+        return visionContext;
+    }
+    if (visionContext.isEmpty()) {
+        return desktopContext;
+    }
+    return desktopContext + QStringLiteral(" Visual context: ") + visionContext;
+}
+
+void AssistantController::updateDesktopContext(const QString &summary, const QVariantMap &context)
+{
+    const QString normalizedSummary = summary.simplified();
+    if (normalizedSummary.isEmpty()) {
+        return;
+    }
+
+    m_latestDesktopContextSummary = normalizedSummary;
+    m_latestDesktopContext = context;
+    m_latestDesktopContextAtMs = QDateTime::currentMSecsSinceEpoch();
 }
 
 QString AssistantController::buildDirectVisionResponse(const QString &input) const
