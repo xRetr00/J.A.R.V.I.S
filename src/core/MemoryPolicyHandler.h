@@ -1,11 +1,13 @@
 #pragma once
 
 #include <QString>
+#include <QVariantMap>
 
 #include "core/AssistantTypes.h"
 
 class IdentityProfileService;
 class MemoryStore;
+struct CompiledContextHistoryPolicyDecision;
 
 class MemoryPolicyHandler
 {
@@ -15,6 +17,10 @@ public:
     void processUserTurn(const QString &rawInput, const QString &effectiveInput) const;
     void applyUserInput(const QString &input) const;
     QList<MemoryRecord> requestMemory(const QString &query, const MemoryRecord &runtimeRecord) const;
+    [[nodiscard]] QVariantMap compiledContextPolicyState() const;
+    [[nodiscard]] CompiledContextHistoryPolicyDecision compiledContextPolicyDecision() const;
+    [[nodiscard]] QList<MemoryRecord> compiledContextPolicySummaryRecords() const;
+    [[nodiscard]] QList<MemoryRecord> compiledContextLayeredMemoryRecords() const;
     void captureExplicitMemoryFromInput(const QString &input) const;
 
 private:

@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "cognition/CompiledContextHistoryPolicy.h"
+
 namespace {
 struct PurposeSummaryRow {
     QString purpose;
@@ -151,6 +153,8 @@ QString CompiledContextHistorySummaryBuilder::buildSelectionHint(const QList<Mem
 QVariantMap CompiledContextHistorySummaryBuilder::buildPlannerMetadata(const QList<MemoryRecord> &records)
 {
     QVariantMap metadata;
+    const CompiledContextHistoryPolicyDecision policyDecision =
+        CompiledContextHistoryPolicy::evaluate(records);
     metadata.insert(QStringLiteral("compiledContextHistoryCount"), records.size());
     metadata.insert(QStringLiteral("compiledContextHistoryKeys"), historyRecordKeys(records));
     metadata.insert(QStringLiteral("compiledContextHistorySummary"), buildSelectionHint(records));
@@ -162,5 +166,8 @@ QVariantMap CompiledContextHistorySummaryBuilder::buildPlannerMetadata(const QLi
                     historyContainsToken(records, QStringLiteral("connector_summary_inbox")));
     metadata.insert(QStringLiteral("compiledContextHistoryHasResearch"),
                     historyContainsToken(records, QStringLiteral("connector_summary_research")));
+    metadata.insert(QStringLiteral("compiledContextHistoryMode"), policyDecision.dominantMode);
+    metadata.insert(QStringLiteral("compiledContextHistoryModeStrength"), policyDecision.strength);
+    metadata.insert(QStringLiteral("compiledContextHistoryDirective"), policyDecision.selectionDirective);
     return metadata;
 }

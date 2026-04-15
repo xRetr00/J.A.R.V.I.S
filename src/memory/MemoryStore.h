@@ -27,14 +27,19 @@ public:
     QList<MemoryEntry> allEntries() const;
     QString userName() const;
     QList<MemoryRecord> connectorMemory(const QString &query, int maxCount = 4) const;
+    QList<MemoryRecord> compiledContextPolicyMemory(const QString &query = QString()) const;
     bool upsertConnectorState(const QString &historyKey, const QVariantMap &state);
     bool deleteConnectorState(const QString &historyKey);
     QHash<QString, QVariantMap> connectorStateMap() const;
+    bool upsertCompiledContextPolicyState(const QVariantMap &state);
+    bool deleteCompiledContextPolicyState();
+    QVariantMap compiledContextPolicyState() const;
 
 private:
     QString transcriptPath() const;
     QList<MemoryRecord> loadMemory() const;
     MemoryEntry normalizeEntry(const MemoryEntry &entry) const;
     QString connectorStateStorageKey(const QString &historyKey) const;
+    QString compiledContextPolicyStorageKey() const;
     std::unique_ptr<MemoryManager> m_memoryManager;
 };

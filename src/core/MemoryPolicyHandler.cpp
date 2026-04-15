@@ -3,6 +3,9 @@
 #include <QDateTime>
 #include <QRegularExpression>
 
+#include "cognition/CompiledContextHistoryPolicy.h"
+#include "cognition/CompiledContextLayeredMemoryBuilder.h"
+#include "cognition/CompiledContextPolicySummaryBuilder.h"
 #include "cognition/ConnectorContextCompiler.h"
 #include "memory/MemoryStore.h"
 #include "settings/IdentityProfileService.h"
@@ -130,6 +133,9 @@ QList<MemoryRecord> MemoryPolicyHandler::requestMemory(const QString &query, con
     };
 
     if (m_memoryStore) {
+        appendUnique(compiledContextPolicySummaryRecords());
+        appendUnique(compiledContextLayeredMemoryRecords());
+        appendUnique(m_memoryStore->compiledContextPolicyMemory(query));
         appendUnique(ConnectorContextCompiler::compileSummaries(query, m_memoryStore->connectorStateMap()));
         appendUnique(m_memoryStore->connectorMemory(query));
     }
@@ -147,6 +153,36 @@ QList<MemoryRecord> MemoryPolicyHandler::requestMemory(const QString &query, con
         }
     }
     return memory;
+}
+
+QVariantMap MemoryPolicyHandler::compiledContextPolicyState() const
+{
+    return m_memoryStore ? m_memoryStore->compiledContextPolicyState() : QVariantMap{};
+}
+
+CompiledContextHistoryPolicyDecision MemoryPolicyHandler::compiledContextPolicyDecision() const
+{
+    return CompiledContextHistoryPolicy::fromState(compiledContextPolicyState());
+}
+
+QList<MemoryRecord> MemoryPolicyHandler::compiledContextPolicySummaryRecords() const
+{
+    if (m_memoryStore == nullptr) {
+        return {};
+    }
+    return CompiledContextPolicySummaryBuilder::build(
+        m_memoryStore->compiledContextPolicyState(),
+        m_memoryStore->connectorStateMap());
+}
+
+QList<MemoryRecord> MemoryPolicyHandler::compiledContextLayeredMemoryRecords() const
+{
+    if (m_memoryStore == nullptr) {
+        return {};
+    }
+    return CompiledContextLayeredMemoryBuilder::build(
+        m_memoryStore->compiledContextPolicyState(),
+        m_memoryStore->connectorStateMap());
 }
 
 void MemoryPolicyHandler::captureExplicitMemoryFromInput(const QString &input) const

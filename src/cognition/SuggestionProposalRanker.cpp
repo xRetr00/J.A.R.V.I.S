@@ -1,4 +1,5 @@
 #include "cognition/SuggestionProposalRanker.h"
+#include "cognition/SuggestionProposalPolicyScoring.h"
 
 #include <algorithm>
 
@@ -50,6 +51,11 @@ QString effectiveConnectorKind(const SuggestionProposalRanker::Input &input)
         return QStringLiteral("research");
     }
     return {};
+}
+
+QString compiledHistoryMode(const SuggestionProposalRanker::Input &input)
+{
+    return metadataString(input.sourceMetadata, QStringLiteral("compiledContextHistoryMode")).toLower();
 }
 
 double connectorAffinityBonus(const SuggestionProposalRanker::Input &input,
@@ -179,6 +185,67 @@ double compiledHistoryAffinityBonus(const SuggestionProposalRanker::Input &input
     }
     return 0.0;
 }
+
+double compiledHistoryStructuralAdjustment(const SuggestionProposalRanker::Input &input,
+                                           const ActionProposal &proposal,
+                                           QString *reasonCode)
+{
+    const QString mode = compiledHistoryMode(input);
+    const QString capabilityId = proposal.capabilityId;
+
+    if (mode == QStringLiteral("document_work")) {
+        if (capabilityId == QStringLiteral("document_follow_up")
+            || capabilityId == QStringLiteral("source_review")
+            || capabilityId == QStringLiteral("browser_follow_up")) {
+            *reasonCode = QStringLiteral("proposal_rank.compiled_history_document_structure");
+            return 0.12;
+        }
+        if (capabilityId == QStringLiteral("inbox_follow_up")
+            || capabilityId == QStringLiteral("schedule_follow_up")) {
+            *reasonCode = QStringLiteral("proposal_rank.compiled_history_document_defocus");
+            return -0.09;
+        }
+    }
+
+    if (mode == QStringLiteral("schedule_coordination")) {
+        if (capabilityId == QStringLiteral("schedule_follow_up")) {
+            *reasonCode = QStringLiteral("proposal_rank.compiled_history_schedule_structure");
+            return 0.14;
+        }
+        if (capabilityId == QStringLiteral("document_follow_up")
+            || capabilityId == QStringLiteral("source_review")) {
+            *reasonCode = QStringLiteral("proposal_rank.compiled_history_schedule_defocus");
+            return -0.07;
+        }
+    }
+
+    if (mode == QStringLiteral("inbox_triage")) {
+        if (capabilityId == QStringLiteral("inbox_follow_up")) {
+            *reasonCode = QStringLiteral("proposal_rank.compiled_history_inbox_structure");
+            return 0.14;
+        }
+        if (capabilityId == QStringLiteral("document_follow_up")
+            || capabilityId == QStringLiteral("schedule_follow_up")) {
+            *reasonCode = QStringLiteral("proposal_rank.compiled_history_inbox_defocus");
+            return -0.07;
+        }
+    }
+
+    if (mode == QStringLiteral("research_analysis")) {
+        if (capabilityId == QStringLiteral("source_review")
+            || capabilityId == QStringLiteral("web_follow_up")) {
+            *reasonCode = QStringLiteral("proposal_rank.compiled_history_research_structure");
+            return 0.12;
+        }
+        if (capabilityId == QStringLiteral("inbox_follow_up")
+            || capabilityId == QStringLiteral("schedule_follow_up")) {
+            *reasonCode = QStringLiteral("proposal_rank.compiled_history_research_defocus");
+            return -0.08;
+        }
+    }
+
+    return 0.0;
+}
 }
 
 QList<RankedSuggestionProposal> SuggestionProposalRanker::rank(const Input &input)
@@ -248,6 +315,44 @@ QList<RankedSuggestionProposal> SuggestionProposalRanker::rank(const Input &inpu
         if (compiledHistoryBonus != 0.0) {
             rankedProposal.score += compiledHistoryBonus;
             rankedProposal.reasonCode = compiledHistoryReasonCode;
+        }
+
+        QString compiledHistoryStructureReasonCode;
+        const double compiledHistoryStructureScore =
+            compiledHistoryStructuralAdjustment(input, proposal, &compiledHistoryStructureReasonCode);
+        if (compiledHistoryStructureScore != 0.0) {
+            rankedProposal.score += compiledHistoryStructureScore;
+            rankedProposal.reasonCode = compiledHistoryStructureReasonCode;
+        }
+
+        QString compiledPolicyFocusReasonCode;
+        const double compiledPolicyFocusScore =
+            SuggestionProposalPolicyScoring::compiledPolicyFocusAdjustment(input,
+                                                                           proposal,
+                                                                           &compiledPolicyFocusReasonCode);
+        if (compiledPolicyFocusScore != 0.0) {
+            rankedProposal.score += compiledPolicyFocusScore;
+            rankedProposal.reasonCode = compiledPolicyFocusReasonCode;
+        }
+
+        QString compiledPolicySourceReasonCode;
+        const double compiledPolicySourceScore =
+            SuggestionProposalPolicyScoring::compiledPolicySourceAdjustment(input,
+                                                                            proposal,
+                                                                            &compiledPolicySourceReasonCode);
+        if (compiledPolicySourceScore != 0.0) {
+            rankedProposal.score += compiledPolicySourceScore;
+            rankedProposal.reasonCode = compiledPolicySourceReasonCode;
+        }
+
+        QString compiledLayeredReasonCode;
+        const double compiledLayeredScore =
+            SuggestionProposalPolicyScoring::compiledLayeredAdjustment(input,
+                                                                       proposal,
+                                                                       &compiledLayeredReasonCode);
+        if (compiledLayeredScore != 0.0) {
+            rankedProposal.score += compiledLayeredScore;
+            rankedProposal.reasonCode = compiledLayeredReasonCode;
         }
 
         if (input.cooldownState.isActive(input.nowMs) && !meaningfulThreadShift) {

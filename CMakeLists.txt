@@ -276,6 +276,10 @@ set(JARVIS_SOURCES
     src/connectors/NotesDirectoryMonitor.cpp
     src/cognition/CooldownEngine.cpp
     src/cognition/CompiledContextDeltaTracker.cpp
+    src/cognition/CompiledContextHistoryPolicy.cpp
+    src/cognition/CompiledContextLayeredMemoryBuilder.cpp
+    src/cognition/CompiledContextLayeredSignalBuilder.cpp
+    src/cognition/CompiledContextPolicySummaryBuilder.cpp
     src/cognition/CompiledContextHistorySummaryBuilder.cpp
     src/cognition/CompiledContextStabilityMemoryBuilder.cpp
     src/cognition/CompiledContextStabilityTracker.cpp
@@ -292,6 +296,7 @@ set(JARVIS_SOURCES
     src/cognition/ProactiveSurfaceGate.cpp
     src/cognition/SelectionContextCompiler.cpp
     src/cognition/SuggestionProposalBuilder.cpp
+    src/cognition/SuggestionProposalPolicyScoring.cpp
     src/cognition/SuggestionProposalRanker.cpp
     src/core/tasks/TaskDispatcher.cpp
     src/core/tasks/ToolWorker.cpp
@@ -305,6 +310,7 @@ set(JARVIS_SOURCES
     src/logging/LoggingService.cpp
     src/memory/MemoryManager.cpp
     src/memory/MemoryStore.cpp
+    src/memory/MemoryStoreContextPolicies.cpp
     src/overlay/OverlayController.cpp
     src/perception/DesktopContextThreadBuilder.cpp
     src/perception/DesktopPerceptionMonitor.cpp
@@ -377,6 +383,8 @@ set(JARVIS_HEADERS
     src/connectors/NotesDirectoryMonitor.h
     src/cognition/CooldownEngine.h
     src/cognition/CompiledContextDeltaTracker.h
+    src/cognition/CompiledContextHistoryPolicy.h
+    src/cognition/CompiledContextPolicySummaryBuilder.h
     src/cognition/CompiledContextHistorySummaryBuilder.h
     src/cognition/CompiledContextStabilityMemoryBuilder.h
     src/cognition/CompiledContextStabilityTracker.h
@@ -1216,6 +1224,7 @@ if(JARVIS_BUILD_TESTS)
 
     qt_add_executable(jarvis_compiled_context_history_tests
         tests/CompiledContextHistorySummaryBuilderTests.cpp
+        src/cognition/CompiledContextHistoryPolicy.cpp
         src/cognition/CompiledContextHistorySummaryBuilder.cpp
     )
 
@@ -1328,6 +1337,7 @@ if(JARVIS_BUILD_TESTS)
         src/cognition/ProactiveSuggestionPlanner.cpp
         src/cognition/ProactiveSuggestionGate.cpp
         src/cognition/SuggestionProposalBuilder.cpp
+        src/cognition/SuggestionProposalPolicyScoring.cpp
         src/cognition/SuggestionProposalRanker.cpp
     )
 
@@ -1337,6 +1347,19 @@ if(JARVIS_BUILD_TESTS)
     add_test(NAME jarvis_suggestion_planner_tests COMMAND jarvis_suggestion_planner_tests)
     set_tests_properties(jarvis_suggestion_planner_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
     jarvis_copy_optional_runtime_libraries(jarvis_suggestion_planner_tests)
+
+    qt_add_executable(jarvis_suggestion_history_policy_tests
+        tests/SuggestionProposalHistoryPolicyTests.cpp
+        src/cognition/SuggestionProposalPolicyScoring.cpp
+        src/cognition/SuggestionProposalRanker.cpp
+    )
+
+    target_include_directories(jarvis_suggestion_history_policy_tests PRIVATE src)
+    target_link_libraries(jarvis_suggestion_history_policy_tests PRIVATE Qt6::Core Qt6::Test nlohmann_json::nlohmann_json)
+
+    add_test(NAME jarvis_suggestion_history_policy_tests COMMAND jarvis_suggestion_history_policy_tests)
+    set_tests_properties(jarvis_suggestion_history_policy_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_suggestion_history_policy_tests)
 
     qt_add_executable(jarvis_python_runtime_tests
         tests/PythonRuntimeTests.cpp

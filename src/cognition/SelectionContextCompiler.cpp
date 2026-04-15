@@ -2,6 +2,8 @@
 
 #include <QDateTime>
 
+#include "cognition/CompiledContextHistoryPolicy.h"
+#include "cognition/CompiledContextLayeredSignalBuilder.h"
 #include "cognition/DesktopContextSelectionBuilder.h"
 #include "core/AssistantBehaviorPolicy.h"
 #include "core/MemoryPolicyHandler.h"
@@ -113,6 +115,9 @@ QString promptReasonForKey(const QString &key)
     if (key == QStringLiteral("desktop_prompt_thread")) {
         return QStringLiteral("prompt.thread_continuity");
     }
+    if (key == QStringLiteral("history_prompt_mode")) {
+        return QStringLiteral("prompt.history_mode");
+    }
     return QStringLiteral("prompt.context_relevance");
 }
 
@@ -152,7 +157,8 @@ bool isEditorTask(const QString &taskId)
 
 QList<MemoryRecord> promptContextRecordsForIntent(IntentType intent,
                                                   const QVariantMap &desktopContext,
-                                                  const QString &desktopSummary)
+                                                  const QString &desktopSummary,
+                                                  const CompiledContextHistoryPolicyDecision &historyDecision)
 {
     QList<MemoryRecord> records;
     const QString updatedAt = QString::number(QDateTime::currentMSecsSinceEpoch());
@@ -272,6 +278,14 @@ QList<MemoryRecord> promptContextRecordsForIntent(IntentType intent,
         break;
     }
 
+    if (historyDecision.isValid()) {
+        appendPromptRecord(records,
+                           QStringLiteral("history_prompt_mode"),
+                           historyDecision.promptDirective,
+                           0.84f,
+                           updatedAt);
+    }
+
     return records;
 }
 
@@ -350,9 +364,10 @@ QString SelectionContextCompiler::buildSelectionInput(const QString &input,
                                                       const QVariantMap &desktopContext,
                                                       const QString &desktopSummary,
                                                       qint64 desktopContextAtMs,
-                                                      bool privateModeEnabled)
+                                                      bool privateModeEnabled,
+                                                      const QList<MemoryRecord> &historyRecords)
 {
-    return DesktopContextSelectionBuilder::buildSelectionInput(
+    const QString selectionInput = DesktopContextSelectionBuilder::buildSelectionInput(
         input,
         intent,
         buildCompiledDesktopSummary(desktopContext, desktopSummary),
@@ -360,16 +375,29 @@ QString SelectionContextCompiler::buildSelectionInput(const QString &input,
         desktopContextAtMs,
         QDateTime::currentMSecsSinceEpoch(),
         privateModeEnabled);
+    const CompiledContextHistoryPolicyDecision historyDecision =
+        CompiledContextHistoryPolicy::evaluate(historyRecords);
+    if (!historyDecision.isValid()) {
+        return selectionInput;
+    }
+
+    return QStringLiteral("%1\n\n%2")
+        .arg(selectionInput.trimmed(), historyDecision.selectionDirective)
+        .simplified();
 }
 
 QString SelectionContextCompiler::buildPromptContext(IntentType intent,
                                                      const QString &desktopSummary,
-                                                     const QVariantMap &desktopContext)
+                                                     const QVariantMap &desktopContext,
+                                                     const QList<MemoryRecord> &historyRecords)
 {
+    const CompiledContextHistoryPolicyDecision historyDecision =
+        CompiledContextHistoryPolicy::evaluate(historyRecords);
     return promptContextFromRecords(promptContextRecordsForIntent(
         intent,
         desktopContext,
-        buildCompiledDesktopSummary(desktopContext, desktopSummary)));
+        buildCompiledDesktopSummary(desktopContext, desktopSummary),
+        historyDecision));
 }
 
 SelectionContextCompilation SelectionContextCompiler::compile(const QString &query,
@@ -379,26 +407,67 @@ SelectionContextCompilation SelectionContextCompiler::compile(const QString &que
                                                              qint64 desktopContextAtMs,
                                                              bool privateModeEnabled,
                                                              const MemoryRecord &runtimeRecord,
+                                                             const QList<MemoryRecord> &historyRecords,
                                                              const MemoryPolicyHandler *memoryPolicyHandler,
                                                              const AssistantBehaviorPolicy *behaviorPolicy)
 {
     SelectionContextCompilation compilation;
+    const CompiledContextHistoryPolicyDecision historyDecision = memoryPolicyHandler != nullptr
+        ? memoryPolicyHandler->compiledContextPolicyDecision()
+        : CompiledContextHistoryPolicyDecision{};
+    const QList<MemoryRecord> layeredMemoryRecords = memoryPolicyHandler != nullptr
+        ? memoryPolicyHandler->compiledContextLayeredMemoryRecords()
+        : QList<MemoryRecord>{};
+    const CompiledContextHistoryPolicyDecision effectiveHistoryDecision = historyDecision.isValid()
+        ? historyDecision
+        : CompiledContextHistoryPolicy::evaluate(historyRecords);
     compilation.compiledDesktopSummary = buildCompiledDesktopSummary(desktopContext, desktopSummary);
     compilation.selectionInput = buildSelectionInput(query,
                                                      intent,
                                                      desktopContext,
                                                      desktopSummary,
                                                      desktopContextAtMs,
-                                                     privateModeEnabled);
+                                                     privateModeEnabled,
+                                                     effectiveHistoryDecision.isValid() ? QList<MemoryRecord>{} : historyRecords);
+    if (effectiveHistoryDecision.isValid()) {
+        compilation.selectionInput = QStringLiteral("%1\n\n%2")
+            .arg(compilation.selectionInput.trimmed(), effectiveHistoryDecision.selectionDirective)
+            .simplified();
+    }
+    const QString layeredSelectionDirective =
+        CompiledContextLayeredSignalBuilder::buildSelectionDirective(layeredMemoryRecords);
+    if (!layeredSelectionDirective.isEmpty()) {
+        compilation.selectionInput = QStringLiteral("%1\n\n%2")
+            .arg(compilation.selectionInput.trimmed(), layeredSelectionDirective)
+            .simplified();
+    }
+    compilation.historySelectionDirective = effectiveHistoryDecision.selectionDirective;
+    compilation.historyPolicyMetadata = effectiveHistoryDecision.plannerMetadata;
     compilation.promptContextRecords = promptContextRecordsForIntent(
         intent,
         desktopContext,
-        compilation.compiledDesktopSummary);
+        compilation.compiledDesktopSummary,
+        effectiveHistoryDecision);
+    compilation.promptContextRecords.append(
+        CompiledContextLayeredSignalBuilder::buildPromptContextRecords(layeredMemoryRecords));
     compilation.promptContext = promptContextFromRecords(compilation.promptContextRecords);
     compilation.selectedMemoryRecords = memoryPolicyHandler
         ? memoryPolicyHandler->requestMemory(compilation.selectionInput, runtimeRecord)
         : QList<MemoryRecord>{};
     compilation.compiledContextRecords = desktopContextRecords(desktopContext, desktopSummary);
+    if (memoryPolicyHandler != nullptr) {
+        const QList<MemoryRecord> policySummaryRecords = memoryPolicyHandler->compiledContextPolicySummaryRecords();
+        for (const MemoryRecord &record : policySummaryRecords) {
+            compilation.compiledContextRecords.push_back(record);
+        }
+        for (const MemoryRecord &record : layeredMemoryRecords) {
+            compilation.compiledContextRecords.push_back(record);
+        }
+    }
+    if (effectiveHistoryDecision.isValid()) {
+        compilation.compiledContextRecords.push_back(
+            CompiledContextHistoryPolicy::buildContextRecord(effectiveHistoryDecision));
+    }
 
     const QList<MemoryRecord> merged = mergedRecords(compilation.compiledContextRecords,
                                                      compilation.selectedMemoryRecords);

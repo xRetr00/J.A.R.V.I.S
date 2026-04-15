@@ -132,6 +132,7 @@ int connectorMemoryScore(const QString &query, const QString &connectorKind, con
     }
     return score;
 }
+
 }
 
 MemoryStore::MemoryStore(const QString &storagePath, QObject *parent)

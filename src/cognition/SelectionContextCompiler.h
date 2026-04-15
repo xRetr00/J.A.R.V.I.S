@@ -12,10 +12,12 @@ struct SelectionContextCompilation {
     QString compiledDesktopSummary;
     QString selectionInput;
     QString promptContext;
+    QString historySelectionDirective;
     QList<MemoryRecord> selectedMemoryRecords;
     QList<MemoryRecord> compiledContextRecords;
     QList<MemoryRecord> promptContextRecords;
     MemoryContext memoryContext;
+    QVariantMap historyPolicyMetadata;
 };
 
 class SelectionContextCompiler
@@ -28,10 +30,12 @@ public:
                                                      const QVariantMap &desktopContext,
                                                      const QString &desktopSummary,
                                                      qint64 desktopContextAtMs,
-                                                     bool privateModeEnabled);
+                                                     bool privateModeEnabled,
+                                                     const QList<MemoryRecord> &historyRecords = {});
     [[nodiscard]] static QString buildPromptContext(IntentType intent,
                                                     const QString &desktopSummary,
-                                                    const QVariantMap &desktopContext);
+                                                    const QVariantMap &desktopContext,
+                                                    const QList<MemoryRecord> &historyRecords = {});
     [[nodiscard]] static SelectionContextCompilation compile(const QString &query,
                                                              IntentType intent,
                                                              const QVariantMap &desktopContext,
@@ -39,6 +43,7 @@ public:
                                                              qint64 desktopContextAtMs,
                                                              bool privateModeEnabled,
                                                              const MemoryRecord &runtimeRecord,
+                                                             const QList<MemoryRecord> &historyRecords,
                                                              const MemoryPolicyHandler *memoryPolicyHandler,
                                                              const AssistantBehaviorPolicy *behaviorPolicy);
 };
