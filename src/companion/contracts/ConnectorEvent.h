@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QDateTime>
+#include <QMetaType>
 #include <QString>
 #include <QVariantMap>
 
@@ -42,3 +43,5 @@ struct ConnectorEvent
         return map;
     }
 };
+
+Q_DECLARE_METATYPE(ConnectorEvent)

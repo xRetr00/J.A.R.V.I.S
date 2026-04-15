@@ -116,6 +116,12 @@ ProactiveSuggestionPlan ProactiveSuggestionPlanner::plan(const Input &input)
 
     plan.rankedProposals = SuggestionProposalRanker::rank({
         .proposals = plan.generatedProposals,
+        .sourceKind = input.sourceKind,
+        .taskType = input.taskType,
+        .sourceMetadata = input.sourceMetadata,
+        .presentationKey = input.presentationKey,
+        .lastPresentedKey = input.lastPresentedKey,
+        .lastPresentedAtMs = input.lastPresentedAtMs,
         .desktopContext = input.desktopContext,
         .desktopContextAtMs = input.desktopContextAtMs,
         .cooldownState = input.cooldownState,

@@ -4,6 +4,24 @@
 
 #include "cognition/ConnectorResultSignal.h"
 
+namespace {
+BackgroundTaskResult asBackgroundTaskResult(const AgentTask &task,
+                                            const ToolExecutionResult &result)
+{
+    BackgroundTaskResult backgroundResult;
+    backgroundResult.taskId = task.id;
+    backgroundResult.type = task.type;
+    backgroundResult.success = result.success;
+    backgroundResult.errorKind = result.errorKind;
+    backgroundResult.title = result.toolName;
+    backgroundResult.summary = result.summary;
+    backgroundResult.detail = result.detail;
+    backgroundResult.payload = result.payload;
+    backgroundResult.taskKey = task.taskKey;
+    return backgroundResult;
+}
+}
+
 ConnectorEvent ConnectorEventBuilder::fromBackgroundTaskResult(const BackgroundTaskResult &result)
 {
     const ConnectorResultSignal signal = ConnectorResultSignalBuilder::fromBackgroundTaskResult(result);
@@ -27,5 +45,21 @@ ConnectorEvent ConnectorEventBuilder::fromBackgroundTaskResult(const BackgroundT
         {QStringLiteral("resultSummary"), result.summary},
         {QStringLiteral("resultTitle"), result.title}
     };
+    return event;
+}
+
+ConnectorEvent ConnectorEventBuilder::fromTaskExecution(const AgentTask &task,
+                                                        const ToolExecutionResult &result)
+{
+    const BackgroundTaskResult backgroundResult = asBackgroundTaskResult(task, result);
+    ConnectorEvent event = fromBackgroundTaskResult(backgroundResult);
+    if (!event.isValid()) {
+        return {};
+    }
+
+    event.sourceKind = QStringLiteral("connector_live");
+    event.metadata.insert(QStringLiteral("producer"), QStringLiteral("tool_worker"));
+    event.metadata.insert(QStringLiteral("toolName"), result.toolName);
+    event.metadata.insert(QStringLiteral("taskTypeRaw"), task.type);
     return event;
 }
