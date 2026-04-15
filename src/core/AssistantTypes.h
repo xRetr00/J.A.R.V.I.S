@@ -264,6 +264,8 @@ struct BackgroundTaskResult {
     QJsonObject payload;
     QString finishedAt;
     QString taskKey;
+    QString connectorEventId;
+    bool connectorEventLive = false;
 };
 
 struct AgentToolCall {
