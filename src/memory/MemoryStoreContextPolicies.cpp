@@ -47,6 +47,43 @@ bool upsertPolicyHistoryEntry(MemoryStore *store, const QVariantList &history)
     entry.updatedAt = entry.createdAt.toUTC().toString(Qt::ISODate);
     return store->upsertEntry(entry);
 }
+
+bool upsertTuningHistoryEntry(MemoryStore *store, const QVariantList &history)
+{
+    const QJsonDocument document = QJsonDocument::fromVariant(history);
+    MemoryEntry entry;
+    entry.type = MemoryType::Context;
+    entry.kind = QStringLiteral("context");
+    entry.key = QStringLiteral("compiled_context_policy_tuning_history_state");
+    entry.title = QStringLiteral("compiled_context_policy_tuning_history");
+    entry.value = QString::fromUtf8(document.toJson(QJsonDocument::Compact));
+    entry.content = entry.value;
+    entry.id = QStringLiteral("compiled-context-policy-tuning-history");
+    entry.confidence = 0.9f;
+    entry.source = QStringLiteral("compiled_history_policy_tuning_history");
+    entry.tags = {QStringLiteral("compiled_context_policy_tuning_history")};
+    entry.createdAt = QDateTime::currentDateTimeUtc();
+    entry.updatedAt = entry.createdAt.toUTC().toString(Qt::ISODate);
+    return store->upsertEntry(entry);
+}
+
+bool tuningStateChanged(const QVariantMap &lhs, const QVariantMap &rhs)
+{
+    const QStringList keys = {
+        QStringLiteral("tuningCurrentMode"),
+        QStringLiteral("tuningVolatilityLevel"),
+        QStringLiteral("tuningAlignmentBoost"),
+        QStringLiteral("tuningDefocusPenalty"),
+        QStringLiteral("tuningVolatilityPenalty"),
+        QStringLiteral("tuningSuppressionScoreThreshold")
+    };
+    for (const QString &key : keys) {
+        if (lhs.value(key) != rhs.value(key)) {
+            return true;
+        }
+    }
+    return false;
+}
 }
 
 QList<MemoryRecord> MemoryStore::compiledContextPolicyMemory(const QString &query) const
@@ -181,6 +218,143 @@ QVariantList MemoryStore::compiledContextPolicyHistory() const
     return {};
 }
 
+bool MemoryStore::promoteCompiledContextPolicyTuningState(const QVariantMap &state)
+{
+    if (state.isEmpty()) {
+        return false;
+    }
+
+    const QVariantMap existingState = compiledContextPolicyTuningState();
+    QVariantMap normalizedState = state;
+    const qint64 updatedAtMs = normalizedState.value(QStringLiteral("updatedAtMs"),
+                                                     QDateTime::currentMSecsSinceEpoch()).toLongLong();
+    normalizedState.insert(QStringLiteral("updatedAtMs"), updatedAtMs);
+    if (!existingState.isEmpty() && !tuningStateChanged(existingState, normalizedState)) {
+        normalizedState.insert(QStringLiteral("version"), existingState.value(QStringLiteral("version"), 1).toInt());
+    } else {
+        normalizedState.insert(QStringLiteral("version"), existingState.value(QStringLiteral("version"), 0).toInt() + 1);
+    }
+
+    const QJsonDocument document(QJsonObject::fromVariantMap(normalizedState));
+    MemoryEntry entry;
+    entry.type = MemoryType::Context;
+    entry.kind = QStringLiteral("context");
+    entry.key = compiledContextPolicyTuningStorageKey();
+    entry.title = QStringLiteral("compiled_context_policy_tuning");
+    entry.value = QString::fromUtf8(document.toJson(QJsonDocument::Compact));
+    entry.content = entry.value;
+    entry.id = QStringLiteral("compiled-context-policy-tuning");
+    entry.confidence = 0.93f;
+    entry.source = QStringLiteral("compiled_history_policy_tuning_state");
+    entry.tags = {QStringLiteral("compiled_context_policy_tuning"),
+                  normalizedState.value(QStringLiteral("tuningCurrentMode")).toString().trimmed()};
+    entry.createdAt = QDateTime::currentDateTimeUtc();
+    entry.updatedAt = entry.createdAt.toUTC().toString(Qt::ISODate);
+    if (!upsertEntry(entry)) {
+        return false;
+    }
+
+    QVariantList history = compiledContextPolicyTuningHistory();
+    if (history.isEmpty() || tuningStateChanged(history.last().toMap(), normalizedState)) {
+        QVariantMap snapshot = normalizedState;
+        snapshot.insert(QStringLiteral("promotedAtMs"), updatedAtMs);
+        history.push_back(snapshot);
+        while (history.size() > 24) {
+            history.removeFirst();
+        }
+        return upsertTuningHistoryEntry(this, history);
+    }
+    return true;
+}
+
+bool MemoryStore::rollbackCompiledContextPolicyTuningState(const QVariantMap &metadata)
+{
+    QVariantList history = compiledContextPolicyTuningHistory();
+    if (history.size() < 2) {
+        return false;
+    }
+
+    history.removeLast();
+    const QVariantMap rollbackState = history.last().toMap();
+    if (rollbackState.isEmpty()) {
+        return false;
+    }
+
+    if (!upsertTuningHistoryEntry(this, history)) {
+        return false;
+    }
+
+    QVariantMap normalizedState = rollbackState;
+    normalizedState.insert(QStringLiteral("updatedAtMs"), QDateTime::currentMSecsSinceEpoch());
+    normalizedState.insert(QStringLiteral("version"),
+                           rollbackState.value(QStringLiteral("version"), 1).toInt() + 1);
+    for (auto it = metadata.constBegin(); it != metadata.constEnd(); ++it) {
+        normalizedState.insert(it.key(), it.value());
+    }
+
+    const QJsonDocument document(QJsonObject::fromVariantMap(normalizedState));
+    MemoryEntry entry;
+    entry.type = MemoryType::Context;
+    entry.kind = QStringLiteral("context");
+    entry.key = compiledContextPolicyTuningStorageKey();
+    entry.title = QStringLiteral("compiled_context_policy_tuning");
+    entry.value = QString::fromUtf8(document.toJson(QJsonDocument::Compact));
+    entry.content = entry.value;
+    entry.id = QStringLiteral("compiled-context-policy-tuning");
+    entry.confidence = 0.93f;
+    entry.source = QStringLiteral("compiled_history_policy_tuning_state");
+    entry.tags = {QStringLiteral("compiled_context_policy_tuning"),
+                  normalizedState.value(QStringLiteral("tuningCurrentMode")).toString().trimmed()};
+    entry.createdAt = QDateTime::currentDateTimeUtc();
+    entry.updatedAt = entry.createdAt.toUTC().toString(Qt::ISODate);
+    return upsertEntry(entry);
+}
+
+bool MemoryStore::deleteCompiledContextPolicyTuningState()
+{
+    const bool deletedCurrent = deleteEntry(compiledContextPolicyTuningStorageKey());
+    const bool deletedHistory = deleteEntry(compiledContextPolicyTuningHistoryStorageKey());
+    return deletedCurrent || deletedHistory;
+}
+
+QVariantMap MemoryStore::compiledContextPolicyTuningState() const
+{
+    for (const MemoryEntry &entry : allEntries()) {
+        if (entry.source != QStringLiteral("compiled_history_policy_tuning_state")) {
+            continue;
+        }
+        if (entry.key != compiledContextPolicyTuningStorageKey()) {
+            continue;
+        }
+
+        const QJsonDocument document = QJsonDocument::fromJson(entry.value.toUtf8());
+        if (!document.isObject()) {
+            return {};
+        }
+        return document.object().toVariantMap();
+    }
+    return {};
+}
+
+QVariantList MemoryStore::compiledContextPolicyTuningHistory() const
+{
+    for (const MemoryEntry &entry : allEntries()) {
+        if (entry.source != QStringLiteral("compiled_history_policy_tuning_history")) {
+            continue;
+        }
+        if (entry.key != compiledContextPolicyTuningHistoryStorageKey()) {
+            continue;
+        }
+
+        const QJsonDocument document = QJsonDocument::fromJson(entry.value.toUtf8());
+        if (!document.isArray()) {
+            return {};
+        }
+        return document.array().toVariantList();
+    }
+    return {};
+}
+
 QString MemoryStore::compiledContextPolicyStorageKey() const
 {
     return QStringLiteral("compiled_context_policy_state");
@@ -189,4 +363,14 @@ QString MemoryStore::compiledContextPolicyStorageKey() const
 QString MemoryStore::compiledContextPolicyHistoryStorageKey() const
 {
     return QStringLiteral("compiled_context_policy_history_state");
+}
+
+QString MemoryStore::compiledContextPolicyTuningStorageKey() const
+{
+    return QStringLiteral("compiled_context_policy_tuning_state");
+}
+
+QString MemoryStore::compiledContextPolicyTuningHistoryStorageKey() const
+{
+    return QStringLiteral("compiled_context_policy_tuning_history_state");
 }

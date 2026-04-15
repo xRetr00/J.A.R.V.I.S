@@ -46,6 +46,20 @@ void SelectionContextCompilerTuningTests::usesPolicyTuningSignalsInSelectionAndP
         {QStringLiteral("strength"), 3.0},
         {QStringLiteral("updatedAtMs"), 10100}
     }));
+    QVERIFY(store.promoteCompiledContextPolicyTuningState({
+        {QStringLiteral("tuningCurrentMode"), QStringLiteral("research_analysis")},
+        {QStringLiteral("tuningVolatilityLevel"), QStringLiteral("elevated")},
+        {QStringLiteral("tuningAlignmentBoost"), 0.10},
+        {QStringLiteral("tuningDefocusPenalty"), 0.08},
+        {QStringLiteral("tuningVolatilityPenalty"), 0.08},
+        {QStringLiteral("tuningSuppressionScoreThreshold"), 0.78},
+        {QStringLiteral("tuningObservedCount"), 3},
+        {QStringLiteral("tuningShiftCount"), 3},
+        {QStringLiteral("tuningTotalObservations"), 8},
+        {QStringLiteral("tuningPromotionAction"), QStringLiteral("promote")},
+        {QStringLiteral("tuningPromotionReason"), QStringLiteral("behavior_tuning.test_seed")},
+        {QStringLiteral("updatedAtMs"), 10200}
+    }));
 
     const SelectionContextCompilation compilation = SelectionContextCompiler::compile(
         QStringLiteral("what should I read next"),

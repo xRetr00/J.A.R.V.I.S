@@ -18,6 +18,7 @@ private slots:
     void buildsCompiledContextLayeredMemoryRecords();
     void buildsCompiledContextPolicyEvolutionRecords();
     void buildsCompiledContextPolicyTuningSignalRecords();
+    void prefersPersistedCompiledContextPolicyTuningMetadata();
 };
 
 void MemoryPolicyHandlerTests::requestMemoryIncludesConnectorSummaries()
@@ -246,6 +247,20 @@ void MemoryPolicyHandlerTests::buildsCompiledContextPolicyTuningSignalRecords()
         {QStringLiteral("strength"), 3.0},
         {QStringLiteral("updatedAtMs"), 10100}
     }));
+    QVERIFY(store.promoteCompiledContextPolicyTuningState({
+        {QStringLiteral("tuningCurrentMode"), QStringLiteral("research_analysis")},
+        {QStringLiteral("tuningVolatilityLevel"), QStringLiteral("elevated")},
+        {QStringLiteral("tuningAlignmentBoost"), 0.10},
+        {QStringLiteral("tuningDefocusPenalty"), 0.08},
+        {QStringLiteral("tuningVolatilityPenalty"), 0.08},
+        {QStringLiteral("tuningSuppressionScoreThreshold"), 0.78},
+        {QStringLiteral("tuningObservedCount"), 3},
+        {QStringLiteral("tuningShiftCount"), 3},
+        {QStringLiteral("tuningTotalObservations"), 8},
+        {QStringLiteral("tuningPromotionAction"), QStringLiteral("promote")},
+        {QStringLiteral("tuningPromotionReason"), QStringLiteral("behavior_tuning.test_seed")},
+        {QStringLiteral("updatedAtMs"), 10200}
+    }));
 
     const QList<MemoryRecord> records = handler.compiledContextPolicyTuningSignalRecords();
     QVERIFY(records.size() >= 2);
@@ -270,6 +285,32 @@ void MemoryPolicyHandlerTests::buildsCompiledContextPolicyTuningSignalRecords()
     QVERIFY(foundSignal);
     QVERIFY(foundStability);
     QVERIFY(foundKnobs);
+}
+
+void MemoryPolicyHandlerTests::prefersPersistedCompiledContextPolicyTuningMetadata()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    MemoryStore store(dir.path() + QStringLiteral("/memory.json"));
+    MemoryPolicyHandler handler(nullptr, &store);
+
+    QVERIFY(store.promoteCompiledContextPolicyTuningState({
+        {QStringLiteral("tuningCurrentMode"), QStringLiteral("research_analysis")},
+        {QStringLiteral("tuningVolatilityLevel"), QStringLiteral("elevated")},
+        {QStringLiteral("tuningAlignmentBoost"), 0.12},
+        {QStringLiteral("tuningDefocusPenalty"), 0.11},
+        {QStringLiteral("tuningVolatilityPenalty"), 0.09},
+        {QStringLiteral("tuningSuppressionScoreThreshold"), 0.81},
+        {QStringLiteral("updatedAtMs"), 11100}
+    }));
+
+    const QVariantMap metadata = handler.compiledContextPolicyTuningMetadata();
+    QCOMPARE(metadata.value(QStringLiteral("tuningCurrentMode")).toString(),
+             QStringLiteral("research_analysis"));
+    QCOMPARE(metadata.value(QStringLiteral("tuningAlignmentBoost")).toDouble(), 0.12);
+    QCOMPARE(metadata.value(QStringLiteral("tuningSuppressionScoreThreshold")).toDouble(), 0.81);
+    QCOMPARE(metadata.value(QStringLiteral("tuningVersion")).toInt(), 1);
 }
 
 QTEST_APPLESS_MAIN(MemoryPolicyHandlerTests)

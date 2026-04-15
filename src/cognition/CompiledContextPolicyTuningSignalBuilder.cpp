@@ -14,6 +14,9 @@ struct TuningProfile
     double defocusPenalty = 0.05;
     double volatilityPenalty = 0.04;
     double suppressionScoreThreshold = 0.72;
+    int version = 0;
+    QString promotionAction;
+    QString promotionReason;
     QString updatedAt;
 };
 
@@ -100,15 +103,34 @@ TuningProfile buildProfile(const QVariantList &history)
 
     return profile;
 }
+
+TuningProfile profileFromState(const QVariantMap &state)
+{
+    TuningProfile profile;
+    profile.currentMode = state.value(QStringLiteral("tuningCurrentMode")).toString().trimmed();
+    profile.volatilityLabel = state.value(QStringLiteral("tuningVolatilityLevel")).toString().trimmed();
+    profile.alignmentBoost = state.value(QStringLiteral("tuningAlignmentBoost"), 0.06).toDouble();
+    profile.defocusPenalty = state.value(QStringLiteral("tuningDefocusPenalty"), 0.05).toDouble();
+    profile.volatilityPenalty = state.value(QStringLiteral("tuningVolatilityPenalty"), 0.04).toDouble();
+    profile.suppressionScoreThreshold =
+        state.value(QStringLiteral("tuningSuppressionScoreThreshold"), 0.72).toDouble();
+    profile.sustainedObservations = state.value(QStringLiteral("tuningObservedCount")).toInt();
+    profile.shifts = state.value(QStringLiteral("tuningShiftCount")).toInt();
+    profile.totalObservations = state.value(QStringLiteral("tuningTotalObservations"),
+                                            profile.sustainedObservations).toInt();
+    profile.version = state.value(QStringLiteral("version")).toInt();
+    profile.promotionAction = state.value(QStringLiteral("tuningPromotionAction")).toString().trimmed();
+    profile.promotionReason = state.value(QStringLiteral("tuningPromotionReason")).toString().trimmed();
+    profile.updatedAt = QString::number(state.value(QStringLiteral("updatedAtMs"),
+                                                    QDateTime::currentMSecsSinceEpoch()).toLongLong());
+    if (profile.volatilityLabel.isEmpty()) {
+        profile.volatilityLabel = QStringLiteral("steady");
+    }
+    return profile;
 }
 
-QList<MemoryRecord> CompiledContextPolicyTuningSignalBuilder::build(const QVariantList &history)
+QList<MemoryRecord> recordsFromProfile(const TuningProfile &profile)
 {
-    if (history.isEmpty()) {
-        return {};
-    }
-
-    const TuningProfile profile = buildProfile(history);
     if (profile.currentMode.isEmpty()) {
         return {};
     }
@@ -144,20 +166,21 @@ QList<MemoryRecord> CompiledContextPolicyTuningSignalBuilder::build(const QVaria
 
     records.push_back(makeRecord(
         QStringLiteral("compiled_context_policy_tuning_knobs"),
-        QStringLiteral("Tuning knobs: alignmentBoost=%1 defocusPenalty=%2 volatilityPenalty=%3 suppressionScoreThreshold=%4.")
+        QStringLiteral("Tuning knobs: alignmentBoost=%1 defocusPenalty=%2 volatilityPenalty=%3 suppressionScoreThreshold=%4 version=%5 action=%6.")
             .arg(QString::number(profile.alignmentBoost, 'f', 2),
                  QString::number(profile.defocusPenalty, 'f', 2),
                  QString::number(profile.volatilityPenalty, 'f', 2),
-                 QString::number(profile.suppressionScoreThreshold, 'f', 2)),
+                 QString::number(profile.suppressionScoreThreshold, 'f', 2),
+                 QString::number(profile.version),
+                 profile.promotionAction.isEmpty() ? QStringLiteral("derived") : profile.promotionAction),
         0.82,
         profile.updatedAt));
 
     return records;
 }
 
-QVariantMap CompiledContextPolicyTuningSignalBuilder::buildPlannerMetadata(const QVariantList &history)
+QVariantMap plannerMetadataFromProfile(const TuningProfile &profile)
 {
-    const TuningProfile profile = buildProfile(history);
     if (profile.currentMode.isEmpty()) {
         return {};
     }
@@ -170,6 +193,47 @@ QVariantMap CompiledContextPolicyTuningSignalBuilder::buildPlannerMetadata(const
         {QStringLiteral("tuningVolatilityPenalty"), profile.volatilityPenalty},
         {QStringLiteral("tuningSuppressionScoreThreshold"), profile.suppressionScoreThreshold},
         {QStringLiteral("tuningObservedCount"), profile.sustainedObservations},
-        {QStringLiteral("tuningShiftCount"), profile.shifts}
+        {QStringLiteral("tuningShiftCount"), profile.shifts},
+        {QStringLiteral("tuningTotalObservations"), profile.totalObservations},
+        {QStringLiteral("tuningVersion"), profile.version},
+        {QStringLiteral("tuningPromotionAction"), profile.promotionAction},
+        {QStringLiteral("tuningPromotionReason"), profile.promotionReason}
     };
+}
+}
+
+QList<MemoryRecord> CompiledContextPolicyTuningSignalBuilder::build(const QVariantList &history)
+{
+    if (history.isEmpty()) {
+        return {};
+    }
+
+    const TuningProfile profile = buildProfile(history);
+    return recordsFromProfile(profile);
+}
+
+QList<MemoryRecord> CompiledContextPolicyTuningSignalBuilder::buildFromState(const QVariantMap &state)
+{
+    return recordsFromProfile(profileFromState(state));
+}
+
+QVariantMap CompiledContextPolicyTuningSignalBuilder::buildState(const QVariantList &history)
+{
+    const TuningProfile profile = buildProfile(history);
+    QVariantMap state = plannerMetadataFromProfile(profile);
+    if (state.isEmpty()) {
+        return {};
+    }
+    state.insert(QStringLiteral("updatedAtMs"), profile.updatedAt.toLongLong());
+    return state;
+}
+
+QVariantMap CompiledContextPolicyTuningSignalBuilder::buildPlannerMetadata(const QVariantList &history)
+{
+    return plannerMetadataFromProfile(buildProfile(history));
+}
+
+QVariantMap CompiledContextPolicyTuningSignalBuilder::buildPlannerMetadataFromState(const QVariantMap &state)
+{
+    return plannerMetadataFromProfile(profileFromState(state));
 }

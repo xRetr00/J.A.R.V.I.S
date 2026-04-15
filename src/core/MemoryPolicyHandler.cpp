@@ -174,8 +174,11 @@ QVariantMap MemoryPolicyHandler::compiledContextPolicyTuningMetadata() const
     if (m_memoryStore == nullptr) {
         return {};
     }
-    return CompiledContextPolicyTuningSignalBuilder::buildPlannerMetadata(
-        m_memoryStore->compiledContextPolicyHistory());
+    const QVariantMap persisted = m_memoryStore->compiledContextPolicyTuningState();
+    if (!persisted.isEmpty()) {
+        return CompiledContextPolicyTuningSignalBuilder::buildPlannerMetadataFromState(persisted);
+    }
+    return {};
 }
 
 QList<MemoryRecord> MemoryPolicyHandler::compiledContextPolicySummaryRecords() const
@@ -212,8 +215,11 @@ QList<MemoryRecord> MemoryPolicyHandler::compiledContextPolicyTuningSignalRecord
     if (m_memoryStore == nullptr) {
         return {};
     }
-    return CompiledContextPolicyTuningSignalBuilder::build(
-        m_memoryStore->compiledContextPolicyHistory());
+    const QVariantMap persisted = m_memoryStore->compiledContextPolicyTuningState();
+    if (!persisted.isEmpty()) {
+        return CompiledContextPolicyTuningSignalBuilder::buildFromState(persisted);
+    }
+    return {};
 }
 
 void MemoryPolicyHandler::captureExplicitMemoryFromInput(const QString &input) const

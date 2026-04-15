@@ -35,6 +35,11 @@ public:
     bool deleteCompiledContextPolicyState();
     QVariantMap compiledContextPolicyState() const;
     QVariantList compiledContextPolicyHistory() const;
+    bool promoteCompiledContextPolicyTuningState(const QVariantMap &state);
+    bool rollbackCompiledContextPolicyTuningState(const QVariantMap &metadata = {});
+    bool deleteCompiledContextPolicyTuningState();
+    QVariantMap compiledContextPolicyTuningState() const;
+    QVariantList compiledContextPolicyTuningHistory() const;
 
 private:
     QString transcriptPath() const;
@@ -43,5 +48,7 @@ private:
     QString connectorStateStorageKey(const QString &historyKey) const;
     QString compiledContextPolicyStorageKey() const;
     QString compiledContextPolicyHistoryStorageKey() const;
+    QString compiledContextPolicyTuningStorageKey() const;
+    QString compiledContextPolicyTuningHistoryStorageKey() const;
     std::unique_ptr<MemoryManager> m_memoryManager;
 };

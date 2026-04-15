@@ -38,6 +38,7 @@
 #include "core/MemoryPolicyHandler.h"
 #include "core/ResponseFinalizer.h"
 #include "core/ToolCoordinator.h"
+#include "behavior_tuning/CompiledContextPolicyTuningPromotionPolicy.h"
 #include "connectors/BrowserBookmarksMonitor.h"
 #include "connectors/CalendarIcsMonitor.h"
 #include "connectors/ConnectorSnapshotMonitor.h"
@@ -47,6 +48,7 @@
 #include "cognition/CompiledContextHistoryPolicy.h"
 #include "cognition/CompiledContextHistorySummaryBuilder.h"
 #include "cognition/CompiledContextLayeredSignalBuilder.h"
+#include "cognition/CompiledContextPolicyTuningSignalBuilder.h"
 #include "cognition/CompiledContextStabilityMemoryBuilder.h"
 #include "cognition/CompiledContextStabilityTracker.h"
 #include "cognition/PromptContextTemporalPolicy.h"
@@ -3606,8 +3608,55 @@ QList<MemoryRecord> AssistantController::buildCompiledContextHistoryMemory() con
         if (policyDecision.isValid()) {
             m_memoryStore->upsertCompiledContextPolicyState(
                 CompiledContextHistoryPolicy::buildState(policyDecision));
+            const QVariantList policyHistory = m_memoryStore->compiledContextPolicyHistory();
+            const QVariantMap candidateTuningState =
+                CompiledContextPolicyTuningSignalBuilder::buildState(policyHistory);
+            const CompiledContextPolicyTuningPromotionDecision tuningDecision =
+                CompiledContextPolicyTuningPromotionPolicy::evaluate(
+                    candidateTuningState,
+                    m_memoryStore->compiledContextPolicyTuningState(),
+                    m_memoryStore->compiledContextPolicyTuningHistory(),
+                    QDateTime::currentMSecsSinceEpoch());
+            if (tuningDecision.action
+                == CompiledContextPolicyTuningPromotionDecision::Action::Promote) {
+                m_memoryStore->promoteCompiledContextPolicyTuningState(tuningDecision.nextState);
+            } else if (tuningDecision.action
+                       == CompiledContextPolicyTuningPromotionDecision::Action::Rollback) {
+                m_memoryStore->rollbackCompiledContextPolicyTuningState({
+                    {QStringLiteral("tuningPromotionAction"), QStringLiteral("rollback")},
+                    {QStringLiteral("tuningPromotionReason"), tuningDecision.reasonCode},
+                    {QStringLiteral("tuningPolicySource"), QStringLiteral("bounded_promotion_policy")}
+                });
+            }
+
+            if (m_loggingService != nullptr) {
+                QVariantMap payload = {
+                    {QStringLiteral("decisionAction"),
+                     tuningDecision.action
+                         == CompiledContextPolicyTuningPromotionDecision::Action::Promote
+                         ? QStringLiteral("promote")
+                         : (tuningDecision.action
+                                == CompiledContextPolicyTuningPromotionDecision::Action::Rollback
+                                ? QStringLiteral("rollback")
+                                : QStringLiteral("hold"))},
+                    {QStringLiteral("reasonCode"), tuningDecision.reasonCode},
+                    {QStringLiteral("candidateState"), candidateTuningState}
+                };
+                if (!tuningDecision.nextState.isEmpty()) {
+                    payload.insert(QStringLiteral("nextState"), tuningDecision.nextState);
+                }
+                BehaviorTraceEvent event = BehaviorTraceEvent::create(
+                    QStringLiteral("policy_adaptation"),
+                    QStringLiteral("compiled_context_tuning"),
+                    tuningDecision.reasonCode,
+                    payload,
+                    QStringLiteral("system"));
+                event.capabilityId = QStringLiteral("compiled_context_policy_tuning");
+                m_loggingService->logBehaviorEvent(event);
+            }
         } else {
             m_memoryStore->deleteCompiledContextPolicyState();
+            m_memoryStore->deleteCompiledContextPolicyTuningState();
         }
     }
 
