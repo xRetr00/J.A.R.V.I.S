@@ -178,6 +178,7 @@ bool JarvisApplication::initialize()
     qRegisterMetaType<GestureObservation>("GestureObservation");
     qRegisterMetaType<QList<GestureObservation>>("QList<GestureObservation>");
     qRegisterMetaType<GestureEvent>("GestureEvent");
+    qRegisterMetaType<ConnectorEvent>("ConnectorEvent");
     qRegisterMetaType<ModelInfo>("ModelInfo");
     qRegisterMetaType<QList<ModelInfo>>("QList<ModelInfo>");
     qRegisterMetaType<AiAvailability>("AiAvailability");

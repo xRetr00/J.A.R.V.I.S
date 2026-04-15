@@ -1,4 +1,5 @@
 #include <QtTest>
+#include <QDateTime>
 
 #include "cognition/ConnectorContextCompiler.h"
 
@@ -106,7 +107,7 @@ void ConnectorContextCompilerTests::prefersHigherPriorityFresherConnectorSummary
              {QStringLiteral("lastPresentedAtMs"), nowMs - (15LL * 60LL * 1000LL)},
              {QStringLiteral("lastSeenAtMs"), nowMs - (5LL * 60LL * 1000LL)}
          }},
-        {QStringLiteral("connector:research:old")},
+        {QStringLiteral("connector:research:old"),
          {
              {QStringLiteral("historyKey"), QStringLiteral("connector:research:old")},
              {QStringLiteral("connectorKind"), QStringLiteral("research")},

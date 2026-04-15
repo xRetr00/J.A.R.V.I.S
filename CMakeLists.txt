@@ -263,7 +263,20 @@ set(JARVIS_SOURCES
     src/core/LocalResponseEngine.cpp
     src/core/ResponseFinalizer.cpp
     src/core/ToolCoordinator.cpp
+    src/connectors/BrowserBookmarksEventBuilder.cpp
+    src/connectors/BrowserBookmarksMonitor.cpp
+    src/connectors/CalendarIcsEventBuilder.cpp
+    src/connectors/CalendarIcsMonitor.cpp
+    src/connectors/ConnectorSourceSpec.cpp
+    src/connectors/ConnectorSnapshotEventBuilder.cpp
+    src/connectors/ConnectorSnapshotMonitor.cpp
+    src/connectors/InboxMaildropEventBuilder.cpp
+    src/connectors/InboxMaildropMonitor.cpp
+    src/connectors/NotesDirectoryEventBuilder.cpp
+    src/connectors/NotesDirectoryMonitor.cpp
     src/cognition/CooldownEngine.cpp
+    src/cognition/ConnectorContextCompiler.cpp
+    src/cognition/ConnectorHistoryTracker.cpp
     src/cognition/ConnectorEventBuilder.cpp
     src/cognition/ConnectorResultSignal.cpp
     src/cognition/ProactiveCooldownTracker.cpp
@@ -345,7 +358,20 @@ set(JARVIS_HEADERS
     src/core/MemoryPolicyHandler.h
     src/core/ResponseFinalizer.h
     src/core/ToolCoordinator.h
+    src/connectors/BrowserBookmarksEventBuilder.h
+    src/connectors/BrowserBookmarksMonitor.h
+    src/connectors/CalendarIcsEventBuilder.h
+    src/connectors/CalendarIcsMonitor.h
+    src/connectors/ConnectorSourceSpec.h
+    src/connectors/ConnectorSnapshotEventBuilder.h
+    src/connectors/ConnectorSnapshotMonitor.h
+    src/connectors/InboxMaildropEventBuilder.h
+    src/connectors/InboxMaildropMonitor.h
+    src/connectors/NotesDirectoryEventBuilder.h
+    src/connectors/NotesDirectoryMonitor.h
     src/cognition/CooldownEngine.h
+    src/cognition/ConnectorContextCompiler.h
+    src/cognition/ConnectorHistoryTracker.h
     src/cognition/ConnectorEventBuilder.h
     src/cognition/DesktopContextSelectionBuilder.h
     src/cognition/FocusModePolicy.h
@@ -908,6 +934,34 @@ if(JARVIS_BUILD_TESTS)
     set_tests_properties(jarvis_memory_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
     jarvis_copy_optional_runtime_libraries(jarvis_memory_tests)
 
+    qt_add_executable(jarvis_memory_store_tests
+        tests/MemoryStoreTests.cpp
+    )
+
+    target_link_libraries(jarvis_memory_store_tests
+        PRIVATE
+            jarvis_lib
+            Qt6::Test
+    )
+
+    add_test(NAME jarvis_memory_store_tests COMMAND jarvis_memory_store_tests)
+    set_tests_properties(jarvis_memory_store_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_memory_store_tests)
+
+    qt_add_executable(jarvis_memory_policy_tests
+        tests/MemoryPolicyHandlerTests.cpp
+    )
+
+    target_link_libraries(jarvis_memory_policy_tests
+        PRIVATE
+            jarvis_lib
+            Qt6::Test
+    )
+
+    add_test(NAME jarvis_memory_policy_tests COMMAND jarvis_memory_policy_tests)
+    set_tests_properties(jarvis_memory_policy_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_memory_policy_tests)
+
     qt_add_executable(jarvis_response_finalizer_tests
         tests/ResponseFinalizerTests.cpp
     )
@@ -1059,6 +1113,104 @@ if(JARVIS_BUILD_TESTS)
     add_test(NAME jarvis_connector_event_tests COMMAND jarvis_connector_event_tests)
     set_tests_properties(jarvis_connector_event_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
     jarvis_copy_optional_runtime_libraries(jarvis_connector_event_tests)
+
+    qt_add_executable(jarvis_connector_history_tests
+        tests/ConnectorHistoryTrackerTests.cpp
+        src/cognition/ConnectorHistoryTracker.cpp
+        src/memory/MemoryStore.cpp
+        src/memory/MemoryManager.cpp
+    )
+
+    target_include_directories(jarvis_connector_history_tests PRIVATE src)
+    target_link_libraries(jarvis_connector_history_tests PRIVATE Qt6::Core Qt6::Test nlohmann_json::nlohmann_json)
+
+    add_test(NAME jarvis_connector_history_tests COMMAND jarvis_connector_history_tests)
+    set_tests_properties(jarvis_connector_history_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_connector_history_tests)
+
+    qt_add_executable(jarvis_connector_context_tests
+        tests/ConnectorContextCompilerTests.cpp
+        src/cognition/ConnectorContextCompiler.cpp
+    )
+
+    target_include_directories(jarvis_connector_context_tests PRIVATE src)
+    target_link_libraries(jarvis_connector_context_tests PRIVATE Qt6::Core Qt6::Test nlohmann_json::nlohmann_json)
+
+    add_test(NAME jarvis_connector_context_tests COMMAND jarvis_connector_context_tests)
+    set_tests_properties(jarvis_connector_context_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_connector_context_tests)
+
+    qt_add_executable(jarvis_connector_snapshot_tests
+        tests/ConnectorSnapshotEventBuilderTests.cpp
+        src/connectors/ConnectorSnapshotEventBuilder.cpp
+    )
+
+    target_include_directories(jarvis_connector_snapshot_tests PRIVATE src)
+    target_link_libraries(jarvis_connector_snapshot_tests PRIVATE Qt6::Core Qt6::Test nlohmann_json::nlohmann_json)
+
+    add_test(NAME jarvis_connector_snapshot_tests COMMAND jarvis_connector_snapshot_tests)
+    set_tests_properties(jarvis_connector_snapshot_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_connector_snapshot_tests)
+
+    qt_add_executable(jarvis_connector_source_spec_tests
+        tests/ConnectorSourceSpecTests.cpp
+        src/connectors/ConnectorSourceSpec.cpp
+    )
+
+    target_include_directories(jarvis_connector_source_spec_tests PRIVATE src)
+    target_link_libraries(jarvis_connector_source_spec_tests PRIVATE Qt6::Core Qt6::Test nlohmann_json::nlohmann_json)
+
+    add_test(NAME jarvis_connector_source_spec_tests COMMAND jarvis_connector_source_spec_tests)
+    set_tests_properties(jarvis_connector_source_spec_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_connector_source_spec_tests)
+
+    qt_add_executable(jarvis_browser_bookmarks_tests
+        tests/BrowserBookmarksEventBuilderTests.cpp
+        src/connectors/BrowserBookmarksEventBuilder.cpp
+    )
+
+    target_include_directories(jarvis_browser_bookmarks_tests PRIVATE src)
+    target_link_libraries(jarvis_browser_bookmarks_tests PRIVATE Qt6::Core Qt6::Test nlohmann_json::nlohmann_json)
+
+    add_test(NAME jarvis_browser_bookmarks_tests COMMAND jarvis_browser_bookmarks_tests)
+    set_tests_properties(jarvis_browser_bookmarks_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_browser_bookmarks_tests)
+
+    qt_add_executable(jarvis_calendar_ics_tests
+        tests/CalendarIcsEventBuilderTests.cpp
+        src/connectors/CalendarIcsEventBuilder.cpp
+    )
+
+    target_include_directories(jarvis_calendar_ics_tests PRIVATE src)
+    target_link_libraries(jarvis_calendar_ics_tests PRIVATE Qt6::Core Qt6::Test nlohmann_json::nlohmann_json)
+
+    add_test(NAME jarvis_calendar_ics_tests COMMAND jarvis_calendar_ics_tests)
+    set_tests_properties(jarvis_calendar_ics_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_calendar_ics_tests)
+
+    qt_add_executable(jarvis_inbox_maildrop_tests
+        tests/InboxMaildropEventBuilderTests.cpp
+        src/connectors/InboxMaildropEventBuilder.cpp
+    )
+
+    target_include_directories(jarvis_inbox_maildrop_tests PRIVATE src)
+    target_link_libraries(jarvis_inbox_maildrop_tests PRIVATE Qt6::Core Qt6::Test nlohmann_json::nlohmann_json)
+
+    add_test(NAME jarvis_inbox_maildrop_tests COMMAND jarvis_inbox_maildrop_tests)
+    set_tests_properties(jarvis_inbox_maildrop_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_inbox_maildrop_tests)
+
+    qt_add_executable(jarvis_notes_directory_tests
+        tests/NotesDirectoryEventBuilderTests.cpp
+        src/connectors/NotesDirectoryEventBuilder.cpp
+    )
+
+    target_include_directories(jarvis_notes_directory_tests PRIVATE src)
+    target_link_libraries(jarvis_notes_directory_tests PRIVATE Qt6::Core Qt6::Test nlohmann_json::nlohmann_json)
+
+    add_test(NAME jarvis_notes_directory_tests COMMAND jarvis_notes_directory_tests)
+    set_tests_properties(jarvis_notes_directory_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_notes_directory_tests)
 
     qt_add_executable(jarvis_proactive_surface_tests
         tests/ProactiveSurfaceGateTests.cpp
