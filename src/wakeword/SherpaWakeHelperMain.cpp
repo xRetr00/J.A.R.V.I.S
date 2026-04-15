@@ -12,7 +12,7 @@
 #include <QTextStream>
 
 #if JARVIS_HAS_SHERPA_ONNX
-#include <sherpa-onnx/c-api/cxx-api.h>
+#include <sherpa-onnx/c-api/c-api.h>
 #endif
 
 namespace {
@@ -51,14 +51,22 @@ public:
         QTextStream(stderr) << "ERROR: sherpa-onnx support is not compiled into this build" << Qt::endl;
         return 1;
 #else
-        sherpa_onnx::cxx::KeywordSpotterConfig config;
+        const QByteArray encoderPathUtf8 = m_config.encoderPath.toUtf8();
+        const QByteArray decoderPathUtf8 = m_config.decoderPath.toUtf8();
+        const QByteArray joinerPathUtf8 = m_config.joinerPath.toUtf8();
+        const QByteArray tokensPathUtf8 = m_config.tokensPath.toUtf8();
+        const QByteArray keywordsPathUtf8 = m_config.keywordsFilePath.toUtf8();
+
+        SherpaOnnxKeywordSpotterConfig config{};
         config.feat_config.sample_rate = kSampleRate;
         config.feat_config.feature_dim = 80;
-        config.model_config.transducer.encoder = m_config.encoderPath.toStdString();
-        config.model_config.transducer.decoder = m_config.decoderPath.toStdString();
-        config.model_config.transducer.joiner = m_config.joinerPath.toStdString();
-        config.model_config.tokens = m_config.tokensPath.toStdString();
+        config.model_config.transducer.encoder = encoderPathUtf8.constData();
+        config.model_config.transducer.decoder = decoderPathUtf8.constData();
+        config.model_config.transducer.joiner = joinerPathUtf8.constData();
+        config.model_config.tokens = tokensPathUtf8.constData();
         config.model_config.provider = "cpu";
+        config.model_config.model_type = "zipformer2";
+        config.model_config.debug = 0;
         int numThreads = QThread::idealThreadCount();
         if (numThreads < 1) {
             numThreads = 1;
@@ -66,27 +74,35 @@ public:
             numThreads = 4;
         }
         config.model_config.num_threads = numThreads;
-        config.model_config.model_type = "";
-        config.keywords_file = m_config.keywordsFilePath.toStdString();
+        config.keywords_file = keywordsPathUtf8.constData();
         config.keywords_threshold = m_config.threshold;
         config.keywords_score = 1.0f;
         config.max_active_paths = 8;
         config.num_trailing_blanks = 1;
 
         try {
-            m_keywordSpotter.reset(new sherpa_onnx::cxx::KeywordSpotter(
-                sherpa_onnx::cxx::KeywordSpotter::Create(config)));
-            if (!m_keywordSpotter || m_keywordSpotter->Get() == nullptr) {
+            m_keywordSpotter = SherpaOnnxCreateKeywordSpotter(&config);
+            if (!m_keywordSpotter) {
                 QTextStream(stderr) << "ERROR: Failed to initialize sherpa keyword spotter" << Qt::endl;
                 return 1;
             }
 
-            m_stream.reset(new sherpa_onnx::cxx::OnlineStream(m_keywordSpotter->CreateStream()));
-            if (!m_stream || m_stream->Get() == nullptr) {
+            m_stream = SherpaOnnxCreateKeywordStream(m_keywordSpotter);
+            if (!m_stream) {
                 QTextStream(stderr) << "ERROR: Failed to create sherpa keyword stream" << Qt::endl;
+                SherpaOnnxDestroyKeywordSpotter(m_keywordSpotter);
+                m_keywordSpotter = nullptr;
                 return 1;
             }
         } catch (...) {
+            if (m_stream) {
+                SherpaOnnxDestroyOnlineStream(m_stream);
+                m_stream = nullptr;
+            }
+            if (m_keywordSpotter) {
+                SherpaOnnxDestroyKeywordSpotter(m_keywordSpotter);
+                m_keywordSpotter = nullptr;
+            }
             QTextStream(stderr) << "ERROR: Failed to initialize sherpa keyword spotter" << Qt::endl;
             return 1;
         }
@@ -143,32 +159,39 @@ private:
             }
             m_pendingPcm.remove(0, kFrameBytes);
 
-            sherpa_onnx::cxx::KeywordResult result;
             try {
-                m_stream->AcceptWaveform(kSampleRate, floatSamples, kFrameSamples);
-                while (m_keywordSpotter->IsReady(m_stream.get())) {
-                    m_keywordSpotter->Decode(m_stream.get());
+                SherpaOnnxOnlineStreamAcceptWaveform(m_stream, kSampleRate, floatSamples, kFrameSamples);
+                while (SherpaOnnxIsKeywordStreamReady(m_keywordSpotter, m_stream) != 0) {
+                    SherpaOnnxDecodeKeywordStream(m_keywordSpotter, m_stream);
                 }
-                result = m_keywordSpotter->GetResult(m_stream.get());
             } catch (...) {
                 QTextStream(stderr) << "ERROR: sherpa wake processing failed" << Qt::endl;
                 QCoreApplication::exit(1);
                 return;
             }
 
-            if (result.keyword.empty()) {
+            const SherpaOnnxKeywordResult *result = SherpaOnnxGetKeywordResult(m_keywordSpotter, m_stream);
+            if (!result) {
+                QTextStream(stderr) << "ERROR: Failed to read sherpa wake result" << Qt::endl;
+                QCoreApplication::exit(1);
+                return;
+            }
+            const QString detectedKeyword = QString::fromUtf8(result->keyword ? result->keyword : "").trimmed();
+            SherpaOnnxDestroyKeywordResult(result);
+
+            if (detectedKeyword.isEmpty()) {
                 continue;
             }
 
             const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
             if (nowMs < m_ignoreDetectionsUntilMs || (nowMs - m_lastActivationMs) < m_config.cooldownMs) {
-                m_keywordSpotter->Reset(m_stream.get());
+                SherpaOnnxResetKeywordStream(m_keywordSpotter, m_stream);
                 continue;
             }
 
             m_lastActivationMs = nowMs;
-            QTextStream(stdout) << "DETECTED:" << QString::fromStdString(result.keyword) << Qt::endl;
-            m_keywordSpotter->Reset(m_stream.get());
+            QTextStream(stdout) << "DETECTED:" << detectedKeyword << Qt::endl;
+            SherpaOnnxResetKeywordStream(m_keywordSpotter, m_stream);
         }
 #endif
     }
@@ -182,8 +205,8 @@ private:
     qint64 m_ignoreDetectionsUntilMs = 0;
 
 #if JARVIS_HAS_SHERPA_ONNX
-    QScopedPointer<sherpa_onnx::cxx::KeywordSpotter> m_keywordSpotter;
-    QScopedPointer<sherpa_onnx::cxx::OnlineStream> m_stream;
+    const SherpaOnnxKeywordSpotter *m_keywordSpotter = nullptr;
+    const SherpaOnnxOnlineStream *m_stream = nullptr;
 #endif
 };
 }
