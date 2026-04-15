@@ -53,6 +53,7 @@ class MemoryPolicyHandler;
 class ResponseFinalizer;
 class ToolCoordinator;
 struct ProactiveSuggestionPlan;
+struct SelectionContextCompilation;
 struct InputRouterContext;
 struct IntentResult;
 struct SpokenReply;
@@ -349,6 +350,16 @@ private:
                                      const QString &taskType,
                                      const QString &priority,
                                      const QString &reasonCode);
+    void logCompiledContextDelta(const QString &purpose,
+                                 const QString &input,
+                                 const SelectionContextCompilation &selectionContext);
+    QString selectTemporalPromptContext(const QString &purpose,
+                                        const SelectionContextCompilation &selectionContext,
+                                        QList<MemoryRecord> *selectedPromptRecords,
+                                        QStringList *suppressedPromptKeys,
+                                        int *stablePromptCycles,
+                                        qint64 *stablePromptDurationMs,
+                                        QString *reasonCode);
     void considerConnectorEvent(const ConnectorEvent &event);
     void considerDesktopContextSuggestion(const QString &summary, const QVariantMap &context);
     void considerTaskResultSuggestion(const BackgroundTaskResult &result);
@@ -455,6 +466,14 @@ private:
     QString m_latestDesktopContextSummary;
     QVariantMap m_latestDesktopContext;
     qint64 m_latestDesktopContextAtMs = 0;
+    QHash<QString, QString> m_lastCompiledContextSummaryByPurpose;
+    QHash<QString, QStringList> m_lastCompiledContextKeysByPurpose;
+    QHash<QString, qint64> m_lastCompiledContextChangedAtMsByPurpose;
+    QHash<QString, int> m_compiledContextStableCyclesByPurpose;
+    QHash<QString, QString> m_lastPromptContextByPurpose;
+    QHash<QString, QStringList> m_lastPromptContextKeysByPurpose;
+    QHash<QString, qint64> m_lastPromptContextChangedAtMsByPurpose;
+    QHash<QString, int> m_promptContextStableCyclesByPurpose;
     std::unique_ptr<ResponseFinalizer> m_responseFinalizer;
     QThread m_toolWorkerThread;
     QThread m_gestureActionRouterThread;

@@ -128,6 +128,50 @@ BehaviorTraceEvent SelectionTelemetryBuilder::memoryContextEvent(const QString &
     return event;
 }
 
+BehaviorTraceEvent SelectionTelemetryBuilder::promptContextEvent(const QString &purpose,
+                                                                 const QString &inputPreview,
+                                                                 const QVariantMap &desktopContext,
+                                                                 const QString &desktopSummary,
+                                                                 const QString &promptContext,
+                                                                 const QList<MemoryRecord> &promptContextRecords,
+                                                                 const QStringList &suppressedPromptContextKeys,
+                                                                 int stablePromptCycles,
+                                                                 qint64 stablePromptDurationMs,
+                                                                 const QString &reasonCode)
+{
+    QVariantMap payload = basePayload(purpose, inputPreview, desktopContext, desktopSummary);
+    payload.insert(QStringLiteral("promptContext"), promptContext.left(240));
+    payload.insert(QStringLiteral("promptContextCount"), promptContextRecords.size());
+    payload.insert(QStringLiteral("promptContextKeys"), recordKeys(promptContextRecords));
+    payload.insert(QStringLiteral("suppressedPromptContextKeys"), suppressedPromptContextKeys);
+    payload.insert(QStringLiteral("stablePromptCycles"), stablePromptCycles);
+    payload.insert(QStringLiteral("stablePromptDurationMs"), stablePromptDurationMs);
+
+    QStringList promptReasons;
+    for (const MemoryRecord &record : promptContextRecords) {
+        const QString reason = record.source.trimmed();
+        if (!reason.isEmpty() && !promptReasons.contains(reason)) {
+            promptReasons.push_back(reason);
+        }
+        if (promptReasons.size() >= 5) {
+            break;
+        }
+    }
+    payload.insert(QStringLiteral("promptContextReasons"), promptReasons);
+
+    BehaviorTraceEvent event = BehaviorTraceEvent::create(
+        QStringLiteral("selection_context"),
+        QStringLiteral("prompt_context"),
+        reasonCode.trimmed().isEmpty()
+            ? QStringLiteral("selection.prompt_context_compiled")
+            : reasonCode.trimmed(),
+        payload,
+        QStringLiteral("system"));
+    event.capabilityId = QStringLiteral("selection_context_compiler");
+    event.threadId = desktopContext.value(QStringLiteral("threadId")).toString();
+    return event;
+}
+
 BehaviorTraceEvent SelectionTelemetryBuilder::toolExposureEvent(const QString &purpose,
                                                                 const QString &inputPreview,
                                                                 const QVariantMap &desktopContext,
@@ -145,6 +189,70 @@ BehaviorTraceEvent SelectionTelemetryBuilder::toolExposureEvent(const QString &p
         payload,
         QStringLiteral("system"));
     event.capabilityId = QStringLiteral("tool_selector");
+    event.threadId = desktopContext.value(QStringLiteral("threadId")).toString();
+    return event;
+}
+
+BehaviorTraceEvent SelectionTelemetryBuilder::compiledContextDeltaEvent(const QString &purpose,
+                                                                        const QString &inputPreview,
+                                                                        const QVariantMap &desktopContext,
+                                                                        const QString &desktopSummary,
+                                                                        const QString &previousSummary,
+                                                                        const QStringList &previousKeys,
+                                                                        const QString &currentSummary,
+                                                                        const QStringList &currentKeys,
+                                                                        const QStringList &addedKeys,
+                                                                        const QStringList &removedKeys,
+                                                                        bool summaryChanged)
+{
+    QVariantMap payload = basePayload(purpose, inputPreview, desktopContext, desktopSummary);
+    payload.insert(QStringLiteral("previousSummary"), previousSummary);
+    payload.insert(QStringLiteral("currentSummary"), currentSummary);
+    payload.insert(QStringLiteral("previousKeys"), previousKeys);
+    payload.insert(QStringLiteral("currentKeys"), currentKeys);
+    payload.insert(QStringLiteral("addedKeys"), addedKeys);
+    payload.insert(QStringLiteral("removedKeys"), removedKeys);
+    payload.insert(QStringLiteral("summaryChanged"), summaryChanged);
+
+    BehaviorTraceEvent event = BehaviorTraceEvent::create(
+        QStringLiteral("selection_context"),
+        QStringLiteral("compiled_context_delta"),
+        addedKeys.isEmpty() && removedKeys.isEmpty() && !summaryChanged
+            ? QStringLiteral("selection.compiled_context_unchanged")
+            : QStringLiteral("selection.compiled_context_changed"),
+        payload,
+        QStringLiteral("system"));
+    event.capabilityId = QStringLiteral("selection_context_compiler");
+    event.threadId = desktopContext.value(QStringLiteral("threadId")).toString();
+    return event;
+}
+
+BehaviorTraceEvent SelectionTelemetryBuilder::compiledContextStabilityEvent(const QString &purpose,
+                                                                            const QString &inputPreview,
+                                                                            const QVariantMap &desktopContext,
+                                                                            const QString &desktopSummary,
+                                                                            const QString &stabilitySummary,
+                                                                            const QStringList &stableKeys,
+                                                                            int stableCycles,
+                                                                            qint64 stableDurationMs,
+                                                                            bool stableContext)
+{
+    QVariantMap payload = basePayload(purpose, inputPreview, desktopContext, desktopSummary);
+    payload.insert(QStringLiteral("stabilitySummary"), stabilitySummary.left(240));
+    payload.insert(QStringLiteral("stableKeys"), stableKeys);
+    payload.insert(QStringLiteral("stableCycles"), stableCycles);
+    payload.insert(QStringLiteral("stableDurationMs"), stableDurationMs);
+    payload.insert(QStringLiteral("stableContext"), stableContext);
+
+    BehaviorTraceEvent event = BehaviorTraceEvent::create(
+        QStringLiteral("selection_context"),
+        QStringLiteral("compiled_context_stability"),
+        stableContext
+            ? QStringLiteral("selection.compiled_context_stable")
+            : QStringLiteral("selection.compiled_context_fresh"),
+        payload,
+        QStringLiteral("system"));
+    event.capabilityId = QStringLiteral("selection_context_compiler");
     event.threadId = desktopContext.value(QStringLiteral("threadId")).toString();
     return event;
 }

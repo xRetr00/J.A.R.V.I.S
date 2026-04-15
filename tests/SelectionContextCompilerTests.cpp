@@ -13,6 +13,7 @@ class SelectionContextCompilerTests : public QObject
 
 private slots:
     void compilesDesktopAndConnectorContextTogether();
+    void selectsPromptContextBlocksByIntent();
 };
 
 void SelectionContextCompilerTests::compilesDesktopAndConnectorContextTogether()
@@ -77,6 +78,55 @@ void SelectionContextCompilerTests::compilesDesktopAndConnectorContextTogether()
         }
     }
     QVERIFY(foundConnectorSummary);
+}
+
+void SelectionContextCompilerTests::selectsPromptContextBlocksByIntent()
+{
+    const QVariantMap desktopContext = {
+        {QStringLiteral("taskId"), QStringLiteral("editor_document")},
+        {QStringLiteral("topic"), QStringLiteral("cooldown_engine")},
+        {QStringLiteral("appId"), QStringLiteral("cursor")},
+        {QStringLiteral("documentContext"), QStringLiteral("CooldownEngine.cpp")},
+        {QStringLiteral("workspaceContext"), QStringLiteral("D:/Vaxil/src/cognition")},
+        {QStringLiteral("siteContext"), QStringLiteral("github.com")},
+        {QStringLiteral("threadId"), QStringLiteral("editor_document:cooldown_engine")}
+    };
+
+    const QString promptContext = SelectionContextCompiler::buildPromptContext(
+        IntentType::WRITE_FILE,
+        QStringLiteral("Desktop context: editing CooldownEngine.cpp in cursor."),
+        desktopContext);
+
+    QVERIFY(promptContext.contains(QStringLiteral("Task type: editor_document.")));
+    QVERIFY(promptContext.contains(QStringLiteral("Document: CooldownEngine.cpp.")));
+    QVERIFY(promptContext.contains(QStringLiteral("Workspace: D:/Vaxil/src/cognition.")));
+    QVERIFY(promptContext.contains(QStringLiteral("App: cursor.")));
+    QVERIFY(!promptContext.contains(QStringLiteral("Site: github.com.")));
+
+    const SelectionContextCompilation compilation = SelectionContextCompiler::compile(
+        QStringLiteral("tighten cooldown gating"),
+        IntentType::WRITE_FILE,
+        desktopContext,
+        QStringLiteral("Desktop context: editing CooldownEngine.cpp in cursor."),
+        QDateTime::currentMSecsSinceEpoch(),
+        false,
+        {},
+        nullptr,
+        nullptr);
+
+    QStringList promptKeys;
+    QStringList promptReasons;
+    for (const MemoryRecord &record : compilation.promptContextRecords) {
+        promptKeys.push_back(record.key);
+        promptReasons.push_back(record.source);
+    }
+
+    QVERIFY(promptKeys.contains(QStringLiteral("desktop_prompt_document")));
+    QVERIFY(promptKeys.contains(QStringLiteral("desktop_prompt_workspace")));
+    QVERIFY(promptKeys.contains(QStringLiteral("desktop_prompt_app")));
+    QVERIFY(!promptKeys.contains(QStringLiteral("desktop_prompt_site")));
+    QVERIFY(promptReasons.contains(QStringLiteral("prompt.document_relevance")));
+    QVERIFY(promptReasons.contains(QStringLiteral("prompt.workspace_relevance")));
 }
 
 QTEST_APPLESS_MAIN(SelectionContextCompilerTests)

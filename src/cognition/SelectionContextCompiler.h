@@ -14,6 +14,7 @@ struct SelectionContextCompilation {
     QString promptContext;
     QList<MemoryRecord> selectedMemoryRecords;
     QList<MemoryRecord> compiledContextRecords;
+    QList<MemoryRecord> promptContextRecords;
     MemoryContext memoryContext;
 };
 
@@ -28,7 +29,8 @@ public:
                                                      const QString &desktopSummary,
                                                      qint64 desktopContextAtMs,
                                                      bool privateModeEnabled);
-    [[nodiscard]] static QString buildPromptContext(const QString &desktopSummary,
+    [[nodiscard]] static QString buildPromptContext(IntentType intent,
+                                                    const QString &desktopSummary,
                                                     const QVariantMap &desktopContext);
     [[nodiscard]] static SelectionContextCompilation compile(const QString &query,
                                                              IntentType intent,

@@ -275,6 +275,9 @@ set(JARVIS_SOURCES
     src/connectors/NotesDirectoryEventBuilder.cpp
     src/connectors/NotesDirectoryMonitor.cpp
     src/cognition/CooldownEngine.cpp
+    src/cognition/CompiledContextDeltaTracker.cpp
+    src/cognition/CompiledContextStabilityTracker.cpp
+    src/cognition/PromptContextTemporalPolicy.cpp
     src/cognition/ConnectorContextCompiler.cpp
     src/cognition/ConnectorHistoryTracker.cpp
     src/cognition/ConnectorEventBuilder.cpp
@@ -371,6 +374,9 @@ set(JARVIS_HEADERS
     src/connectors/NotesDirectoryEventBuilder.h
     src/connectors/NotesDirectoryMonitor.h
     src/cognition/CooldownEngine.h
+    src/cognition/CompiledContextDeltaTracker.h
+    src/cognition/CompiledContextStabilityTracker.h
+    src/cognition/PromptContextTemporalPolicy.h
     src/cognition/ConnectorContextCompiler.h
     src/cognition/ConnectorHistoryTracker.h
     src/cognition/ConnectorEventBuilder.h
@@ -1155,6 +1161,42 @@ if(JARVIS_BUILD_TESTS)
     add_test(NAME jarvis_connector_context_tests COMMAND jarvis_connector_context_tests)
     set_tests_properties(jarvis_connector_context_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
     jarvis_copy_optional_runtime_libraries(jarvis_connector_context_tests)
+
+    qt_add_executable(jarvis_compiled_context_delta_tests
+        tests/CompiledContextDeltaTrackerTests.cpp
+        src/cognition/CompiledContextDeltaTracker.cpp
+    )
+
+    target_include_directories(jarvis_compiled_context_delta_tests PRIVATE src)
+    target_link_libraries(jarvis_compiled_context_delta_tests PRIVATE Qt6::Core Qt6::Test)
+
+    add_test(NAME jarvis_compiled_context_delta_tests COMMAND jarvis_compiled_context_delta_tests)
+    set_tests_properties(jarvis_compiled_context_delta_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_compiled_context_delta_tests)
+
+    qt_add_executable(jarvis_prompt_context_policy_tests
+        tests/PromptContextTemporalPolicyTests.cpp
+        src/cognition/PromptContextTemporalPolicy.cpp
+    )
+
+    target_include_directories(jarvis_prompt_context_policy_tests PRIVATE src)
+    target_link_libraries(jarvis_prompt_context_policy_tests PRIVATE Qt6::Core Qt6::Test nlohmann_json::nlohmann_json)
+
+    add_test(NAME jarvis_prompt_context_policy_tests COMMAND jarvis_prompt_context_policy_tests)
+    set_tests_properties(jarvis_prompt_context_policy_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_prompt_context_policy_tests)
+
+    qt_add_executable(jarvis_compiled_context_stability_tests
+        tests/CompiledContextStabilityTrackerTests.cpp
+        src/cognition/CompiledContextStabilityTracker.cpp
+    )
+
+    target_include_directories(jarvis_compiled_context_stability_tests PRIVATE src)
+    target_link_libraries(jarvis_compiled_context_stability_tests PRIVATE Qt6::Core Qt6::Test)
+
+    add_test(NAME jarvis_compiled_context_stability_tests COMMAND jarvis_compiled_context_stability_tests)
+    set_tests_properties(jarvis_compiled_context_stability_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_compiled_context_stability_tests)
 
     qt_add_executable(jarvis_connector_snapshot_tests
         tests/ConnectorSnapshotEventBuilderTests.cpp

@@ -43,6 +43,9 @@
 #include "connectors/ConnectorSnapshotMonitor.h"
 #include "connectors/InboxMaildropMonitor.h"
 #include "connectors/NotesDirectoryMonitor.h"
+#include "cognition/CompiledContextDeltaTracker.h"
+#include "cognition/CompiledContextStabilityTracker.h"
+#include "cognition/PromptContextTemporalPolicy.h"
 #include "cognition/ProactiveCooldownTracker.h"
 #include "cognition/SelectionContextCompiler.h"
 #include "cognition/ConnectorHistoryTracker.h"
@@ -3447,6 +3450,138 @@ void AssistantController::commitProactivePresentation(const QString &surfaceKind
     m_loggingService->logBehaviorEvent(event);
 }
 
+void AssistantController::logCompiledContextDelta(const QString &purpose,
+                                                  const QString &input,
+                                                  const SelectionContextCompilation &selectionContext)
+{
+    if (m_loggingService == nullptr) {
+        return;
+    }
+
+    const QString previousSummary = m_lastCompiledContextSummaryByPurpose.value(purpose);
+    const QStringList previousKeys = m_lastCompiledContextKeysByPurpose.value(purpose);
+    QStringList currentKeys;
+    for (const MemoryRecord &record : selectionContext.compiledContextRecords) {
+        const QString key = record.key.trimmed();
+        if (!key.isEmpty() && !currentKeys.contains(key)) {
+            currentKeys.push_back(key);
+        }
+    }
+
+    const CompiledContextDelta delta = CompiledContextDeltaTracker::evaluate(
+        previousSummary,
+        previousKeys,
+        selectionContext.compiledDesktopSummary,
+        currentKeys);
+    const bool unchanged = !delta.hasChanges();
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    int stableCycles = unchanged ? (m_compiledContextStableCyclesByPurpose.value(purpose) + 1) : 0;
+    qint64 changedAtMs = unchanged
+        ? m_lastCompiledContextChangedAtMsByPurpose.value(purpose, nowMs)
+        : nowMs;
+    if (changedAtMs <= 0) {
+        changedAtMs = nowMs;
+    }
+    const qint64 stableDurationMs = unchanged ? qMax<qint64>(0, nowMs - changedAtMs) : 0;
+
+    if (delta.hasChanges()) {
+        m_loggingService->logBehaviorEvent(SelectionTelemetryBuilder::compiledContextDeltaEvent(
+            purpose,
+            input,
+            m_latestDesktopContext,
+            selectionContext.compiledDesktopSummary,
+            delta.previousSummary,
+            delta.previousKeys,
+            delta.currentSummary,
+            delta.currentKeys,
+            delta.addedKeys,
+            delta.removedKeys,
+            delta.summaryChanged));
+    }
+
+    const CompiledContextStabilitySummary stability = CompiledContextStabilityTracker::evaluate(
+        selectionContext.compiledDesktopSummary,
+        currentKeys,
+        stableCycles,
+        stableDurationMs);
+    m_loggingService->logBehaviorEvent(SelectionTelemetryBuilder::compiledContextStabilityEvent(
+        purpose,
+        input,
+        m_latestDesktopContext,
+        selectionContext.compiledDesktopSummary,
+        stability.summaryText,
+        stability.stableKeys,
+        stability.stableCycles,
+        stability.stableDurationMs,
+        stability.stableContext));
+
+    m_lastCompiledContextSummaryByPurpose.insert(purpose, selectionContext.compiledDesktopSummary);
+    m_lastCompiledContextKeysByPurpose.insert(purpose, currentKeys);
+    m_lastCompiledContextChangedAtMsByPurpose.insert(purpose, changedAtMs);
+    m_compiledContextStableCyclesByPurpose.insert(purpose, stableCycles);
+}
+
+QString AssistantController::selectTemporalPromptContext(const QString &purpose,
+                                                         const SelectionContextCompilation &selectionContext,
+                                                         QList<MemoryRecord> *selectedPromptRecords,
+                                                         QStringList *suppressedPromptKeys,
+                                                         int *stablePromptCycles,
+                                                         qint64 *stablePromptDurationMs,
+                                                         QString *reasonCode)
+{
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    const QString currentPromptContext = selectionContext.promptContext.simplified();
+
+    QStringList currentKeys;
+    currentKeys.reserve(selectionContext.promptContextRecords.size());
+    for (const MemoryRecord &record : selectionContext.promptContextRecords) {
+        const QString key = record.key.trimmed();
+        if (!key.isEmpty() && !currentKeys.contains(key)) {
+            currentKeys.push_back(key);
+        }
+    }
+
+    const QString previousPromptContext = m_lastPromptContextByPurpose.value(purpose);
+    const QStringList previousKeys = m_lastPromptContextKeysByPurpose.value(purpose);
+    const bool unchanged = previousPromptContext == currentPromptContext && previousKeys == currentKeys;
+
+    int stableCycles = unchanged ? (m_promptContextStableCyclesByPurpose.value(purpose) + 1) : 0;
+    qint64 changedAtMs = unchanged
+        ? m_lastPromptContextChangedAtMsByPurpose.value(purpose, nowMs)
+        : nowMs;
+    if (changedAtMs <= 0) {
+        changedAtMs = nowMs;
+    }
+    const qint64 stableDurationMs = unchanged ? qMax<qint64>(0, nowMs - changedAtMs) : 0;
+
+    const PromptContextTemporalDecision decision = PromptContextTemporalPolicy::apply(
+        selectionContext.promptContextRecords,
+        stableCycles,
+        stableDurationMs);
+
+    m_lastPromptContextByPurpose.insert(purpose, currentPromptContext);
+    m_lastPromptContextKeysByPurpose.insert(purpose, currentKeys);
+    m_lastPromptContextChangedAtMsByPurpose.insert(purpose, changedAtMs);
+    m_promptContextStableCyclesByPurpose.insert(purpose, stableCycles);
+
+    if (selectedPromptRecords != nullptr) {
+        *selectedPromptRecords = decision.selectedRecords;
+    }
+    if (suppressedPromptKeys != nullptr) {
+        *suppressedPromptKeys = decision.suppressedKeys;
+    }
+    if (stablePromptCycles != nullptr) {
+        *stablePromptCycles = decision.stableCycles;
+    }
+    if (stablePromptDurationMs != nullptr) {
+        *stablePromptDurationMs = decision.stableDurationMs;
+    }
+    if (reasonCode != nullptr) {
+        *reasonCode = decision.reasonCode;
+    }
+    return decision.promptContext;
+}
+
 ActionProposal AssistantController::buildNextStepProposal(const QString &hint,
                                                           const QString &sourceKind,
                                                           const QString &taskType,
@@ -3933,7 +4068,38 @@ void AssistantController::startConversationRequest(const QString &input)
 
     const QList<MemoryRecord> &memoryRecords = selectionContext.selectedMemoryRecords;
     const MemoryContext &memoryContext = selectionContext.memoryContext;
+    logCompiledContextDelta(QStringLiteral("conversation"), input, selectionContext);
+    QList<MemoryRecord> promptContextRecords = selectionContext.promptContextRecords;
+    QStringList suppressedPromptContextKeys;
+    int stablePromptCycles = 0;
+    qint64 stablePromptDurationMs = 0;
+    QString promptContextReasonCode;
+    const QString desktopPromptContext = selectTemporalPromptContext(
+        QStringLiteral("conversation"),
+        selectionContext,
+        &promptContextRecords,
+        &suppressedPromptContextKeys,
+        &stablePromptCycles,
+        &stablePromptDurationMs,
+        &promptContextReasonCode);
+    const QString visionContext = buildVisionPromptContext(input, IntentType::GENERAL_CHAT);
+    const QString assistantPromptContext = desktopPromptContext.isEmpty()
+        ? visionContext
+        : (visionContext.isEmpty()
+               ? desktopPromptContext
+               : desktopPromptContext + QStringLiteral(" Visual context: ") + visionContext);
     if (m_loggingService) {
+        m_loggingService->logBehaviorEvent(SelectionTelemetryBuilder::promptContextEvent(
+            QStringLiteral("conversation"),
+            input,
+            m_latestDesktopContext,
+            selectionContext.compiledDesktopSummary,
+            desktopPromptContext,
+            promptContextRecords,
+            suppressedPromptContextKeys,
+            stablePromptCycles,
+            stablePromptDurationMs,
+            promptContextReasonCode));
         m_loggingService->logBehaviorEvent(SelectionTelemetryBuilder::memoryContextEvent(
             QStringLiteral("conversation"),
             input,
@@ -3950,7 +4116,7 @@ void AssistantController::startConversationRequest(const QString &input)
         .memory = memoryContext,
         .identity = m_identityProfileService->identity(),
         .userProfile = m_identityProfileService->userProfile(),
-        .visionContext = buildAssistantPromptContext(input, IntentType::GENERAL_CHAT),
+        .visionContext = assistantPromptContext,
         .responseMode = m_activeActionSession.responseMode,
         .sessionGoal = m_activeActionSession.goal,
         .nextStepHint = m_activeActionSession.nextStepHint,
@@ -4054,7 +4220,38 @@ void AssistantController::startAgentConversationRequest(const QString &input, In
 
     const QList<MemoryRecord> &memoryRecords = selectionContext.selectedMemoryRecords;
     const MemoryContext &memoryContext = selectionContext.memoryContext;
+    logCompiledContextDelta(QStringLiteral("agent"), input, selectionContext);
+    QList<MemoryRecord> promptContextRecords = selectionContext.promptContextRecords;
+    QStringList suppressedPromptContextKeys;
+    int stablePromptCycles = 0;
+    qint64 stablePromptDurationMs = 0;
+    QString promptContextReasonCode;
+    const QString desktopPromptContext = selectTemporalPromptContext(
+        QStringLiteral("agent"),
+        selectionContext,
+        &promptContextRecords,
+        &suppressedPromptContextKeys,
+        &stablePromptCycles,
+        &stablePromptDurationMs,
+        &promptContextReasonCode);
+    const QString visionContext = buildVisionPromptContext(input, expectedIntent);
+    const QString assistantPromptContext = desktopPromptContext.isEmpty()
+        ? visionContext
+        : (visionContext.isEmpty()
+               ? desktopPromptContext
+               : desktopPromptContext + QStringLiteral(" Visual context: ") + visionContext);
     if (m_loggingService) {
+        m_loggingService->logBehaviorEvent(SelectionTelemetryBuilder::promptContextEvent(
+            QStringLiteral("agent"),
+            input,
+            m_latestDesktopContext,
+            selectionContext.compiledDesktopSummary,
+            desktopPromptContext,
+            promptContextRecords,
+            suppressedPromptContextKeys,
+            stablePromptCycles,
+            stablePromptDurationMs,
+            promptContextReasonCode));
         m_loggingService->logBehaviorEvent(SelectionTelemetryBuilder::memoryContextEvent(
             QStringLiteral("agent"),
             input,
@@ -4074,7 +4271,7 @@ void AssistantController::startAgentConversationRequest(const QString &input, In
         .identity = m_identityProfileService->identity(),
         .userProfile = m_identityProfileService->userProfile(),
         .workspaceRoot = QDir::currentPath(),
-        .visionContext = buildAssistantPromptContext(input, expectedIntent),
+        .visionContext = assistantPromptContext,
         .responseMode = m_activeActionSession.responseMode,
         .sessionGoal = m_activeActionSession.goal,
         .nextStepHint = m_activeActionSession.nextStepHint,
@@ -4127,7 +4324,6 @@ void AssistantController::continueAgentConversation(const QList<AgentToolResult>
         relevantTools = availableTools;
     }
 
-    const QString visionContext = buildAssistantPromptContext(m_lastAgentInput, m_lastAgentIntent);
     const QString modelId = m_aiRequestCoordinator->resolveModelId(availableModelIds());
     if (modelId.isEmpty()) {
         deliverLocalResponse(
@@ -4142,7 +4338,38 @@ void AssistantController::continueAgentConversation(const QList<AgentToolResult>
 
     const QList<MemoryRecord> &memoryRecords = selectionContext.selectedMemoryRecords;
     const MemoryContext &memoryContext = selectionContext.memoryContext;
+    logCompiledContextDelta(QStringLiteral("agent_continuation"), m_lastAgentInput, selectionContext);
+    QList<MemoryRecord> promptContextRecords = selectionContext.promptContextRecords;
+    QStringList suppressedPromptContextKeys;
+    int stablePromptCycles = 0;
+    qint64 stablePromptDurationMs = 0;
+    QString promptContextReasonCode;
+    const QString desktopPromptContext = selectTemporalPromptContext(
+        QStringLiteral("agent_continuation"),
+        selectionContext,
+        &promptContextRecords,
+        &suppressedPromptContextKeys,
+        &stablePromptCycles,
+        &stablePromptDurationMs,
+        &promptContextReasonCode);
+    const QString visionContext = buildVisionPromptContext(m_lastAgentInput, m_lastAgentIntent);
+    const QString assistantPromptContext = desktopPromptContext.isEmpty()
+        ? visionContext
+        : (visionContext.isEmpty()
+               ? desktopPromptContext
+               : desktopPromptContext + QStringLiteral(" Visual context: ") + visionContext);
     if (m_loggingService) {
+        m_loggingService->logBehaviorEvent(SelectionTelemetryBuilder::promptContextEvent(
+            QStringLiteral("agent_continuation"),
+            m_lastAgentInput,
+            m_latestDesktopContext,
+            selectionContext.compiledDesktopSummary,
+            desktopPromptContext,
+            promptContextRecords,
+            suppressedPromptContextKeys,
+            stablePromptCycles,
+            stablePromptDurationMs,
+            promptContextReasonCode));
         m_loggingService->logBehaviorEvent(SelectionTelemetryBuilder::memoryContextEvent(
             QStringLiteral("agent_continuation"),
             m_lastAgentInput,
@@ -4164,7 +4391,7 @@ void AssistantController::continueAgentConversation(const QList<AgentToolResult>
         .identity = m_identityProfileService->identity(),
         .userProfile = m_identityProfileService->userProfile(),
         .workspaceRoot = QDir::currentPath(),
-        .visionContext = visionContext,
+        .visionContext = assistantPromptContext,
         .responseMode = m_activeActionSession.responseMode,
         .sessionGoal = m_activeActionSession.goal,
         .nextStepHint = m_activeActionSession.nextStepHint,
@@ -4284,7 +4511,10 @@ QString AssistantController::buildDesktopPromptContext(const QString &input, Int
         return {};
     }
 
-    return SelectionContextCompiler::buildPromptContext(m_latestDesktopContextSummary, m_latestDesktopContext);
+    return SelectionContextCompiler::buildPromptContext(
+        intent,
+        m_latestDesktopContextSummary,
+        m_latestDesktopContext);
 }
 
 QString AssistantController::buildAssistantPromptContext(const QString &input, IntentType intent) const

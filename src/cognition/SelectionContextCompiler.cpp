@@ -87,6 +87,206 @@ QList<MemoryRecord> desktopContextRecords(const QVariantMap &desktopContext,
     return records;
 }
 
+QString promptReasonForKey(const QString &key)
+{
+    if (key == QStringLiteral("desktop_prompt_summary")) {
+        return QStringLiteral("prompt.desktop_summary");
+    }
+    if (key == QStringLiteral("desktop_prompt_task")) {
+        return QStringLiteral("prompt.task_alignment");
+    }
+    if (key == QStringLiteral("desktop_prompt_topic")) {
+        return QStringLiteral("prompt.topic_alignment");
+    }
+    if (key == QStringLiteral("desktop_prompt_document")) {
+        return QStringLiteral("prompt.document_relevance");
+    }
+    if (key == QStringLiteral("desktop_prompt_site")) {
+        return QStringLiteral("prompt.site_relevance");
+    }
+    if (key == QStringLiteral("desktop_prompt_workspace")) {
+        return QStringLiteral("prompt.workspace_relevance");
+    }
+    if (key == QStringLiteral("desktop_prompt_app")) {
+        return QStringLiteral("prompt.app_relevance");
+    }
+    if (key == QStringLiteral("desktop_prompt_thread")) {
+        return QStringLiteral("prompt.thread_continuity");
+    }
+    return QStringLiteral("prompt.context_relevance");
+}
+
+void appendPromptRecord(QList<MemoryRecord> &records,
+                        const QString &key,
+                        const QString &value,
+                        float confidence,
+                        const QString &updatedAt)
+{
+    const QString trimmedValue = value.trimmed();
+    if (trimmedValue.isEmpty()) {
+        return;
+    }
+
+    records.push_back({
+        .type = QStringLiteral("prompt_context"),
+        .key = key,
+        .value = trimmedValue,
+        .confidence = confidence,
+        .source = promptReasonForKey(key),
+        .updatedAt = updatedAt
+    });
+}
+
+bool isBrowserTask(const QString &taskId)
+{
+    return taskId.compare(QStringLiteral("browser_tab"), Qt::CaseInsensitive) == 0
+        || taskId.contains(QStringLiteral("browser"), Qt::CaseInsensitive);
+}
+
+bool isEditorTask(const QString &taskId)
+{
+    return taskId.compare(QStringLiteral("editor_document"), Qt::CaseInsensitive) == 0
+        || taskId.contains(QStringLiteral("editor"), Qt::CaseInsensitive)
+        || taskId.contains(QStringLiteral("code"), Qt::CaseInsensitive);
+}
+
+QList<MemoryRecord> promptContextRecordsForIntent(IntentType intent,
+                                                  const QVariantMap &desktopContext,
+                                                  const QString &desktopSummary)
+{
+    QList<MemoryRecord> records;
+    const QString updatedAt = QString::number(QDateTime::currentMSecsSinceEpoch());
+    const QString summary = desktopSummary.simplified();
+    const QString taskId = desktopContext.value(QStringLiteral("taskId")).toString().trimmed();
+    const QString topic = desktopContext.value(QStringLiteral("topic")).toString().trimmed();
+    const QString document = desktopContext.value(QStringLiteral("documentContext")).toString().trimmed();
+    const QString site = desktopContext.value(QStringLiteral("siteContext")).toString().trimmed();
+    const QString workspace = desktopContext.value(QStringLiteral("workspaceContext")).toString().trimmed();
+    const QString app = desktopContext.value(QStringLiteral("appId")).toString().trimmed();
+    const QString threadId = desktopContext.value(QStringLiteral("threadId")).toString().trimmed();
+
+    appendPromptRecord(records,
+                       QStringLiteral("desktop_prompt_summary"),
+                       summary,
+                       0.92f,
+                       updatedAt);
+    appendPromptRecord(records,
+                       QStringLiteral("desktop_prompt_task"),
+                       QStringLiteral("Task type: %1.").arg(taskId),
+                       0.9f,
+                       updatedAt);
+
+    switch (intent) {
+    case IntentType::LIST_FILES:
+        appendPromptRecord(records,
+                           QStringLiteral("desktop_prompt_workspace"),
+                           QStringLiteral("Workspace: %1.").arg(workspace),
+                           0.86f,
+                           updatedAt);
+        appendPromptRecord(records,
+                           QStringLiteral("desktop_prompt_document"),
+                           QStringLiteral("Document: %1.").arg(document),
+                           0.84f,
+                           updatedAt);
+        break;
+    case IntentType::READ_FILE:
+    case IntentType::WRITE_FILE:
+        appendPromptRecord(records,
+                           QStringLiteral("desktop_prompt_document"),
+                           QStringLiteral("Document: %1.").arg(document),
+                           0.9f,
+                           updatedAt);
+        appendPromptRecord(records,
+                           QStringLiteral("desktop_prompt_workspace"),
+                           QStringLiteral("Workspace: %1.").arg(workspace),
+                           0.86f,
+                           updatedAt);
+        appendPromptRecord(records,
+                           QStringLiteral("desktop_prompt_app"),
+                           QStringLiteral("App: %1.").arg(app),
+                           0.8f,
+                           updatedAt);
+        break;
+    case IntentType::MEMORY_WRITE:
+        appendPromptRecord(records,
+                           QStringLiteral("desktop_prompt_topic"),
+                           QStringLiteral("Topic: %1.").arg(topic),
+                           0.88f,
+                           updatedAt);
+        appendPromptRecord(records,
+                           QStringLiteral("desktop_prompt_thread"),
+                           QStringLiteral("Thread: %1.").arg(threadId),
+                           0.84f,
+                           updatedAt);
+        break;
+    case IntentType::GENERAL_CHAT:
+        appendPromptRecord(records,
+                           QStringLiteral("desktop_prompt_topic"),
+                           QStringLiteral("Topic: %1.").arg(topic),
+                           0.88f,
+                           updatedAt);
+        if (isBrowserTask(taskId)) {
+            appendPromptRecord(records,
+                               QStringLiteral("desktop_prompt_document"),
+                               QStringLiteral("Page: %1.").arg(document),
+                               0.88f,
+                               updatedAt);
+            appendPromptRecord(records,
+                               QStringLiteral("desktop_prompt_site"),
+                               QStringLiteral("Site: %1.").arg(site),
+                               0.86f,
+                               updatedAt);
+        } else if (isEditorTask(taskId)) {
+            appendPromptRecord(records,
+                               QStringLiteral("desktop_prompt_document"),
+                               QStringLiteral("Document: %1.").arg(document),
+                               0.88f,
+                               updatedAt);
+            appendPromptRecord(records,
+                               QStringLiteral("desktop_prompt_workspace"),
+                               QStringLiteral("Workspace: %1.").arg(workspace),
+                               0.86f,
+                               updatedAt);
+        } else {
+            appendPromptRecord(records,
+                               QStringLiteral("desktop_prompt_document"),
+                               QStringLiteral("Document: %1.").arg(document),
+                               0.84f,
+                               updatedAt);
+            appendPromptRecord(records,
+                               QStringLiteral("desktop_prompt_site"),
+                               QStringLiteral("Site: %1.").arg(site),
+                               0.82f,
+                               updatedAt);
+            appendPromptRecord(records,
+                               QStringLiteral("desktop_prompt_workspace"),
+                               QStringLiteral("Workspace: %1.").arg(workspace),
+                               0.82f,
+                               updatedAt);
+        }
+        appendPromptRecord(records,
+                           QStringLiteral("desktop_prompt_thread"),
+                           QStringLiteral("Thread: %1.").arg(threadId),
+                           0.84f,
+                           updatedAt);
+        break;
+    }
+
+    return records;
+}
+
+QString promptContextFromRecords(const QList<MemoryRecord> &records)
+{
+    QStringList parts;
+    for (const MemoryRecord &record : records) {
+        const QString value = record.value.simplified();
+        if (!value.isEmpty()) {
+            parts.push_back(value);
+        }
+    }
+    return parts.join(QLatin1Char(' ')).simplified();
+}
+
 QList<MemoryRecord> mergedRecords(const QList<MemoryRecord> &compiledContextRecords,
                                   const QList<MemoryRecord> &selectedMemoryRecords)
 {
@@ -162,19 +362,14 @@ QString SelectionContextCompiler::buildSelectionInput(const QString &input,
         privateModeEnabled);
 }
 
-QString SelectionContextCompiler::buildPromptContext(const QString &desktopSummary,
+QString SelectionContextCompiler::buildPromptContext(IntentType intent,
+                                                     const QString &desktopSummary,
                                                      const QVariantMap &desktopContext)
 {
-    QString context = buildCompiledDesktopSummary(desktopContext, desktopSummary);
-    const QString taskId = desktopContext.value(QStringLiteral("taskId")).toString().trimmed();
-    const QString threadId = desktopContext.value(QStringLiteral("threadId")).toString().trimmed();
-    if (!taskId.isEmpty()) {
-        context += QStringLiteral(" Task type: %1.").arg(taskId);
-    }
-    if (!threadId.isEmpty()) {
-        context += QStringLiteral(" Thread: %1.").arg(threadId);
-    }
-    return context.simplified();
+    return promptContextFromRecords(promptContextRecordsForIntent(
+        intent,
+        desktopContext,
+        buildCompiledDesktopSummary(desktopContext, desktopSummary)));
 }
 
 SelectionContextCompilation SelectionContextCompiler::compile(const QString &query,
@@ -195,7 +390,11 @@ SelectionContextCompilation SelectionContextCompiler::compile(const QString &que
                                                      desktopSummary,
                                                      desktopContextAtMs,
                                                      privateModeEnabled);
-    compilation.promptContext = buildPromptContext(desktopSummary, desktopContext);
+    compilation.promptContextRecords = promptContextRecordsForIntent(
+        intent,
+        desktopContext,
+        compilation.compiledDesktopSummary);
+    compilation.promptContext = promptContextFromRecords(compilation.promptContextRecords);
     compilation.selectedMemoryRecords = memoryPolicyHandler
         ? memoryPolicyHandler->requestMemory(compilation.selectionInput, runtimeRecord)
         : QList<MemoryRecord>{};

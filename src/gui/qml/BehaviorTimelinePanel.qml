@@ -119,6 +119,57 @@ JarvisUi.VisionGlassPanel {
                 const episodicKeys = entry.episodicKeys || []
                 return "Memory context built: active [" + activeKeys.join(", ") + "] profile [" + profileKeys.join(", ") + "] episodic [" + episodicKeys.join(", ") + "]"
             }
+            if (stage === "prompt_context") {
+                const promptKeys = entry.promptContextKeys || []
+                const promptReasons = entry.promptContextReasons || []
+                const suppressedKeys = entry.suppressedPromptContextKeys || []
+                const stablePromptCycles = entry.stablePromptCycles || 0
+                let text = "Prompt context compiled"
+                if (promptKeys.length > 0) {
+                    text += ": " + promptKeys.join(", ")
+                }
+                if (promptReasons.length > 0) {
+                    text += " | " + promptReasons.join(", ")
+                }
+                if (suppressedKeys.length > 0) {
+                    text += " | suppressed " + suppressedKeys.join(", ")
+                }
+                if (Number(stablePromptCycles) > 0) {
+                    text += " | stable cycles " + Number(stablePromptCycles)
+                }
+                return text
+            }
+            if (stage === "compiled_context_delta") {
+                const addedKeys = entry.addedKeys || []
+                const removedKeys = entry.removedKeys || []
+                let text = "Compiled context delta"
+                if (addedKeys.length > 0) {
+                    text += ": +" + addedKeys.join(", +")
+                }
+                if (removedKeys.length > 0) {
+                    text += (addedKeys.length > 0 ? " " : ": ") + "-" + removedKeys.join(", -")
+                }
+                if (!!entry.summaryChanged) {
+                    text += " summary changed"
+                }
+                return text
+            }
+            if (stage === "compiled_context_stability") {
+                const stableKeys = entry.stableKeys || []
+                const stableCycles = entry.stableCycles || 0
+                const stableDurationMs = entry.stableDurationMs || 0
+                let text = !!entry.stableContext ? "Compiled context stable" : "Compiled context fresh"
+                if (stableKeys.length > 0) {
+                    text += ": " + stableKeys.join(", ")
+                }
+                if (Number(stableCycles) > 0) {
+                    text += " | cycles " + Number(stableCycles)
+                }
+                if (Number(stableDurationMs) > 0) {
+                    text += " | " + Number(stableDurationMs) + " ms"
+                }
+                return text
+            }
             if (stage === "tool_plan") {
                 const tools = entry.orderedToolNames || []
                 return "Tool plan: " + tools.join(", ") + ((entry.rationale || "").toString().length > 0 ? " | " + entry.rationale : "")
