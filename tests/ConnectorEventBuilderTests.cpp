@@ -8,6 +8,7 @@ class ConnectorEventBuilderTests : public QObject
 
 private slots:
     void buildsScheduleConnectorEvent();
+    void buildsLiveResearchConnectorEvent();
     void rejectsUnknownPayload();
 };
 
@@ -52,6 +53,36 @@ void ConnectorEventBuilderTests::rejectsUnknownPayload()
 
     const ConnectorEvent event = ConnectorEventBuilder::fromBackgroundTaskResult(result);
     QVERIFY(!event.isValid());
+}
+
+void ConnectorEventBuilderTests::buildsLiveResearchConnectorEvent()
+{
+    AgentTask task;
+    task.id = 14;
+    task.type = QStringLiteral("background_sync");
+    task.taskKey = QStringLiteral("research:openai");
+
+    ToolExecutionResult result;
+    result.toolName = QStringLiteral("web_search");
+    result.success = true;
+    result.summary = QStringLiteral("Research updated.");
+    result.payload = QJsonObject{
+        {QStringLiteral("provider"), QStringLiteral("brave")},
+        {QStringLiteral("query"), QStringLiteral("OpenAI release updates")},
+        {QStringLiteral("sources"), QJsonArray{
+             QJsonObject{{QStringLiteral("url"), QStringLiteral("https://example.com")}}
+         }}
+    };
+
+    const ConnectorEvent event = ConnectorEventBuilder::fromTaskExecution(task, result);
+    QVERIFY(event.isValid());
+    QCOMPARE(event.sourceKind, QStringLiteral("connector_live"));
+    QCOMPARE(event.connectorKind, QStringLiteral("research"));
+    QCOMPARE(event.taskType, QStringLiteral("web_search"));
+    QCOMPARE(event.taskKey, QStringLiteral("research:openai"));
+    QCOMPARE(event.taskId, 14);
+    QCOMPARE(event.metadata.value(QStringLiteral("producer")).toString(), QStringLiteral("tool_worker"));
+    QCOMPARE(event.metadata.value(QStringLiteral("toolName")).toString(), QStringLiteral("web_search"));
 }
 
 QTEST_APPLESS_MAIN(ConnectorEventBuilderTests)
