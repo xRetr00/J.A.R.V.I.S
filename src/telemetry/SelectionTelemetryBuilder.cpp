@@ -91,7 +91,8 @@ BehaviorTraceEvent SelectionTelemetryBuilder::memoryContextEvent(const QString &
                                                                  const QString &inputPreview,
                                                                  const QVariantMap &desktopContext,
                                                                  const QString &desktopSummary,
-                                                                 const MemoryContext &memoryContext)
+                                                                 const MemoryContext &memoryContext,
+                                                                 const QList<MemoryRecord> &compiledContextRecords)
 {
     QVariantMap payload = basePayload(purpose, inputPreview, desktopContext, desktopSummary);
     payload.insert(QStringLiteral("profileCount"), memoryContext.profile.size());
@@ -113,6 +114,8 @@ BehaviorTraceEvent SelectionTelemetryBuilder::memoryContextEvent(const QString &
     }
     payload.insert(QStringLiteral("connectorMemoryCount"), connectorMemoryCount);
     payload.insert(QStringLiteral("connectorSummaryCount"), connectorSummaryCount);
+    payload.insert(QStringLiteral("compiledContextCount"), compiledContextRecords.size());
+    payload.insert(QStringLiteral("compiledContextKeys"), recordKeys(compiledContextRecords));
 
     BehaviorTraceEvent event = BehaviorTraceEvent::create(
         QStringLiteral("selection_context"),

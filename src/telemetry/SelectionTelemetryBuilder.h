@@ -17,7 +17,8 @@ public:
                                                                const QString &inputPreview,
                                                                const QVariantMap &desktopContext,
                                                                const QString &desktopSummary,
-                                                               const MemoryContext &memoryContext);
+                                                               const MemoryContext &memoryContext,
+                                                               const QList<MemoryRecord> &compiledContextRecords);
     [[nodiscard]] static BehaviorTraceEvent toolExposureEvent(const QString &purpose,
                                                               const QString &inputPreview,
                                                               const QVariantMap &desktopContext,

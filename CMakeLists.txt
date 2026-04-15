@@ -285,6 +285,7 @@ set(JARVIS_SOURCES
     src/cognition/ProactiveSuggestionGate.cpp
     src/cognition/ProactiveSuggestionPlanner.cpp
     src/cognition/ProactiveSurfaceGate.cpp
+    src/cognition/SelectionContextCompiler.cpp
     src/cognition/SuggestionProposalBuilder.cpp
     src/cognition/SuggestionProposalRanker.cpp
     src/core/tasks/TaskDispatcher.cpp
@@ -377,6 +378,7 @@ set(JARVIS_HEADERS
     src/cognition/FocusModePolicy.h
     src/cognition/ProactiveSuggestionGate.h
     src/cognition/ProactiveSurfaceGate.h
+    src/cognition/SelectionContextCompiler.h
     src/cognition/SuggestionProposalBuilder.h
     src/cognition/SuggestionProposalRanker.h
     src/core/tasks/TaskDispatcher.h
@@ -961,6 +963,20 @@ if(JARVIS_BUILD_TESTS)
     add_test(NAME jarvis_memory_policy_tests COMMAND jarvis_memory_policy_tests)
     set_tests_properties(jarvis_memory_policy_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
     jarvis_copy_optional_runtime_libraries(jarvis_memory_policy_tests)
+
+    qt_add_executable(jarvis_selection_context_tests
+        tests/SelectionContextCompilerTests.cpp
+    )
+
+    target_link_libraries(jarvis_selection_context_tests
+        PRIVATE
+            jarvis_lib
+            Qt6::Test
+    )
+
+    add_test(NAME jarvis_selection_context_tests COMMAND jarvis_selection_context_tests)
+    set_tests_properties(jarvis_selection_context_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_selection_context_tests)
 
     qt_add_executable(jarvis_response_finalizer_tests
         tests/ResponseFinalizerTests.cpp

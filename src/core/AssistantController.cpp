@@ -44,6 +44,7 @@
 #include "connectors/InboxMaildropMonitor.h"
 #include "connectors/NotesDirectoryMonitor.h"
 #include "cognition/ProactiveCooldownTracker.h"
+#include "cognition/SelectionContextCompiler.h"
 #include "cognition/ConnectorHistoryTracker.h"
 #include "cognition/ConnectorResultSignal.h"
 #include "cognition/ProactiveSuggestionGate.h"
@@ -3923,17 +3924,23 @@ void AssistantController::startConversationRequest(const QString &input)
         m_activeActionSession = m_assistantBehaviorPolicy->createActionSession(input, decision, plan, trust);
     }
 
-    const QList<MemoryRecord> memoryRecords = m_memoryPolicyHandler->requestMemory(selectionInput, runtimeToolStatusMemory(m_settings));
-    const MemoryContext memoryContext = m_assistantBehaviorPolicy
-        ? m_assistantBehaviorPolicy->buildMemoryContext(selectionInput, memoryRecords)
-        : fallbackMemoryContext(memoryRecords);
+    const SelectionContextCompilation selectionContext = SelectionContextCompiler::compile(
+        selectionInput,
+        m_latestDesktopContext,
+        m_latestDesktopContextSummary,
+        runtimeToolStatusMemory(m_settings),
+        m_memoryPolicyHandler,
+        m_assistantBehaviorPolicy);
+    const QList<MemoryRecord> &memoryRecords = selectionContext.selectedMemoryRecords;
+    const MemoryContext &memoryContext = selectionContext.memoryContext;
     if (m_loggingService) {
         m_loggingService->logBehaviorEvent(SelectionTelemetryBuilder::memoryContextEvent(
             QStringLiteral("conversation"),
             input,
             m_latestDesktopContext,
             m_latestDesktopContextSummary,
-            memoryContext));
+            memoryContext,
+            selectionContext.compiledContextRecords));
     }
 
     const ConversationRequestContext requestContext{
@@ -4038,17 +4045,23 @@ void AssistantController::startAgentConversationRequest(const QString &input, In
         return;
     }
 
-    const QList<MemoryRecord> memoryRecords = m_memoryPolicyHandler->requestMemory(selectionInput, runtimeToolStatusMemory(m_settings));
-    const MemoryContext memoryContext = m_assistantBehaviorPolicy
-        ? m_assistantBehaviorPolicy->buildMemoryContext(selectionInput, memoryRecords)
-        : fallbackMemoryContext(memoryRecords);
+    const SelectionContextCompilation selectionContext = SelectionContextCompiler::compile(
+        selectionInput,
+        m_latestDesktopContext,
+        m_latestDesktopContextSummary,
+        runtimeToolStatusMemory(m_settings),
+        m_memoryPolicyHandler,
+        m_assistantBehaviorPolicy);
+    const QList<MemoryRecord> &memoryRecords = selectionContext.selectedMemoryRecords;
+    const MemoryContext &memoryContext = selectionContext.memoryContext;
     if (m_loggingService) {
         m_loggingService->logBehaviorEvent(SelectionTelemetryBuilder::memoryContextEvent(
             QStringLiteral("agent"),
             input,
             m_latestDesktopContext,
             m_latestDesktopContextSummary,
-            memoryContext));
+            memoryContext,
+            selectionContext.compiledContextRecords));
     }
 
     const AgentRequestContext requestContext{
@@ -4120,17 +4133,23 @@ void AssistantController::continueAgentConversation(const QList<AgentToolResult>
         return;
     }
 
-    const QList<MemoryRecord> memoryRecords = m_memoryPolicyHandler->requestMemory(selectionInput, runtimeToolStatusMemory(m_settings));
-    const MemoryContext memoryContext = m_assistantBehaviorPolicy
-        ? m_assistantBehaviorPolicy->buildMemoryContext(selectionInput, memoryRecords)
-        : fallbackMemoryContext(memoryRecords);
+    const SelectionContextCompilation selectionContext = SelectionContextCompiler::compile(
+        selectionInput,
+        m_latestDesktopContext,
+        m_latestDesktopContextSummary,
+        runtimeToolStatusMemory(m_settings),
+        m_memoryPolicyHandler,
+        m_assistantBehaviorPolicy);
+    const QList<MemoryRecord> &memoryRecords = selectionContext.selectedMemoryRecords;
+    const MemoryContext &memoryContext = selectionContext.memoryContext;
     if (m_loggingService) {
         m_loggingService->logBehaviorEvent(SelectionTelemetryBuilder::memoryContextEvent(
             QStringLiteral("agent_continuation"),
             m_lastAgentInput,
             m_latestDesktopContext,
             m_latestDesktopContextSummary,
-            memoryContext));
+            memoryContext,
+            selectionContext.compiledContextRecords));
     }
 
     const AgentRequestContext requestContext{
