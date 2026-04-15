@@ -67,8 +67,12 @@ bool isActiveCommitmentMemory(const MemoryRecord &record)
         || loweredKey.contains(QStringLiteral("task"))
         || loweredKey.contains(QStringLiteral("project"))
         || loweredKey.contains(QStringLiteral("follow_up"))
+        || loweredKey.startsWith(QStringLiteral("connector_history_"))
+        || loweredKey.startsWith(QStringLiteral("connector_summary_"))
         || loweredValue.contains(QStringLiteral("working on"))
         || loweredValue.contains(QStringLiteral("follow up"))
+        || record.source.compare(QStringLiteral("connector_memory"), Qt::CaseInsensitive) == 0
+        || record.source.compare(QStringLiteral("connector_summary"), Qt::CaseInsensitive) == 0
         || record.source.compare(QStringLiteral("runtime"), Qt::CaseInsensitive) == 0;
 }
 

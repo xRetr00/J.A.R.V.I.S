@@ -14,7 +14,13 @@
 
 class AppSettings;
 class AgentToolbox;
+class BrowserBookmarksMonitor;
+class CalendarIcsMonitor;
+class ConnectorSnapshotMonitor;
 class DeviceManager;
+class InboxMaildropMonitor;
+class NotesDirectoryMonitor;
+class ConnectorHistoryTracker;
 class IntentDetector;
 class IntentEngine;
 class IntentRouter;
@@ -283,6 +289,7 @@ private:
     void handleAgentResponse(const AgentResponse &response);
     void handleCommandFinished(const QString &text);
     void dispatchBackgroundTasks(const QList<AgentTask> &tasks);
+    void recordConnectorEvent(const ConnectorEvent &event);
     void recordTaskResult(const QJsonObject &resultObject);
     void setSurfaceError(const QString &source, const QString &primary, const QString &secondary = QString());
     void clearSurfaceError(const QString &source = QString());
@@ -315,10 +322,17 @@ private:
     QString resolveWakeEngineModelPath() const;
     QString wakeEngineDisplayName() const;
     FocusModeState currentFocusModeState() const;
+    QVariantMap buildConnectorPlannerMetadata(const QString &sourceKind,
+                                              const QString &connectorKind,
+                                              const QString &historyKey,
+                                              const QVariantMap &baseMetadata,
+                                              qint64 nowMs);
     ProactiveSuggestionPlan planNextStepSuggestion(const QString &sourceKind,
                                                    const QString &taskType,
                                                    const QString &resultSummary,
                                                    const QStringList &sourceUrls,
+                                                   const QVariantMap &sourceMetadata,
+                                                   const QString &presentationKey,
                                                    bool success) const;
     ActionProposal buildNextStepProposal(const QString &hint,
                                          const QString &sourceKind,
@@ -366,6 +380,11 @@ private:
     LocalResponseEngine *m_localResponseEngine = nullptr;
     TaskDispatcher *m_taskDispatcher = nullptr;
     ToolWorker *m_toolWorker = nullptr;
+    BrowserBookmarksMonitor *m_browserBookmarksMonitor = nullptr;
+    CalendarIcsMonitor *m_calendarIcsMonitor = nullptr;
+    ConnectorSnapshotMonitor *m_connectorSnapshotMonitor = nullptr;
+    InboxMaildropMonitor *m_inboxMaildropMonitor = nullptr;
+    NotesDirectoryMonitor *m_notesDirectoryMonitor = nullptr;
     SpeechRecognizer *m_whisperSttEngine = nullptr;
     WakeWordEngine *m_wakeWordEngine = nullptr;
     TtsEngine *m_ttsEngine = nullptr;
@@ -410,6 +429,7 @@ private:
     QString m_latestProactiveSuggestion;
     QString m_latestProactiveSuggestionTone = QStringLiteral("response");
     QString m_latestProactiveSuggestionType = QStringLiteral("proactive");
+    std::unique_ptr<ConnectorHistoryTracker> m_connectorHistoryTracker;
     QString m_lastProactiveSuggestionThreadId;
     qint64 m_lastProactiveSuggestionMs = 0;
     CooldownState m_proactiveCooldownState;

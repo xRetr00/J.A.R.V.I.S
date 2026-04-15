@@ -10,6 +10,7 @@ class AssistantBehaviorPolicyTests : public QObject
 
 private slots:
     void buildsMemoryContextLanes();
+    void placesConnectorMemoryInActiveCommitments();
     void prioritizesGroundedToolsBeforeRiskyTools();
     void createsActWithProgressSessionForBackgroundTasks();
     void requiresConfirmationForImplicitRiskyActions();
@@ -35,6 +36,33 @@ void AssistantBehaviorPolicyTests::buildsMemoryContextLanes()
     QCOMPARE(context.profile.size(), 1);
     QCOMPARE(context.activeCommitments.size(), 1);
     QCOMPARE(context.episodic.size(), 1);
+}
+
+void AssistantBehaviorPolicyTests::placesConnectorMemoryInActiveCommitments()
+{
+    AssistantBehaviorPolicy policy;
+    const MemoryContext context = policy.buildMemoryContext(
+        QStringLiteral("What should I do with my inbox?"),
+        {
+            MemoryRecord{
+                .type = QStringLiteral("context"),
+                .key = QStringLiteral("connector_history_inbox"),
+                .value = QStringLiteral("Inbox signals seen 4 times and presented 2 times recently."),
+                .confidence = 0.86f,
+                .source = QStringLiteral("connector_memory")
+            },
+            MemoryRecord{
+                .type = QStringLiteral("context"),
+                .key = QStringLiteral("connector_summary_inbox"),
+                .value = QStringLiteral("Inbox activity across 1 sources: seen 4 times, surfaced 2 times, 1 recent source updates."),
+                .confidence = 0.9f,
+                .source = QStringLiteral("connector_summary")
+            }
+        });
+
+    QCOMPARE(context.activeCommitments.size(), 2);
+    QCOMPARE(context.activeCommitments.first().source, QStringLiteral("connector_memory"));
+    QCOMPARE(context.activeCommitments.last().source, QStringLiteral("connector_summary"));
 }
 
 void AssistantBehaviorPolicyTests::prioritizesGroundedToolsBeforeRiskyTools()

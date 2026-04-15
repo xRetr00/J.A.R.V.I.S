@@ -38,7 +38,13 @@
 #include "core/MemoryPolicyHandler.h"
 #include "core/ResponseFinalizer.h"
 #include "core/ToolCoordinator.h"
+#include "connectors/BrowserBookmarksMonitor.h"
+#include "connectors/CalendarIcsMonitor.h"
+#include "connectors/ConnectorSnapshotMonitor.h"
+#include "connectors/InboxMaildropMonitor.h"
+#include "connectors/NotesDirectoryMonitor.h"
 #include "cognition/ProactiveCooldownTracker.h"
+#include "cognition/ConnectorHistoryTracker.h"
 #include "cognition/ConnectorResultSignal.h"
 #include "cognition/ProactiveSuggestionGate.h"
 #include "cognition/ProactiveSuggestionPlanner.h"
@@ -1376,7 +1382,7 @@ AssistantController::AssistantController(
     m_reasoningRouter = new ReasoningRouter(this);
     m_promptAdapter = new PromptAdapter(this);
     m_streamAssembler = new StreamAssembler(this);
-    m_memoryStore = new MemoryStore(this);
+    m_memoryStore = new MemoryStore(QString(), this);
     m_assistantBehaviorPolicy = std::make_unique<AssistantBehaviorPolicy>();
     m_inputRouter = std::make_unique<InputRouter>(m_assistantBehaviorPolicy.get());
     m_aiRequestCoordinator = std::make_unique<AiRequestCoordinator>(m_settings, m_reasoningRouter);
@@ -1392,9 +1398,15 @@ AssistantController::AssistantController(
     m_localResponseEngine = new LocalResponseEngine(this);
     m_taskDispatcher = new TaskDispatcher(m_loggingService, this);
     m_toolWorker = new ToolWorker(backgroundAllowedRoots(), m_loggingService, m_settings);
+    m_browserBookmarksMonitor = new BrowserBookmarksMonitor(this);
+    m_calendarIcsMonitor = new CalendarIcsMonitor(this);
+    m_connectorSnapshotMonitor = new ConnectorSnapshotMonitor(m_settings, m_loggingService, this);
+    m_inboxMaildropMonitor = new InboxMaildropMonitor(this);
+    m_notesDirectoryMonitor = new NotesDirectoryMonitor(this);
     m_whisperSttEngine = new RuntimeSpeechRecognizer(m_voicePipelineRuntime, this);
     m_ttsEngine = new WorkerTtsEngine(m_voicePipelineRuntime, this);
     m_responseFinalizer = std::make_unique<ResponseFinalizer>(m_memoryStore, m_ttsEngine, m_loggingService);
+    m_connectorHistoryTracker = std::make_unique<ConnectorHistoryTracker>(m_memoryStore);
     m_worldStateCache = new WorldStateCache(15000, 2000, this);
     m_visionIngestService = new VisionIngestService(m_settings, m_loggingService, this);
     m_gestureInterpreter = new GestureInterpreter(this);
@@ -1420,10 +1432,29 @@ AssistantController::AssistantController(
             emit assistantSurfaceChanged();
         }
     });
+    connect(m_toolWorker, &ToolWorker::connectorEventReady, m_taskDispatcher, &TaskDispatcher::handleConnectorEvent, Qt::QueuedConnection);
     connect(m_toolWorker, &ToolWorker::taskStarted, m_taskDispatcher, &TaskDispatcher::handleTaskStarted, Qt::QueuedConnection);
     connect(m_toolWorker, &ToolWorker::taskFinished, m_taskDispatcher, &TaskDispatcher::handleTaskFinished, Qt::QueuedConnection);
+    connect(m_taskDispatcher, &TaskDispatcher::connectorEventReady, this, [this](const ConnectorEvent &event) {
+        recordConnectorEvent(event);
+    }, Qt::QueuedConnection);
     connect(m_taskDispatcher, &TaskDispatcher::taskResultReady, this, [this](const QJsonObject &resultObject) {
         recordTaskResult(resultObject);
+    }, Qt::QueuedConnection);
+    connect(m_browserBookmarksMonitor, &BrowserBookmarksMonitor::connectorEventDetected, this, [this](const ConnectorEvent &event) {
+        recordConnectorEvent(event);
+    }, Qt::QueuedConnection);
+    connect(m_calendarIcsMonitor, &CalendarIcsMonitor::connectorEventDetected, this, [this](const ConnectorEvent &event) {
+        recordConnectorEvent(event);
+    }, Qt::QueuedConnection);
+    connect(m_connectorSnapshotMonitor, &ConnectorSnapshotMonitor::connectorEventDetected, this, [this](const ConnectorEvent &event) {
+        recordConnectorEvent(event);
+    }, Qt::QueuedConnection);
+    connect(m_inboxMaildropMonitor, &InboxMaildropMonitor::connectorEventDetected, this, [this](const ConnectorEvent &event) {
+        recordConnectorEvent(event);
+    }, Qt::QueuedConnection);
+    connect(m_notesDirectoryMonitor, &NotesDirectoryMonitor::connectorEventDetected, this, [this](const ConnectorEvent &event) {
+        recordConnectorEvent(event);
     }, Qt::QueuedConnection);
     connect(m_visionIngestService, &VisionIngestService::visionSnapshotReceived, this, &AssistantController::handleVisionSnapshot, Qt::QueuedConnection);
     connect(m_visionIngestService, &VisionIngestService::statusChanged, this, [this](const QString &status, bool connected) {
@@ -1478,6 +1509,21 @@ void AssistantController::initialize()
     m_statusText = QStringLiteral("Loading services...");
     if (!m_toolWorkerThread.isRunning()) {
         m_toolWorkerThread.start();
+    }
+    if (m_browserBookmarksMonitor != nullptr) {
+        m_browserBookmarksMonitor->start();
+    }
+    if (m_calendarIcsMonitor != nullptr) {
+        m_calendarIcsMonitor->start();
+    }
+    if (m_connectorSnapshotMonitor != nullptr) {
+        m_connectorSnapshotMonitor->start();
+    }
+    if (m_inboxMaildropMonitor != nullptr) {
+        m_inboxMaildropMonitor->start();
+    }
+    if (m_notesDirectoryMonitor != nullptr) {
+        m_notesDirectoryMonitor->start();
     }
     if (!m_gestureActionRouterThread.isRunning()) {
         m_gestureActionRouterThread.start();
@@ -3221,10 +3267,35 @@ FocusModeState AssistantController::currentFocusModeState() const
     };
 }
 
+QVariantMap AssistantController::buildConnectorPlannerMetadata(const QString &sourceKind,
+                                                              const QString &connectorKind,
+                                                              const QString &historyKey,
+                                                              const QVariantMap &baseMetadata,
+                                                              qint64 nowMs)
+{
+    QVariantMap metadata = baseMetadata;
+    if (m_connectorHistoryTracker == nullptr || historyKey.trimmed().isEmpty()) {
+        return metadata;
+    }
+
+    m_connectorHistoryTracker->recordSeen(sourceKind, connectorKind, historyKey, nowMs);
+    const QVariantMap history = m_connectorHistoryTracker->buildMetadata(
+        sourceKind,
+        connectorKind,
+        historyKey,
+        nowMs);
+    for (auto it = history.cbegin(); it != history.cend(); ++it) {
+        metadata.insert(it.key(), it.value());
+    }
+    return metadata;
+}
+
 ProactiveSuggestionPlan AssistantController::planNextStepSuggestion(const QString &sourceKind,
                                                                    const QString &taskType,
                                                                    const QString &resultSummary,
                                                                    const QStringList &sourceUrls,
+                                                                   const QVariantMap &sourceMetadata,
+                                                                   const QString &presentationKey,
                                                                    bool success) const
 {
     const ProactiveSuggestionPlan plan = ProactiveSuggestionPlanner::plan({
@@ -3232,6 +3303,10 @@ ProactiveSuggestionPlan AssistantController::planNextStepSuggestion(const QStrin
         .taskType = taskType,
         .resultSummary = resultSummary,
         .sourceUrls = sourceUrls,
+        .sourceMetadata = sourceMetadata,
+        .presentationKey = presentationKey,
+        .lastPresentedKey = m_lastProactiveSuggestionThreadId,
+        .lastPresentedAtMs = m_lastProactiveSuggestionMs,
         .success = success,
         .desktopContext = m_latestDesktopContext,
         .desktopContextAtMs = m_latestDesktopContextAtMs,
@@ -3458,6 +3533,8 @@ void AssistantController::considerDesktopContextSuggestion(const QString &summar
         taskId,
         summary,
         {},
+        context,
+        threadId,
         true);
     if (plan.selectedSummary.isEmpty()) {
         return;
@@ -3510,6 +3587,13 @@ void AssistantController::considerConnectorEvent(const ConnectorEvent &event)
         event.taskType,
         event.summary,
         {},
+        buildConnectorPlannerMetadata(
+            event.sourceKind,
+            event.connectorKind,
+            dedupeKey,
+            event.toVariantMap(),
+            nowMs),
+        dedupeKey,
         event.priority.compare(QStringLiteral("high"), Qt::CaseInsensitive) != 0);
     if (plan.selectedSummary.isEmpty()) {
         return;
@@ -3517,6 +3601,9 @@ void AssistantController::considerConnectorEvent(const ConnectorEvent &event)
 
     m_lastProactiveSuggestionThreadId = dedupeKey;
     m_lastProactiveSuggestionMs = nowMs;
+    if (m_connectorHistoryTracker != nullptr) {
+        m_connectorHistoryTracker->recordPresented(dedupeKey, nowMs);
+    }
     setLatestProactiveSuggestion(
         plan.selectedSummary,
         QStringLiteral("response"),
@@ -3569,11 +3656,30 @@ void AssistantController::considerTaskResultSuggestion(const BackgroundTaskResul
         : (m_executionNarrator
         ? m_executionNarrator->summarizeBackgroundResult(result)
         : (result.summary.trimmed().isEmpty() ? result.detail.trimmed() : result.summary.trimmed()));
+    QVariantMap resultMetadata = result.payload.toVariantMap();
+    resultMetadata.insert(QStringLiteral("taskKey"), result.taskKey);
+    resultMetadata.insert(QStringLiteral("taskId"), result.taskId);
+    resultMetadata.insert(QStringLiteral("finishedAt"), result.finishedAt);
+    const QString resultConnectorKind = connectorSignal.isValid()
+        ? connectorSignal.connectorKind
+        : result.payload.value(QStringLiteral("connectorKind")).toString().trimmed();
+    if (connectorSignal.isValid()) {
+        resultMetadata.insert(QStringLiteral("connectorKind"), connectorSignal.connectorKind);
+        resultMetadata.insert(QStringLiteral("itemCount"), connectorSignal.itemCount);
+        resultMetadata.insert(QStringLiteral("occurredAtUtc"), result.finishedAt);
+    }
     const ProactiveSuggestionPlan plan = planNextStepSuggestion(
         connectorSignal.isValid() ? connectorSignal.sourceKind : QStringLiteral("task_result_surface"),
         connectorSignal.isValid() ? connectorSignal.taskType : result.type,
         summary,
         sourceUrlsForResult(result),
+        buildConnectorPlannerMetadata(
+            connectorSignal.isValid() ? connectorSignal.sourceKind : QStringLiteral("task_result_surface"),
+            resultConnectorKind,
+            resultKey,
+            resultMetadata,
+            nowMs),
+        resultKey,
         result.success);
     if (plan.selectedSummary.isEmpty()) {
         return;
@@ -3581,6 +3687,9 @@ void AssistantController::considerTaskResultSuggestion(const BackgroundTaskResul
 
     m_lastProactiveSuggestionThreadId = resultKey;
     m_lastProactiveSuggestionMs = nowMs;
+    if (m_connectorHistoryTracker != nullptr && !resultConnectorKind.isEmpty()) {
+        m_connectorHistoryTracker->recordPresented(resultKey, nowMs);
+    }
     setLatestProactiveSuggestion(
         plan.selectedSummary,
         QStringLiteral("response"),
@@ -4684,6 +4793,29 @@ void AssistantController::dispatchBackgroundTasks(const QList<AgentTask> &tasks)
     emit assistantSurfaceChanged();
 }
 
+void AssistantController::recordConnectorEvent(const ConnectorEvent &event)
+{
+    if (!event.isValid()) {
+        return;
+    }
+
+    if (m_loggingService != nullptr) {
+        QVariantMap payload = event.toVariantMap();
+        payload.insert(QStringLiteral("desktopSummary"), m_latestDesktopContextSummary);
+        BehaviorTraceEvent traceEvent = BehaviorTraceEvent::create(
+            QStringLiteral("connector_event"),
+            QStringLiteral("ingested"),
+            QStringLiteral("connector_event.live_ingested"),
+            payload,
+            QStringLiteral("system"));
+        traceEvent.capabilityId = QStringLiteral("connector_event_stream");
+        traceEvent.threadId = m_latestDesktopContext.value(QStringLiteral("threadId")).toString();
+        m_loggingService->logBehaviorEvent(traceEvent);
+    }
+
+    considerConnectorEvent(event);
+}
+
 void AssistantController::recordTaskResult(const QJsonObject &resultObject)
 {
     if (m_toolCoordinator == nullptr) {
@@ -4745,7 +4877,9 @@ void AssistantController::recordTaskResult(const QJsonObject &resultObject)
     if (handling.appendTrace) {
         appendAgentTrace(handling.traceKind, handling.traceTitle, handling.traceDetail, handling.traceSuccess);
     }
-    if (handling.connectorEvent.has_value() && m_loggingService != nullptr) {
+    if (handling.connectorEvent.has_value()
+        && (!handling.completedResult.has_value() || !handling.completedResult->connectorEventLive)
+        && m_loggingService != nullptr) {
         BehaviorTraceEvent event = BehaviorTraceEvent::create(
             QStringLiteral("connector_event"),
             QStringLiteral("ingested"),
@@ -4848,6 +4982,9 @@ void AssistantController::recordTaskResult(const QJsonObject &resultObject)
             m_loggingService->logBehaviorEvent(event);
         }
         if (!followUpDecision.allowed) {
+            if (handling.completedResult->connectorEventLive) {
+                return;
+            }
             if (handling.connectorEvent.has_value()) {
                 considerConnectorEvent(*handling.connectorEvent);
             } else {
@@ -4871,6 +5008,9 @@ void AssistantController::recordTaskResult(const QJsonObject &resultObject)
         return;
     }
 
+    if (handling.completedResult->connectorEventLive) {
+        return;
+    }
     if (handling.connectorEvent.has_value()) {
         considerConnectorEvent(*handling.connectorEvent);
     } else {
@@ -5030,6 +5170,8 @@ void AssistantController::beginActionThread(const QList<AgentTask> &tasks, qint6
         thread.taskType,
         thread.resultSummary,
         {},
+        {},
+        {},
         true).selectedSummary;
     thread.state = ActionThreadState::Running;
     thread.success = false;
@@ -5063,6 +5205,8 @@ void AssistantController::rememberActionThreadResult(const BackgroundTaskResult 
         thread.taskType,
         thread.resultSummary,
         thread.sourceUrls,
+        result.payload.toVariantMap(),
+        result.taskKey,
         result.success).selectedSummary;
     thread.state = result.success ? ActionThreadState::Completed : ActionThreadState::Failed;
     if (result.state == TaskState::Canceled) {
@@ -5091,6 +5235,8 @@ void AssistantController::rememberCompletedActionReply(const QString &taskType,
         QStringLiteral("reply_result"),
         thread.taskType,
         thread.resultSummary,
+        {},
+        {},
         {},
         success).selectedSummary;
     thread.state = success ? ActionThreadState::Completed : ActionThreadState::Failed;
