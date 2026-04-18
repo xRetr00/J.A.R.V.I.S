@@ -295,6 +295,7 @@ set(JARVIS_SOURCES
     src/cognition/ConnectorResultSignal.cpp
     src/cognition/ProactiveCooldownTracker.cpp
     src/cognition/DesktopContextSelectionBuilder.cpp
+    src/cognition/DesktopWorkMode.cpp
     src/cognition/FocusModePolicy.cpp
     src/cognition/ProactiveSuggestionGate.cpp
     src/cognition/ProactiveSuggestionPlanner.cpp
@@ -405,6 +406,7 @@ set(JARVIS_HEADERS
     src/cognition/ConnectorHistoryTracker.h
     src/cognition/ConnectorEventBuilder.h
     src/cognition/DesktopContextSelectionBuilder.h
+    src/cognition/DesktopWorkMode.h
     src/cognition/FocusModePolicy.h
     src/cognition/ProactiveSuggestionGate.h
     src/cognition/ProactiveSurfaceGate.h
@@ -1412,6 +1414,7 @@ if(JARVIS_BUILD_TESTS)
         src/cognition/ProactiveSuggestionGate.cpp
         src/cognition/SuggestionProposalBuilder.cpp
         src/cognition/SuggestionProposalPolicyScoring.cpp
+        src/cognition/DesktopWorkMode.cpp
         src/cognition/SuggestionProposalRanker.cpp
     )
 
@@ -1425,6 +1428,7 @@ if(JARVIS_BUILD_TESTS)
     qt_add_executable(jarvis_suggestion_history_policy_tests
         tests/SuggestionProposalHistoryPolicyTests.cpp
         src/cognition/SuggestionProposalPolicyScoring.cpp
+        src/cognition/DesktopWorkMode.cpp
         src/cognition/SuggestionProposalRanker.cpp
     )
 
@@ -1434,6 +1438,20 @@ if(JARVIS_BUILD_TESTS)
     add_test(NAME jarvis_suggestion_history_policy_tests COMMAND jarvis_suggestion_history_policy_tests)
     set_tests_properties(jarvis_suggestion_history_policy_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
     jarvis_copy_optional_runtime_libraries(jarvis_suggestion_history_policy_tests)
+
+    qt_add_executable(jarvis_suggestion_ranker_work_mode_tests
+        tests/SuggestionProposalRankerWorkModeTests.cpp
+        src/cognition/DesktopWorkMode.cpp
+        src/cognition/SuggestionProposalPolicyScoring.cpp
+        src/cognition/SuggestionProposalRanker.cpp
+    )
+
+    target_include_directories(jarvis_suggestion_ranker_work_mode_tests PRIVATE src)
+    target_link_libraries(jarvis_suggestion_ranker_work_mode_tests PRIVATE Qt6::Core Qt6::Test nlohmann_json::nlohmann_json)
+
+    add_test(NAME jarvis_suggestion_ranker_work_mode_tests COMMAND jarvis_suggestion_ranker_work_mode_tests)
+    set_tests_properties(jarvis_suggestion_ranker_work_mode_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_suggestion_ranker_work_mode_tests)
 
     qt_add_executable(jarvis_python_runtime_tests
         tests/PythonRuntimeTests.cpp

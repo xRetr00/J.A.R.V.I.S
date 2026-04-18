@@ -19,6 +19,8 @@ public:
 private:
     [[nodiscard]] static QString buildHint(const QString &desktopSummary,
                                            const QVariantMap &desktopContext);
+    [[nodiscard]] static QString inferredWorkMode(const QVariantMap &desktopContext);
+    [[nodiscard]] static bool isNoisyClipboardContext(const QVariantMap &desktopContext);
     [[nodiscard]] static bool shouldUseDesktopContext(const QString &userInput,
                                                       IntentType intent,
                                                       const QVariantMap &desktopContext);

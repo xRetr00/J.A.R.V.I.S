@@ -48,6 +48,29 @@ bool isEditorApp(const QString &appId)
     return editorApps.contains(appId);
 }
 
+bool isBrowserShellLabel(const QString &value)
+{
+    const QString normalized = value.trimmed().toLower();
+    return normalized == QStringLiteral("google chrome")
+        || normalized == QStringLiteral("chrome")
+        || normalized == QStringLiteral("microsoft edge")
+        || normalized == QStringLiteral("edge")
+        || normalized == QStringLiteral("mozilla firefox")
+        || normalized == QStringLiteral("firefox")
+        || normalized == QStringLiteral("brave")
+        || normalized == QStringLiteral("opera");
+}
+
+QString cleanedChunk(QString value);
+
+QString cleanedDocumentTitle(QString value)
+{
+    value = cleanedChunk(value);
+    value.remove(QRegularExpression(QStringLiteral("\\s*\\([0-9]+\\)\\s*$")));
+    value.remove(QRegularExpression(QStringLiteral("\\s*\\[[^\\]]{1,32}\\]\\s*$")));
+    return value.simplified();
+}
+
 QString languageForExtension(QString extension)
 {
     extension = extension.trimmed().toLower();
@@ -230,20 +253,20 @@ QVariantMap DesktopContextThreadBuilder::activeWindowMetadata(const QString &nor
 
     if (isBrowserApp(normalizedAppId)) {
         const QStringList browserParts = firstPart.split(QRegularExpression(QStringLiteral("\\s+\\|\\s+")), Qt::SkipEmptyParts);
-        metadata.insert(QStringLiteral("documentContext"), cleanedChunk(browserParts.value(0, firstPart)));
+        metadata.insert(QStringLiteral("documentContext"), cleanedDocumentTitle(browserParts.value(0, firstPart)));
         metadata.insert(QStringLiteral("documentKind"), QStringLiteral("browser_page"));
         metadata.insert(QStringLiteral("metadataClass"), QStringLiteral("browser_document"));
         metadata.insert(QStringLiteral("metadataSource"), QStringLiteral("window_title"));
         if (browserParts.size() > 1) {
             metadata.insert(QStringLiteral("siteContext"), cleanedChunk(browserParts.last()));
-        } else if (!secondPart.isEmpty()) {
+        } else if (!secondPart.isEmpty() && !isBrowserShellLabel(secondPart)) {
             metadata.insert(QStringLiteral("siteContext"), secondPart);
         }
         return metadata;
     }
 
     if (isEditorApp(normalizedAppId)) {
-        const QString document = cleanedChunk(firstPart.isEmpty() ? firstMeaningfulChunk(windowTitle) : firstPart);
+        const QString document = cleanedDocumentTitle(firstPart.isEmpty() ? firstMeaningfulChunk(windowTitle) : firstPart);
         metadata.insert(QStringLiteral("documentContext"), document);
         metadata.insert(QStringLiteral("documentKind"), QStringLiteral("editor_file"));
         metadata.insert(QStringLiteral("metadataClass"), QStringLiteral("editor_document"));

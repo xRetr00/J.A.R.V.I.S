@@ -1,4 +1,5 @@
 #include "cognition/SuggestionProposalRanker.h"
+#include "cognition/DesktopWorkMode.h"
 #include "cognition/SuggestionProposalPolicyScoring.h"
 
 #include <algorithm>
@@ -246,6 +247,51 @@ double compiledHistoryStructuralAdjustment(const SuggestionProposalRanker::Input
 
     return 0.0;
 }
+
+double desktopWorkModeAdjustment(const SuggestionProposalRanker::Input &input,
+                                 const ActionProposal &proposal,
+                                 QString *reasonCode)
+{
+    if (input.desktopContextAtMs <= 0 || (input.nowMs - input.desktopContextAtMs) > 90000) {
+        return 0.0;
+    }
+    if (input.cooldownState.isActive(input.nowMs) && desktopThreadId(input.desktopContext) == input.cooldownState.threadId) {
+        return 0.0;
+    }
+
+    const QString mode = DesktopWorkMode::inferFromContext(input.desktopContext);
+    const QString capabilityId = proposal.capabilityId;
+
+    if (mode == QStringLiteral("technical_research") || mode == QStringLiteral("web_research")) {
+        if (capabilityId == QStringLiteral("source_review")
+            || capabilityId == QStringLiteral("web_follow_up")
+            || capabilityId == QStringLiteral("browser_follow_up")) {
+            *reasonCode = QStringLiteral("proposal_rank.desktop_research_mode");
+            return 0.10;
+        }
+        if (capabilityId == QStringLiteral("inbox_follow_up")
+            || capabilityId == QStringLiteral("schedule_follow_up")) {
+            *reasonCode = QStringLiteral("proposal_rank.desktop_focus_defocus");
+            return -0.06;
+        }
+    }
+
+    if (mode == QStringLiteral("coding") || mode == QStringLiteral("document_editing")) {
+        if (capabilityId == QStringLiteral("document_follow_up")
+            || capabilityId == QStringLiteral("source_review")
+            || capabilityId == QStringLiteral("browser_follow_up")) {
+            *reasonCode = QStringLiteral("proposal_rank.desktop_document_mode");
+            return 0.09;
+        }
+        if (capabilityId == QStringLiteral("inbox_follow_up")
+            || capabilityId == QStringLiteral("schedule_follow_up")) {
+            *reasonCode = QStringLiteral("proposal_rank.desktop_focus_defocus");
+            return -0.06;
+        }
+    }
+
+    return 0.0;
+}
 }
 
 QList<RankedSuggestionProposal> SuggestionProposalRanker::rank(const Input &input)
@@ -275,6 +321,13 @@ QList<RankedSuggestionProposal> SuggestionProposalRanker::rank(const Input &inpu
                 rankedProposal.score += 0.08;
                 rankedProposal.reasonCode = QStringLiteral("proposal_rank.document_affinity");
             }
+        }
+
+        QString desktopModeReasonCode;
+        const double desktopModeScore = desktopWorkModeAdjustment(input, proposal, &desktopModeReasonCode);
+        if (desktopModeScore != 0.0) {
+            rankedProposal.score += desktopModeScore;
+            rankedProposal.reasonCode = desktopModeReasonCode;
         }
 
         if (proposal.capabilityId == QStringLiteral("failure_recovery")) {

@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include <QFileInfo>
+#include <QList>
 #include <QRegularExpression>
 #include <QSet>
 #include <QUrl>
@@ -202,6 +203,7 @@ struct ElementSnapshot
     QString name;
     QString value;
     CONTROLTYPEID controlType = 0;
+    bool selected = false;
 };
 
 ElementSnapshot readElement(IUIAutomationElement *element)
@@ -226,7 +228,84 @@ ElementSnapshot readElement(IUIAutomationElement *element)
         }
     }
 
+    Microsoft::WRL::ComPtr<IUIAutomationSelectionItemPattern> selectionPattern;
+    if (SUCCEEDED(element->GetCurrentPatternAs(UIA_SelectionItemPatternId, IID_PPV_ARGS(&selectionPattern))) && selectionPattern) {
+        BOOL selected = FALSE;
+        if (SUCCEEDED(selectionPattern->get_CurrentIsSelected(&selected))) {
+            snapshot.selected = selected == TRUE;
+        }
+    }
+
     return snapshot;
+}
+
+void appendSafeName(QStringList &values, const QString &value, QVariantMap &metadata)
+{
+    const SanitizedCandidate candidate = sanitizeCandidate(value);
+    noteRedaction(metadata, candidate);
+    if (!candidate.value.isEmpty() && !values.contains(candidate.value, Qt::CaseInsensitive)) {
+        values << candidate.value;
+    }
+}
+
+void collectWindowElements(IUIAutomationTreeWalker *walker,
+                           IUIAutomationElement *parent,
+                           QList<ElementSnapshot> &snapshots,
+                           int depth,
+                           int &visited)
+{
+    if (walker == nullptr || parent == nullptr || depth > 5 || visited >= 72) {
+        return;
+    }
+
+    Microsoft::WRL::ComPtr<IUIAutomationElement> child;
+    if (FAILED(walker->GetFirstChildElement(parent, &child)) || !child) {
+        return;
+    }
+
+    while (child && visited < 72) {
+        ++visited;
+        const ElementSnapshot snapshot = readElement(child.Get());
+        if (!snapshot.name.trimmed().isEmpty() || !snapshot.value.trimmed().isEmpty()) {
+            snapshots.push_back(snapshot);
+        }
+        collectWindowElements(walker, child.Get(), snapshots, depth + 1, visited);
+
+        Microsoft::WRL::ComPtr<IUIAutomationElement> next;
+        if (FAILED(walker->GetNextSiblingElement(child.Get(), &next))) {
+            break;
+        }
+        child = next;
+    }
+}
+
+QString firstUrlHost(const QList<ElementSnapshot> &elements)
+{
+    for (const ElementSnapshot &element : elements) {
+        const QUrl url(element.value);
+        if (url.isValid() && !url.host().trimmed().isEmpty()) {
+            return url.host().trimmed().toLower();
+        }
+    }
+    return {};
+}
+
+void appendWindowTreeNames(QStringList &names,
+                           const QList<ElementSnapshot> &elements,
+                           QVariantMap &metadata,
+                           bool selectedTabsOnly)
+{
+    for (const ElementSnapshot &element : elements) {
+        if (selectedTabsOnly && element.controlType == UIA_TabItemControlTypeId && !element.selected) {
+            continue;
+        }
+        if (element.controlType == UIA_TabItemControlTypeId
+            || element.controlType == UIA_DocumentControlTypeId
+            || element.controlType == UIA_EditControlTypeId
+            || element.controlType == UIA_PaneControlTypeId) {
+            appendSafeName(names, element.name, metadata);
+        }
+    }
 }
 
 bool sameProcessWindow(HWND foregroundWindow, IUIAutomationElement *element)
@@ -270,16 +349,17 @@ QVariantMap WindowsUiAutomationProbe::probeWindowMetadata(quintptr windowHandleV
     }
 
     Microsoft::WRL::ComPtr<IUIAutomationElement> focusedElement;
-    if (FAILED(automation->GetFocusedElement(&focusedElement)) || !focusedElement) {
-        return metadata;
-    }
-
     const HWND foregroundWindow = reinterpret_cast<HWND>(windowHandleValue);
-    if (!sameProcessWindow(foregroundWindow, focusedElement.Get())) {
-        return metadata;
+    const bool hasFocusedElement =
+        SUCCEEDED(automation->GetFocusedElement(&focusedElement))
+        && focusedElement
+        && sameProcessWindow(foregroundWindow, focusedElement.Get());
+
+    ElementSnapshot focused;
+    if (hasFocusedElement) {
+        focused = readElement(focusedElement.Get());
     }
 
-    const ElementSnapshot focused = readElement(focusedElement.Get());
     const SanitizedCandidate focusedName = sanitizeCandidate(focused.name);
     noteRedaction(metadata, focusedName);
     metadata.insert(QStringLiteral("focusedControlType"), controlTypeName(focused.controlType));
@@ -292,29 +372,47 @@ QVariantMap WindowsUiAutomationProbe::probeWindowMetadata(quintptr windowHandleV
         return metadata;
     }
 
+    Microsoft::WRL::ComPtr<IUIAutomationElement> rootElement;
+    QList<ElementSnapshot> windowElements;
+    if (SUCCEEDED(automation->ElementFromHandle(foregroundWindow, &rootElement)) && rootElement) {
+        int visited = 0;
+        collectWindowElements(walker.Get(), rootElement.Get(), windowElements, 0, visited);
+        metadata.insert(QStringLiteral("metadataSource"), QStringLiteral("uia_window_tree"));
+        metadata.insert(QStringLiteral("windowTreeElementCount"), windowElements.size());
+    }
+
     QStringList names;
     if (!focusedName.value.isEmpty()) {
         names << focusedName.value;
     }
 
-    Microsoft::WRL::ComPtr<IUIAutomationElement> current = focusedElement;
-    for (int depth = 0; depth < 4 && current; ++depth) {
-        Microsoft::WRL::ComPtr<IUIAutomationElement> parent;
-        if (FAILED(walker->GetParentElement(current.Get(), &parent)) || !parent) {
-            break;
-        }
-        current = parent;
-        const SanitizedCandidate name = sanitizeCandidate(readElement(current.Get()).name);
-        noteRedaction(metadata, name);
-        if (!name.value.isEmpty() && !names.contains(name.value, Qt::CaseInsensitive)) {
-            names << name.value;
+    if (hasFocusedElement) {
+        Microsoft::WRL::ComPtr<IUIAutomationElement> current = focusedElement;
+        for (int depth = 0; depth < 4 && current; ++depth) {
+            Microsoft::WRL::ComPtr<IUIAutomationElement> parent;
+            if (FAILED(walker->GetParentElement(current.Get(), &parent)) || !parent) {
+                break;
+            }
+            current = parent;
+            const SanitizedCandidate name = sanitizeCandidate(readElement(current.Get()).name);
+            noteRedaction(metadata, name);
+            if (!name.value.isEmpty() && !names.contains(name.value, Qt::CaseInsensitive)) {
+                names << name.value;
+            }
         }
     }
+    appendWindowTreeNames(names, windowElements, metadata, isBrowserApp(normalizedApp));
 
     if (isBrowserApp(normalizedApp)) {
-        const QUrl url(focused.value);
-        if (url.isValid() && !url.host().trimmed().isEmpty()) {
-            metadata.insert(QStringLiteral("siteContext"), url.host().trimmed());
+        QUrl url(focused.value);
+        if (!url.isValid() || url.host().trimmed().isEmpty()) {
+            const QString host = firstUrlHost(windowElements);
+            if (!host.isEmpty()) {
+                metadata.insert(QStringLiteral("siteContext"), host);
+                metadata.insert(QStringLiteral("browserUrlHost"), host);
+            }
+        } else {
+            metadata.insert(QStringLiteral("siteContext"), url.host().trimmed().toLower());
             metadata.insert(QStringLiteral("browserUrlScheme"), url.scheme().trimmed().toLower());
             metadata.insert(QStringLiteral("browserUrlHost"), url.host().trimmed().toLower());
         }

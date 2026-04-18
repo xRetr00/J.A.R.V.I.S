@@ -8,6 +8,8 @@ class DesktopContextSelectionBuilderTests : public QObject
 
 private slots:
     void includesFreshEditorContextForWorkQueries();
+    void includesWorkModeAndDocumentMetadata();
+    void skipsNoisyClipboardContext();
     void skipsIrrelevantGeneralChat();
     void skipsPrivateModeContext();
 };
@@ -19,6 +21,9 @@ void DesktopContextSelectionBuilderTests::includesFreshEditorContextForWorkQueri
     context.insert(QStringLiteral("topic"), QStringLiteral("plan md"));
     context.insert(QStringLiteral("appId"), QStringLiteral("Code.exe"));
     context.insert(QStringLiteral("threadId"), QStringLiteral("editor_document::plan-md"));
+    context.insert(QStringLiteral("documentContext"), QStringLiteral("PLAN.md"));
+    context.insert(QStringLiteral("languageHint"), QStringLiteral("markdown"));
+    context.insert(QStringLiteral("metadataClass"), QStringLiteral("editor_document"));
 
     const QString selectionInput = DesktopContextSelectionBuilder::buildSelectionInput(
         QStringLiteral("summarize this"),
@@ -32,6 +37,50 @@ void DesktopContextSelectionBuilderTests::includesFreshEditorContextForWorkQueri
     QVERIFY(selectionInput.contains(QStringLiteral("Current desktop context:")));
     QVERIFY(selectionInput.contains(QStringLiteral("PLAN.md")));
     QVERIFY(selectionInput.contains(QStringLiteral("task=editor_document")));
+}
+
+void DesktopContextSelectionBuilderTests::includesWorkModeAndDocumentMetadata()
+{
+    QVariantMap context;
+    context.insert(QStringLiteral("taskId"), QStringLiteral("browser_tab"));
+    context.insert(QStringLiteral("topic"), QStringLiteral("qt_docs"));
+    context.insert(QStringLiteral("appId"), QStringLiteral("edge"));
+    context.insert(QStringLiteral("threadId"), QStringLiteral("browser_tab::qt-docs"));
+    context.insert(QStringLiteral("documentContext"), QStringLiteral("Qt 6 Signals and Slots"));
+    context.insert(QStringLiteral("siteContext"), QStringLiteral("doc.qt.io"));
+    context.insert(QStringLiteral("metadataClass"), QStringLiteral("browser_document"));
+
+    const QString selectionInput = DesktopContextSelectionBuilder::buildSelectionInput(
+        QStringLiteral("explain this page"),
+        IntentType::GENERAL_CHAT,
+        QStringLiteral("Browser tab: Qt 6 Signals and Slots"),
+        context,
+        1000,
+        1500,
+        false);
+
+    QVERIFY(selectionInput.contains(QStringLiteral("mode=technical_research")));
+    QVERIFY(selectionInput.contains(QStringLiteral("document=Qt 6 Signals and Slots")));
+    QVERIFY(selectionInput.contains(QStringLiteral("site=doc.qt.io")));
+    QVERIFY(selectionInput.contains(QStringLiteral("class=browser_document")));
+}
+
+void DesktopContextSelectionBuilderTests::skipsNoisyClipboardContext()
+{
+    QVariantMap context;
+    context.insert(QStringLiteral("taskId"), QStringLiteral("clipboard"));
+    context.insert(QStringLiteral("clipboardPreview"), QStringLiteral("non_text:image/png"));
+
+    const QString selectionInput = DesktopContextSelectionBuilder::buildSelectionInput(
+        QStringLiteral("what did I copy?"),
+        IntentType::GENERAL_CHAT,
+        QStringLiteral("Clipboard changed"),
+        context,
+        1000,
+        1500,
+        false);
+
+    QCOMPARE(selectionInput, QStringLiteral("what did I copy?"));
 }
 
 void DesktopContextSelectionBuilderTests::skipsIrrelevantGeneralChat()

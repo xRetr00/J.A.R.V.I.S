@@ -1,5 +1,7 @@
 #include "cognition/DesktopContextSelectionBuilder.h"
 
+#include <QRegularExpression>
+
 namespace {
 bool containsAny(const QString &input, const QStringList &needles)
 {
@@ -14,6 +16,15 @@ bool containsAny(const QString &input, const QStringList &needles)
 QString cleanedField(const QVariantMap &context, const QString &key)
 {
     return context.value(key).toString().simplified();
+}
+
+QString hintField(QString value, int maxLength = 80)
+{
+    value = value.simplified();
+    if (value.size() <= maxLength) {
+        return value;
+    }
+    return value.left(maxLength).trimmed() + QStringLiteral("...");
 }
 }
 
@@ -56,9 +67,33 @@ QString DesktopContextSelectionBuilder::buildHint(const QString &desktopSummary,
     const QString topic = cleanedField(desktopContext, QStringLiteral("topic"));
     const QString appId = cleanedField(desktopContext, QStringLiteral("appId"));
     const QString threadId = cleanedField(desktopContext, QStringLiteral("threadId"));
+    const QString document = cleanedField(desktopContext, QStringLiteral("documentContext"));
+    const QString site = cleanedField(desktopContext, QStringLiteral("siteContext"));
+    const QString workspace = cleanedField(desktopContext, QStringLiteral("workspaceContext"));
+    const QString language = cleanedField(desktopContext, QStringLiteral("languageHint"));
+    const QString metadataClass = cleanedField(desktopContext, QStringLiteral("metadataClass"));
+    const QString workMode = inferredWorkMode(desktopContext);
 
     if (!taskId.isEmpty()) {
         parts << QStringLiteral("task=%1").arg(taskId);
+    }
+    if (!workMode.isEmpty()) {
+        parts << QStringLiteral("mode=%1").arg(workMode);
+    }
+    if (!document.isEmpty() && document != QStringLiteral("private_mode_redacted")) {
+        parts << QStringLiteral("document=%1").arg(hintField(document));
+    }
+    if (!site.isEmpty()) {
+        parts << QStringLiteral("site=%1").arg(hintField(site));
+    }
+    if (!workspace.isEmpty()) {
+        parts << QStringLiteral("workspace=%1").arg(hintField(workspace));
+    }
+    if (!language.isEmpty()) {
+        parts << QStringLiteral("language=%1").arg(language);
+    }
+    if (!metadataClass.isEmpty()) {
+        parts << QStringLiteral("class=%1").arg(metadataClass);
     }
     if (!topic.isEmpty()) {
         parts << QStringLiteral("topic=%1").arg(topic);
@@ -73,10 +108,63 @@ QString DesktopContextSelectionBuilder::buildHint(const QString &desktopSummary,
     return parts.join(QStringLiteral("; "));
 }
 
+QString DesktopContextSelectionBuilder::inferredWorkMode(const QVariantMap &desktopContext)
+{
+    const QString taskId = cleanedField(desktopContext, QStringLiteral("taskId")).toLower();
+    const QString metadataClass = cleanedField(desktopContext, QStringLiteral("metadataClass")).toLower();
+    const QString language = cleanedField(desktopContext, QStringLiteral("languageHint")).toLower();
+    const QString site = cleanedField(desktopContext, QStringLiteral("siteContext")).toLower();
+
+    if (metadataClass == QStringLiteral("private_app_only")) {
+        return QStringLiteral("private");
+    }
+    if (taskId == QStringLiteral("editor_document")) {
+        return language.isEmpty() ? QStringLiteral("document_editing") : QStringLiteral("coding");
+    }
+    if (taskId == QStringLiteral("browser_tab")) {
+        if (containsAny(site, {
+                QStringLiteral("github"),
+                QStringLiteral("stackoverflow"),
+                QStringLiteral("docs"),
+                QStringLiteral("doc.")
+            })) {
+            return QStringLiteral("technical_research");
+        }
+        return QStringLiteral("web_research");
+    }
+    if (taskId == QStringLiteral("clipboard")) {
+        return QStringLiteral("clipboard_review");
+    }
+    if (taskId == QStringLiteral("notification")) {
+        return QStringLiteral("notification_triage");
+    }
+    return {};
+}
+
+bool DesktopContextSelectionBuilder::isNoisyClipboardContext(const QVariantMap &desktopContext)
+{
+    if (cleanedField(desktopContext, QStringLiteral("taskId")).toLower() != QStringLiteral("clipboard")) {
+        return false;
+    }
+
+    const QString preview = cleanedField(desktopContext, QStringLiteral("clipboardPreview"));
+    if (preview.isEmpty() || preview == QStringLiteral("private_mode_redacted")) {
+        return true;
+    }
+    if (preview.startsWith(QStringLiteral("non_text:"), Qt::CaseInsensitive)) {
+        return true;
+    }
+    return preview.size() < 6 && !preview.contains(QRegularExpression(QStringLiteral("[A-Za-z0-9]{3}")));
+}
+
 bool DesktopContextSelectionBuilder::shouldUseDesktopContext(const QString &userInput,
                                                              IntentType intent,
                                                              const QVariantMap &desktopContext)
 {
+    if (isNoisyClipboardContext(desktopContext)) {
+        return false;
+    }
+
     if (intent != IntentType::GENERAL_CHAT) {
         return true;
     }

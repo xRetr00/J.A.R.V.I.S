@@ -9,6 +9,7 @@ class DesktopContextThreadBuilderTests : public QObject
 private slots:
     void buildsActiveWindowContext();
     void buildsBrowserWindowContext();
+    void cleansBrowserShellSuffixFromPageContext();
     void prefersUiAutomationMetadataWhenAvailable();
     void preservesMetadataConfidenceAndRedactionMarkers();
     void marksPrivateModeContextAsRedacted();
@@ -45,6 +46,19 @@ void DesktopContextThreadBuilderTests::buildsBrowserWindowContext()
     QCOMPARE(snapshot.metadata.value(QStringLiteral("documentKind")).toString(), QStringLiteral("browser_page"));
     QCOMPARE(snapshot.topic, QStringLiteral("chatgpt"));
     QVERIFY(DesktopContextThreadBuilder::describeContext(snapshot).contains(QStringLiteral("on OpenAI")));
+}
+
+void DesktopContextThreadBuilderTests::cleansBrowserShellSuffixFromPageContext()
+{
+    const CompanionContextSnapshot snapshot = DesktopContextThreadBuilder::fromActiveWindow(
+        QStringLiteral("C:/Program Files/Microsoft/Edge/Application/msedge.exe"),
+        QStringLiteral("Qt signals and slots (3) - Microsoft Edge"));
+
+    QCOMPARE(snapshot.appId, QStringLiteral("edge"));
+    QCOMPARE(snapshot.metadata.value(QStringLiteral("documentContext")).toString(),
+             QStringLiteral("Qt signals and slots"));
+    QVERIFY(snapshot.metadata.value(QStringLiteral("siteContext")).toString().isEmpty());
+    QCOMPARE(snapshot.topic, QStringLiteral("qt_signals_and_slots"));
 }
 
 void DesktopContextThreadBuilderTests::prefersUiAutomationMetadataWhenAvailable()

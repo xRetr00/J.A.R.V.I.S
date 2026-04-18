@@ -1,5 +1,7 @@
 #include "telemetry/SelectionTelemetryBuilder.h"
 
+#include "cognition/DesktopWorkMode.h"
+
 #include <QStringList>
 #include <QVariantList>
 
@@ -44,6 +46,11 @@ QStringList toolNames(const QList<AgentToolSpec> &tools)
     }
     return names;
 }
+
+QString contextString(const QVariantMap &desktopContext, const QString &key)
+{
+    return desktopContext.value(key).toString().trimmed();
+}
 }
 
 QVariantMap SelectionTelemetryBuilder::basePayload(const QString &purpose,
@@ -55,9 +62,16 @@ QVariantMap SelectionTelemetryBuilder::basePayload(const QString &purpose,
         {QStringLiteral("purpose"), purpose},
         {QStringLiteral("inputPreview"), inputPreview.left(160)},
         {QStringLiteral("desktopSummary"), desktopSummary},
-        {QStringLiteral("desktopTaskId"), desktopContext.value(QStringLiteral("taskId")).toString()},
-        {QStringLiteral("desktopThreadId"), desktopContext.value(QStringLiteral("threadId")).toString()},
-        {QStringLiteral("desktopTopic"), desktopContext.value(QStringLiteral("topic")).toString()}
+        {QStringLiteral("desktopTaskId"), contextString(desktopContext, QStringLiteral("taskId"))},
+        {QStringLiteral("desktopThreadId"), contextString(desktopContext, QStringLiteral("threadId"))},
+        {QStringLiteral("desktopTopic"), contextString(desktopContext, QStringLiteral("topic"))},
+        {QStringLiteral("desktopMetadataClass"), contextString(desktopContext, QStringLiteral("metadataClass"))},
+        {QStringLiteral("desktopDocumentKind"), contextString(desktopContext, QStringLiteral("documentKind"))},
+        {QStringLiteral("desktopDocumentContext"), contextString(desktopContext, QStringLiteral("documentContext"))},
+        {QStringLiteral("desktopSiteContext"), contextString(desktopContext, QStringLiteral("siteContext"))},
+        {QStringLiteral("desktopWorkspaceContext"), contextString(desktopContext, QStringLiteral("workspaceContext"))},
+        {QStringLiteral("desktopLanguageHint"), contextString(desktopContext, QStringLiteral("languageHint"))},
+        {QStringLiteral("desktopWorkMode"), DesktopWorkMode::inferFromContext(desktopContext)}
     };
 }
 

@@ -417,7 +417,7 @@ void SuggestionProposalPlannerTests::suppressesPlannedSuggestionDuringFocusMode(
     QVERIFY(!plan.generatedProposals.isEmpty());
     QVERIFY(!plan.rankedProposals.isEmpty());
     QVERIFY(!plan.decision.allowed);
-    QCOMPARE(plan.decision.reasonCode, QStringLiteral("proposal.focus_mode_suppressed"));
+    QCOMPARE(plan.decision.reasonCode, QStringLiteral("focus_mode.suppressed"));
     QVERIFY(plan.selectedSummary.isEmpty());
 }
 
