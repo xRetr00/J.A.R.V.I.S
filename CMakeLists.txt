@@ -301,6 +301,7 @@ set(JARVIS_SOURCES
     src/cognition/DesktopContextSelectionBuilder.cpp
     src/cognition/DesktopWorkMode.cpp
     src/cognition/FocusModePolicy.cpp
+    src/cognition/ProactivePlannerInputEnricher.cpp
     src/cognition/ProactiveSuggestionGate.cpp
     src/cognition/ProactiveSuggestionPlanner.cpp
     src/cognition/ProactiveSurfaceGate.cpp
@@ -417,6 +418,7 @@ set(JARVIS_HEADERS
     src/cognition/DesktopContextSelectionBuilder.h
     src/cognition/DesktopWorkMode.h
     src/cognition/FocusModePolicy.h
+    src/cognition/ProactivePlannerInputEnricher.h
     src/cognition/ProactiveSuggestionGate.h
     src/cognition/ProactiveSurfaceGate.h
     src/cognition/SelectionContextCompiler.h
@@ -1454,6 +1456,7 @@ if(JARVIS_BUILD_TESTS)
     qt_add_executable(jarvis_suggestion_planner_tests
         tests/SuggestionProposalPlannerTests.cpp
         src/cognition/CooldownEngine.cpp
+        src/cognition/ProactivePlannerInputEnricher.cpp
         src/cognition/ProactiveSuggestionPlanner.cpp
         src/cognition/ProactiveSuggestionGate.cpp
         src/cognition/SuggestionProposalBuilder.cpp
@@ -1472,6 +1475,7 @@ if(JARVIS_BUILD_TESTS)
     qt_add_executable(jarvis_suggestion_builder_metadata_tests
         tests/SuggestionProposalBuilderMetadataTests.cpp
         src/cognition/CooldownEngine.cpp
+        src/cognition/ProactivePlannerInputEnricher.cpp
         src/cognition/ProactiveSuggestionPlanner.cpp
         src/cognition/ProactiveSuggestionGate.cpp
         src/cognition/SuggestionProposalBuilder.cpp
@@ -1486,6 +1490,45 @@ if(JARVIS_BUILD_TESTS)
     add_test(NAME jarvis_suggestion_builder_metadata_tests COMMAND jarvis_suggestion_builder_metadata_tests)
     set_tests_properties(jarvis_suggestion_builder_metadata_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
     jarvis_copy_optional_runtime_libraries(jarvis_suggestion_builder_metadata_tests)
+
+    qt_add_executable(jarvis_planner_input_enricher_tests
+        tests/ProactivePlannerInputEnricherTests.cpp
+        src/cognition/CooldownEngine.cpp
+        src/cognition/ProactivePlannerInputEnricher.cpp
+        src/cognition/ProactiveSuggestionPlanner.cpp
+        src/cognition/ProactiveSuggestionGate.cpp
+        src/cognition/SuggestionProposalBuilder.cpp
+        src/cognition/SuggestionProposalPolicyScoring.cpp
+        src/cognition/DesktopWorkMode.cpp
+        src/cognition/SuggestionProposalRanker.cpp
+    )
+
+    target_include_directories(jarvis_planner_input_enricher_tests PRIVATE src)
+    target_link_libraries(jarvis_planner_input_enricher_tests PRIVATE Qt6::Core Qt6::Test nlohmann_json::nlohmann_json)
+
+    add_test(NAME jarvis_planner_input_enricher_tests COMMAND jarvis_planner_input_enricher_tests)
+    set_tests_properties(jarvis_planner_input_enricher_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_planner_input_enricher_tests)
+
+    qt_add_executable(jarvis_proactive_loop_scenario_tests
+        tests/ProactiveSuggestionLoopScenarioTests.cpp
+        src/cognition/CooldownEngine.cpp
+        src/cognition/ProactiveCooldownTracker.cpp
+        src/cognition/ProactivePlannerInputEnricher.cpp
+        src/cognition/ProactiveSuggestionPlanner.cpp
+        src/cognition/ProactiveSuggestionGate.cpp
+        src/cognition/SuggestionProposalBuilder.cpp
+        src/cognition/SuggestionProposalPolicyScoring.cpp
+        src/cognition/DesktopWorkMode.cpp
+        src/cognition/SuggestionProposalRanker.cpp
+    )
+
+    target_include_directories(jarvis_proactive_loop_scenario_tests PRIVATE src)
+    target_link_libraries(jarvis_proactive_loop_scenario_tests PRIVATE Qt6::Core Qt6::Test nlohmann_json::nlohmann_json)
+
+    add_test(NAME jarvis_proactive_loop_scenario_tests COMMAND jarvis_proactive_loop_scenario_tests)
+    set_tests_properties(jarvis_proactive_loop_scenario_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_proactive_loop_scenario_tests)
 
     qt_add_executable(jarvis_suggestion_history_policy_tests
         tests/SuggestionProposalHistoryPolicyTests.cpp

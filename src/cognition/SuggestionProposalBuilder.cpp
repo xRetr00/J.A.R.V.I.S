@@ -70,7 +70,7 @@ QString effectiveConnectorKind(const SuggestionProposalBuilder::Input &input, co
 
 QString presentationKeyHint(const SuggestionProposalBuilder::Input &input)
 {
-    const QString explicitKey = firstMetadataString(input, {"presentationKey", "taskKey", "eventId"});
+    const QString explicitKey = firstMetadataString(input, {"presentationKeyHint", "presentationKey", "taskKey", "eventId"});
     if (!explicitKey.isEmpty()) {
         return explicitKey;
     }

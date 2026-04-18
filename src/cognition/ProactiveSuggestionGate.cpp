@@ -69,6 +69,10 @@ BehaviorDecision ProactiveSuggestionGate::evaluate(const Input &input)
                             input.proposal.arguments.value(QStringLiteral("sourceLabel")).toString());
     decision.details.insert(QStringLiteral("presentationKeyHint"),
                             input.proposal.arguments.value(QStringLiteral("presentationKeyHint")).toString());
+    decision.details.insert(QStringLiteral("plannerInputClass"),
+                            input.sourceMetadata.value(QStringLiteral("plannerInputClass")).toString());
+    decision.details.insert(QStringLiteral("sourceSpecificPolicy"),
+                            input.sourceMetadata.value(QStringLiteral("sourceSpecificPolicy")).toString());
     decision.details.insert(QStringLiteral("desktopTaskId"), input.desktopContext.value(QStringLiteral("taskId")).toString());
     decision.details.insert(QStringLiteral("desktopThreadId"), input.desktopContext.value(QStringLiteral("threadId")).toString());
     decision.details.insert(QStringLiteral("focusModeEnabled"), input.focusMode.enabled);
@@ -88,6 +92,16 @@ BehaviorDecision ProactiveSuggestionGate::evaluate(const Input &input)
     }
 
     const QString capabilityId = input.proposal.capabilityId.trimmed();
+    const QString sourceSuppressionReason = metadataString(input.sourceMetadata,
+                                                           QStringLiteral("sourceSpecificSuppressionReason"));
+    if (!sourceSuppressionReason.isEmpty()) {
+        decision.allowed = false;
+        decision.action = QStringLiteral("suppress_proposal");
+        decision.reasonCode = sourceSuppressionReason;
+        decision.score = 0.86;
+        return decision;
+    }
+
     const QString layeredSummary = metadataString(input.sourceMetadata,
                                                   QStringLiteral("compiledContextLayeredSummary"));
     const QString evolutionSummary = metadataString(input.sourceMetadata,

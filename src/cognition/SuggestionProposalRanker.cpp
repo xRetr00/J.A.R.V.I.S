@@ -453,7 +453,7 @@ QList<RankedSuggestionProposal> SuggestionProposalRanker::rank(const Input &inpu
                 rankedProposal.reasonCode = QStringLiteral("proposal_rank.cooldown_break_candidate");
             } else {
                 rankedProposal.score -= 0.12;
-                rankedProposal.reasonCode = QStringLiteral("proposal_rank.cooldown_penalty");
+                if (rankedProposal.reasonCode != QStringLiteral("proposal_rank.recent_duplicate_penalty")) rankedProposal.reasonCode = QStringLiteral("proposal_rank.cooldown_penalty");
             }
         } else if (meaningfulThreadShift) {
             rankedProposal.score += 0.06;

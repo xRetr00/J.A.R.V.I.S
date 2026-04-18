@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "cognition/CooldownEngine.h"
+#include "cognition/ProactivePlannerInputEnricher.h"
 #include "cognition/SuggestionProposalBuilder.h"
 
 namespace {
@@ -112,12 +113,22 @@ ProactiveSuggestionPlan ProactiveSuggestionPlanner::plan(const Input &input)
 {
     ProactiveSuggestionPlan plan;
     plan.context = contextFromDesktopState(input.desktopContext);
-    plan.generatedProposals = SuggestionProposalBuilder::build({
+    const QVariantMap plannerMetadata = ProactivePlannerInputEnricher::enrich({
         .sourceKind = input.sourceKind,
         .taskType = input.taskType,
         .resultSummary = input.resultSummary,
         .sourceUrls = input.sourceUrls,
         .sourceMetadata = input.sourceMetadata,
+        .desktopContext = input.desktopContext,
+        .nowMs = input.nowMs,
+        .success = input.success
+    });
+    plan.generatedProposals = SuggestionProposalBuilder::build({
+        .sourceKind = input.sourceKind,
+        .taskType = input.taskType,
+        .resultSummary = input.resultSummary,
+        .sourceUrls = input.sourceUrls,
+        .sourceMetadata = plannerMetadata,
         .success = input.success
     });
 
@@ -134,7 +145,7 @@ ProactiveSuggestionPlan ProactiveSuggestionPlanner::plan(const Input &input)
         .proposals = plan.generatedProposals,
         .sourceKind = input.sourceKind,
         .taskType = input.taskType,
-        .sourceMetadata = input.sourceMetadata,
+        .sourceMetadata = plannerMetadata,
         .presentationKey = input.presentationKey,
         .lastPresentedKey = input.lastPresentedKey,
         .lastPresentedAtMs = input.lastPresentedAtMs,
@@ -181,7 +192,7 @@ ProactiveSuggestionPlan ProactiveSuggestionPlanner::plan(const Input &input)
     const BehaviorDecision gateDecision = ProactiveSuggestionGate::evaluate({
         .proposal = plan.selectedProposal,
         .proposalScore = plan.rankedProposals.first().score,
-        .sourceMetadata = input.sourceMetadata,
+        .sourceMetadata = plannerMetadata,
         .desktopContext = input.desktopContext,
         .desktopContextAtMs = input.desktopContextAtMs,
         .focusMode = input.focusMode,
