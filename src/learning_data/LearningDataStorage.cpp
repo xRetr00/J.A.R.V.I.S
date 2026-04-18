@@ -1147,36 +1147,38 @@ bool LearningDataStorage::enforceAudioStorageLimitGb(double maxGb)
     return ok;
 }
 
-bool LearningDataStorage::removeFilesOlderThan(const QString &rootDir,
-                                               const QDateTime &cutoffUtc,
-                                               const QString &kind,
-                                               const QString &reason)
+bool LearningDataStorage::enforceWakeWordStorageLimitGb(double maxGb)
 {
-    bool ok = true;
-    QDirIterator it(rootDir, QDir::Files, QDirIterator::Subdirectories);
+    const qint64 capBytes = static_cast<qint64>(std::max(0.1, maxGb) * 1024.0 * 1024.0 * 1024.0);
+
+    struct WakeWordFile {
+        QString path;
+        qint64 size = 0;
+        QDateTime modifiedUtc;
+    };
+
+    QList<WakeWordFile> files;
+    qint64 totalBytes = 0;
+    QDirIterator it(wakeWordRoot(), QDir::Files, QDirIterator::Subdirectories);
     while (it.hasNext()) {
         const QFileInfo info(it.next());
-        if (info.lastModified().toUTC() >= cutoffUtc) {
-            continue;
-        }
-
-        const bool deleted = QFile::remove(info.absoluteFilePath());
-        appendTombstone(kind,
-                        reason,
-                        asRelativePath(info.absoluteFilePath()),
-                        info.size(),
-                        deleted);
-        if (!deleted) {
-            ok = false;
-            appendFailureRecord(QStringLiteral("retention"),
-                                QStringLiteral("delete_failed"),
-                                QJsonObject{{QStringLiteral("path"), asRelativePath(info.absoluteFilePath())}});
-        }
+        WakeWordFile file;
+        file.path = info.absoluteFilePath();
+        file.size = info.size();
+        file.modifiedUtc = info.lastModified().toUTC();
+        totalBytes += file.size;
+        files.push_back(file);
     }
-    return ok;
-}
 
-} // namespace LearningData
+    std::sort(files.begin(), files.end(), [](const WakeWordFile &left, const WakeWordFile &right) {
+        return left.modifiedUtc < right.modifiedUtc;
+    });
+
+    bool ok = true;
+    for (const WakeWordFile &file : files) {
+        if (totalBytes <= capBytes) {
+            break;
+        }
         const bool deleted = QFile::remove(file.path);
         appendTombstone(QStringLiteral("wakeword_audio_file"),
                         QStringLiteral("wakeword_storage_cap_gb"),

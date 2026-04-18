@@ -29,7 +29,10 @@ struct LearningDataSettingsSnapshot
     [[nodiscard]] bool hasAnyCategoryEnabled() const
     {
         return audioCollectionEnabled
-            || wakeWordCollectionEnabled
+            || (wakeWordCollectionEnabled
+                && (wakeWordPositiveCollectionEnabled
+                    || wakeWordNegativeCollectionEnabled
+                    || wakeWordHardNegativeCollectionEnabled))
             || transcriptCollectionEnabled
             || toolLoggingEnabled
             || behaviorLoggingEnabled

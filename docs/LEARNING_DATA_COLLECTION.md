@@ -19,6 +19,7 @@ Primary module files:
 - `src/learning_data/LearningDataSettings.h/.cpp`
 - `src/learning_data/LearningDataStorage.h/.cpp`
 - `src/learning_data/LearningDataTypes.h`
+- `src/wakeword/WakeWordDataCapture.h/.cpp`
 
 Responsibilities:
 
@@ -26,6 +27,7 @@ Responsibilities:
 - `LearningDataSettings`: snapshot of user-configurable controls from `AppSettings`.
 - `LearningDataStorage`: filesystem layout, append-only JSONL writes, WAV persistence, retention, export manifests, diagnostics.
 - `LearningDataTypes`: schema-versioned typed events and JSON serialization helpers.
+- `WakeWordDataCapture`: bounded wake-monitor ring buffering and wake-word dataset capture orchestration (positive, negative, hard-negative, ambiguous, false-reject recovery).
 
 ### Behavior Preservation
 
@@ -51,18 +53,42 @@ learning/
     behavior_events/YYYY/MM/DD.jsonl
     memory_events/YYYY/MM/DD.jsonl
     feedback_events/YYYY/MM/DD.jsonl
+    wakeword_events.jsonl
+    wakeword_manifest.jsonl
   audio/
     YYYY/
       MM/
         session_<id>/
           turn_<id>/
             <audio_role>_<session>_<timestamp>_<event>.wav
+  wakeword/
+    positive/
+      YYYY/
+        MM/
+          session_<id>/
+            wwpos_<timestamp>_<event>.wav
+    negative/
+      YYYY/
+        MM/
+          session_<id>/
+            wwneg_<timestamp>_<event>.wav
+    hard_negative/
+      YYYY/
+        MM/
+          session_<id>/
+            wwhardneg_<timestamp>_<event>.wav
+    ambiguous/
+      YYYY/
+        MM/
+          session_<id>/
+            wwamb_<timestamp>_<event>.wav
   exports/
     export_YYYYMMDD_HHMMSS/
       export_audio_manifest.jsonl
       export_tool_policy_manifest.jsonl
       export_behavior_policy_manifest.jsonl
       export_memory_policy_manifest.jsonl
+      wakeword_manifest.jsonl
   quarantine/
     write_failures.jsonl
   retention/
@@ -80,8 +106,14 @@ Added `AppSettings` controls:
 - `enable_tool_logging`
 - `enable_behavior_logging`
 - `enable_memory_logging`
+- `enable_wakeword_collection`
+- `enable_wakeword_positive_collection`
+- `enable_wakeword_negative_collection`
+- `enable_wakeword_hard_negative_collection`
 - `max_audio_storage_gb`
+- `max_wakeword_storage_gb`
 - `max_days_to_keep_audio`
+- `max_days_to_keep_wakeword_audio`
 - `max_days_to_keep_structured_logs`
 - `allow_export_prepared_datasets`
 
@@ -160,6 +192,37 @@ All records include `schema_version`.
   "confidence": 0.94,
   "was_user_edited": false,
   "transcript_changed": false
+}
+```
+
+### WakeWordEvent
+
+```json
+{
+  "schema_version": "1.0.0",
+  "event_kind": "wakeword",
+  "event_id": "wakeword_1713430012222_deadbeef",
+  "session_id": "session_...",
+  "turn_id": "",
+  "timestamp": "2026-04-18T20:01:52.222Z",
+  "file_path": "wakeword/positive/2026/04/session_session_.../wwpos_...wav",
+  "clip_role": "positive",
+  "label_status": "auto_labeled",
+  "wake_engine": "sherpa-onnx",
+  "keyword_text": "Hey Vaxil",
+  "detected": true,
+  "detection_score": null,
+  "threshold": 0.8,
+  "duration_ms": 1350,
+  "sample_rate": 16000,
+  "channels": 1,
+  "capture_source": "default_mic",
+  "collection_reason": "wakeword_detected_trigger",
+  "was_used_to_start_session": true,
+  "came_from_false_trigger": false,
+  "came_from_missed_trigger_recovery": false,
+  "notes": "bounded_pretrigger_clip",
+  "file_hash_sha256": "..."
 }
 ```
 
@@ -274,6 +337,8 @@ All records include `schema_version`.
 The implementation uses existing decision points in `AssistantController` with no duplicate policy logic:
 
 - command audio finalized: `inputCaptureFinished` callback
+- wake-monitor frame stream: `VoicePipelineRuntime::speechFrame` while `WakeMonitor` is active
+- wake trigger authoritative event: `WakeWordEngine::wakeWordDetected`
 - ASR completion: `SpeechRecognizer::transcriptionReady`
 - tool decision resolved: route execution path after `buildToolPlan`/trust evaluation
 - tool execution result: `ToolCoordinator` observer and background result handling
@@ -281,12 +346,22 @@ The implementation uses existing decision points in `AssistantController` with n
 - memory decision: `MemoryPolicyHandler` decision callback
 - feedback/correction: proactive feedback and confirmation handling paths
 
+Wake-word-specific collection behavior:
+
+- Positive clips: recorded on successful wake detection (`auto_labeled`, role `positive`).
+- Negative clips: sampled from bounded non-trigger speech windows while wake monitor is active.
+- Hard negatives: false accepts are derived when wake-triggered listening yields no speech (`false_accept` role under `hard_negative/`).
+- Ambiguous clips: wake-trigger follow-ups that produce ambiguous transcripts are recorded as `ambiguous`.
+- False reject recovery: `AssistantController::captureMissedWakeWordSample(...)` captures recent wake-monitor audio as `false_reject` candidate data (developer/debug path), and submit-text reports like "wake word ... didn't trigger" invoke this path automatically.
+
 ## Retention and Safety
 
 Retention runs are best-effort and non-fatal:
 
 - delete old audio files by age
 - enforce audio storage cap by deleting oldest clips first
+- delete old wake-word audio files by age
+- enforce wake-word storage cap by deleting oldest clips first
 - delete old structured log shards by age
 - append tombstones to `retention/tombstones.jsonl`
 - append write failures to `quarantine/write_failures.jsonl`
@@ -299,6 +374,7 @@ No deletion failure crashes the assistant.
 
 - sessions
 - audio clip count
+- wake-word clip count
 - tool decision count
 - tool execution count
 - behavior decision count
@@ -313,10 +389,12 @@ Maintenance logs diagnostics via the existing logging channel.
 - Cross-event joins in exports are currently turn/session based and intentionally lightweight.
 - No UI dashboard is added yet; review is file-based and log-based.
 - Speaker labels remain non-ground-truth (`unlabeled`, `assumed_owner`, etc.) by design.
+- Wake detection score is optional and may be unavailable depending on wake-engine helper output format.
+- Current wake clips prioritize bounded pre-trigger context; post-roll may be limited when wake monitoring is paused immediately after detection.
 
 ## Recommended Next Steps
 
-1. Add optional internal debug command in UI/backend to surface diagnostics and latest export path.
-2. Add optional transcript correction hook from UI to emit `wrong_transcript` and corrected text payloads.
-3. Add schema migration utility for future `schema_version` upgrades.
-4. Add unit tests for more edge WAV formats if additional capture formats are introduced.
+1. Add explicit wake-helper score/near-threshold emission so `detection_score` and near-miss hard negatives become first-class instead of inferred.
+2. Add optional operator workflow for promoting `assumed` wake labels to `user_confirmed` labels.
+3. Add optional internal debug command in UI/backend to surface diagnostics and latest export path.
+4. Add schema migration utility for future `schema_version` upgrades.
