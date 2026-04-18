@@ -20,6 +20,7 @@
 #include <QTimer>
 #include <QVariantMap>
 #include <QStandardPaths>
+#include <QUuid>
 #include <QUrl>
 #include <QDateTime>
 
@@ -30,6 +31,7 @@
 #include "companion/contracts/BehaviorTraceEvent.h"
 #include "companion/contracts/FocusModeState.h"
 #include "core/AssistantController.h"
+#include "core/PermissionOverrideSettings.h"
 #include "logging/LoggingService.h"
 #include "overlay/OverlayController.h"
 #include "platform/PlatformRuntime.h"
@@ -1009,6 +1011,31 @@ bool looksLatestEnough(const QString &installedVersion, const QString &latestTag
 
     return latestTag.contains(installedVersion, Qt::CaseInsensitive);
 }
+
+QVariantList compactOverrideRows(const QVariantList &rows)
+{
+    QVariantList compact;
+    for (const QVariant &value : rows) {
+        const QVariantMap row = value.toMap();
+        compact.push_back(QVariantMap{
+            {QStringLiteral("capabilityId"), row.value(QStringLiteral("capabilityId")).toString()},
+            {QStringLiteral("decision"), row.value(QStringLiteral("decision")).toString()},
+            {QStringLiteral("scope"), row.value(QStringLiteral("scope")).toString()}
+        });
+    }
+    return compact;
+}
+
+QString overrideReasonCode(const QVariantList &before, const QVariantList &after)
+{
+    if (before.isEmpty() && !after.isEmpty()) {
+        return QStringLiteral("permission_overrides.created");
+    }
+    if (!before.isEmpty() && after.isEmpty()) {
+        return QStringLiteral("permission_overrides.cleared");
+    }
+    return QStringLiteral("permission_overrides.changed");
+}
 }
 
 BackendFacade::BackendFacade(
@@ -1392,6 +1419,7 @@ bool BackendFacade::focusModeAllowCriticalAlerts() const { return m_settings->fo
 int BackendFacade::focusModeDurationMinutes() const { return m_settings->focusModeDurationMinutes(); }
 qlonglong BackendFacade::focusModeUntilEpochMs() const { return m_settings->focusModeUntilEpochMs(); }
 bool BackendFacade::privateModeEnabled() const { return m_settings->privateModeEnabled(); }
+QVariantList BackendFacade::permissionOverrides() const { return m_settings->permissionOverrides(); }
 bool BackendFacade::tracePanelEnabled() const { return m_settings->tracePanelEnabled(); }
 QString BackendFacade::agentStatus() const { return m_assistantController->agentCapabilities().status; }
 bool BackendFacade::agentAvailable() const { return m_settings->agentEnabled(); }
@@ -1585,6 +1613,37 @@ void BackendFacade::setPrivateModeEnabled(bool enabled)
     }
 
     emit settingsChanged();
+}
+
+bool BackendFacade::savePermissionOverrides(const QVariantList &overrides)
+{
+    const QVariantList before = PermissionOverrideSettings::sanitize(m_settings->permissionOverrides());
+    const QVariantList sanitized = PermissionOverrideSettings::sanitize(overrides);
+    m_settings->setPermissionOverrides(sanitized);
+    const bool saved = m_settings->save();
+    if (saved) {
+        setToolInstallStatus(QStringLiteral("Permission overrides saved."));
+        if (m_loggingService && before != sanitized) {
+            BehaviorTraceEvent event = BehaviorTraceEvent::create(
+                QStringLiteral("permission"),
+                QStringLiteral("overrides_saved"),
+                overrideReasonCode(before, sanitized),
+                {
+                    {QStringLiteral("previousCount"), before.size()},
+                    {QStringLiteral("currentCount"), sanitized.size()},
+                    {QStringLiteral("previousOverrides"), compactOverrideRows(before)},
+                    {QStringLiteral("currentOverrides"), compactOverrideRows(sanitized)}
+                },
+                QStringLiteral("user"));
+            event.traceId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+            event.capabilityId = QStringLiteral("permission_override_settings");
+            m_loggingService->logBehaviorEvent(event);
+        }
+    } else {
+        setToolInstallStatus(QStringLiteral("Could not save permission overrides."));
+    }
+    emit settingsChanged();
+    return saved;
 }
 
 void BackendFacade::setTtsEngineKind(const QString &kind)

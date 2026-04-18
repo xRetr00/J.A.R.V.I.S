@@ -420,6 +420,8 @@ struct TrustDecision {
     bool requiresConfirmation = false;
     QString reason;
     QString userMessage;
+    QString desktopWorkMode;
+    QString contextReasonCode;
 };
 
 struct ActionSession {

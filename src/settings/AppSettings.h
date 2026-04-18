@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QVariantList>
 
 #include "core/AssistantTypes.h"
 
@@ -132,6 +133,9 @@ public:
     bool privateModeEnabled() const;
     void setPrivateModeEnabled(bool enabled);
 
+    QVariantList permissionOverrides() const;
+    void setPermissionOverrides(const QVariantList &overrides);
+
     QString whisperExecutable() const;
     void setWhisperExecutable(const QString &path);
 
@@ -253,6 +257,7 @@ private:
     int m_focusModeDurationMinutes = 0;
     qint64 m_focusModeUntilEpochMs = 0;
     bool m_privateModeEnabled = false;
+    QVariantList m_permissionOverrides;
     QString m_whisperExecutable;
     QString m_whisperModelPath;
     QString m_intentModelPath;

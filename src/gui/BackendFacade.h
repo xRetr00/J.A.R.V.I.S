@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QHash>
+#include <QVariantList>
 #include <QVariantMap>
 
 class AssistantController;
@@ -106,6 +107,8 @@ class BackendFacade : public QObject
     Q_PROPERTY(int focusModeDurationMinutes READ focusModeDurationMinutes NOTIFY settingsChanged)
     Q_PROPERTY(qlonglong focusModeUntilEpochMs READ focusModeUntilEpochMs NOTIFY settingsChanged)
     Q_PROPERTY(bool privateModeEnabled READ privateModeEnabled NOTIFY settingsChanged)
+    Q_PROPERTY(QVariantList permissionOverrides READ permissionOverrides NOTIFY settingsChanged)
+    Q_PROPERTY(QVariantList permissionCapabilityOptions READ permissionCapabilityOptions NOTIFY settingsChanged)
     Q_PROPERTY(bool tracePanelEnabled READ tracePanelEnabled NOTIFY agentStateChanged)
     Q_PROPERTY(QString agentStatus READ agentStatus NOTIFY agentStateChanged)
     Q_PROPERTY(bool agentAvailable READ agentAvailable NOTIFY agentStateChanged)
@@ -227,6 +230,8 @@ public:
     int focusModeDurationMinutes() const;
     qlonglong focusModeUntilEpochMs() const;
     bool privateModeEnabled() const;
+    QVariantList permissionOverrides() const;
+    QVariantList permissionCapabilityOptions() const;
     bool tracePanelEnabled() const;
     QString agentStatus() const;
     bool agentAvailable() const;
@@ -279,6 +284,7 @@ public:
     Q_INVOKABLE void activateFocusMode(int durationMinutes = 0, bool allowCriticalAlerts = true);
     Q_INVOKABLE void deactivateFocusMode();
     Q_INVOKABLE void setPrivateModeEnabled(bool enabled);
+    Q_INVOKABLE bool savePermissionOverrides(const QVariantList &overrides);
     Q_INVOKABLE void setTtsEngineKind(const QString &kind);
     Q_INVOKABLE void saveAudioProcessing(bool aecEnabled, bool rnnoiseEnabled, double vadSensitivity);
     Q_INVOKABLE void saveVisionSettings(bool enabled,

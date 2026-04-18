@@ -1,8 +1,10 @@
 #include <QtTest>
 #include <QDateTime>
 
+#include "core/ActionRiskPermissionService.h"
 #include "core/AssistantBehaviorPolicy.h"
 #include "core/InputRouter.h"
+#include "core/ToolPermissionRegistry.h"
 
 class AssistantBehaviorPolicyTests : public QObject
 {
@@ -14,6 +16,12 @@ private slots:
     void prioritizesGroundedToolsBeforeRiskyTools();
     void createsActWithProgressSessionForBackgroundTasks();
     void requiresConfirmationForImplicitRiskyActions();
+    void requiresConfirmationForPrivateModeSideEffects();
+    void quietsProgressDuringFocusedDesktopWork();
+    void emitsRiskAndPermissionEventsForPendingConfirmation();
+    void usesRegistryBackedPermissionRules();
+    void emitsConfirmationOutcomeEvent();
+    void appliesUserPermissionOverrides();
     void decidesRouteFromPolicyContext();
     void routesHighConfidenceToolIntentToAgent();
     void acceptsExplicitConfirmationReply();
@@ -115,13 +123,10 @@ void AssistantBehaviorPolicyTests::requiresConfirmationForImplicitRiskyActions()
     decision.kind = InputRouteKind::BackgroundTasks;
     decision.intent = IntentType::GENERAL_CHAT;
 
-    const ToolPlan plan = policy.buildToolPlan(
-        QStringLiteral("maybe make that available for me"),
-        IntentType::GENERAL_CHAT,
-        {
-            {QStringLiteral("skill_install"), {}, {}},
-            {QStringLiteral("web_search"), {}, {}}
-        });
+    ToolPlan plan;
+    plan.sideEffecting = true;
+    plan.orderedToolNames = {QStringLiteral("skill_install")};
+
     const TrustDecision trust = policy.assessTrust(
         QStringLiteral("maybe make that available for me"),
         decision,
@@ -129,6 +134,201 @@ void AssistantBehaviorPolicyTests::requiresConfirmationForImplicitRiskyActions()
 
     QVERIFY(trust.highRisk);
     QVERIFY(trust.requiresConfirmation);
+}
+
+void AssistantBehaviorPolicyTests::requiresConfirmationForPrivateModeSideEffects()
+{
+    AssistantBehaviorPolicy policy;
+    InputRouteDecision decision;
+    decision.kind = InputRouteKind::BackgroundTasks;
+    decision.intent = IntentType::GENERAL_CHAT;
+
+    ToolPlan plan;
+    plan.sideEffecting = true;
+    plan.orderedToolNames = {QStringLiteral("browser_open")};
+
+    const TrustDecision trust = policy.assessTrust(
+        QStringLiteral("open that"),
+        decision,
+        plan,
+        {{QStringLiteral("metadataClass"), QStringLiteral("private_app_only")}});
+
+    QVERIFY(trust.highRisk);
+    QVERIFY(trust.requiresConfirmation);
+    QCOMPARE(trust.desktopWorkMode, QStringLiteral("private"));
+    QCOMPARE(trust.contextReasonCode, QStringLiteral("action_policy.private_mode_confirmation"));
+    QVERIFY(trust.userMessage.contains(QStringLiteral("Private Mode")));
+}
+
+void AssistantBehaviorPolicyTests::quietsProgressDuringFocusedDesktopWork()
+{
+    AssistantBehaviorPolicy policy;
+    InputRouteDecision decision;
+    decision.kind = InputRouteKind::BackgroundTasks;
+    decision.intent = IntentType::READ_FILE;
+
+    ToolPlan plan;
+    plan.requiresGrounding = true;
+    plan.orderedToolNames = {QStringLiteral("file_read")};
+
+    const QVariantMap desktopContext{
+        {QStringLiteral("taskId"), QStringLiteral("editor_document")},
+        {QStringLiteral("languageHint"), QStringLiteral("cpp")}
+    };
+    const TrustDecision trust = policy.assessTrust(
+        QStringLiteral("read the current file"),
+        decision,
+        plan,
+        desktopContext);
+    const ActionSession session = policy.createActionSession(
+        QStringLiteral("read the current file"),
+        decision,
+        plan,
+        trust,
+        desktopContext);
+
+    QCOMPARE(trust.desktopWorkMode, QStringLiteral("coding"));
+    QVERIFY(!session.shouldAnnounceProgress);
+}
+
+void AssistantBehaviorPolicyTests::emitsRiskAndPermissionEventsForPendingConfirmation()
+{
+    ToolPlan plan;
+    plan.sideEffecting = true;
+    plan.orderedToolNames = {QStringLiteral("file_write")};
+
+    TrustDecision trust;
+    trust.highRisk = true;
+    trust.requiresConfirmation = true;
+    trust.desktopWorkMode = QStringLiteral("coding");
+    trust.contextReasonCode = QStringLiteral("action_policy.focused_work_confirmation");
+
+    const QVariantMap desktopContext{
+        {QStringLiteral("taskId"), QStringLiteral("editor_document")},
+        {QStringLiteral("threadId"), QStringLiteral("desktop::editor_document::vscode::plan_md")}
+    };
+    const ActionRiskPermissionEvaluation evaluation =
+        ActionRiskPermissionService::evaluate(plan, trust, false);
+
+    QCOMPARE(evaluation.risk.level, QStringLiteral("high"));
+    QVERIFY(evaluation.risk.confirmationRequired);
+    QCOMPARE(evaluation.permissions.size(), 1);
+    QVERIFY(!evaluation.permissions.first().granted);
+    QCOMPARE(evaluation.permissions.first().capabilityId, QStringLiteral("filesystem_write"));
+
+    const BehaviorTraceEvent riskEvent =
+        ActionRiskPermissionService::riskEvent(evaluation, QStringLiteral("BackgroundTasks"), desktopContext);
+    const BehaviorTraceEvent permissionEvent =
+        ActionRiskPermissionService::permissionEvent(evaluation, QStringLiteral("BackgroundTasks"), desktopContext);
+
+    QCOMPARE(riskEvent.family, QStringLiteral("risk_check"));
+    QCOMPARE(riskEvent.threadId, QStringLiteral("desktop::editor_document::vscode::plan_md"));
+    QCOMPARE(permissionEvent.family, QStringLiteral("permission"));
+    QCOMPARE(permissionEvent.payload.value(QStringLiteral("riskLevel")).toString(), QStringLiteral("high"));
+}
+
+void AssistantBehaviorPolicyTests::usesRegistryBackedPermissionRules()
+{
+    const QList<ToolPermissionRule> fileRules =
+        ToolPermissionRegistry::rulesForTool(QStringLiteral("file_patch"));
+    const QList<ToolPermissionRule> browserRules =
+        ToolPermissionRegistry::rulesForTool(QStringLiteral("browser_open"));
+
+    QCOMPARE(ToolPermissionRegistry::policyVersion(), QStringLiteral("tool_permission_registry.v1"));
+    QCOMPARE(fileRules.size(), 1);
+    QCOMPARE(fileRules.first().capabilityId, QStringLiteral("filesystem_write"));
+    QCOMPARE(browserRules.size(), 1);
+    QCOMPARE(browserRules.first().capabilityId, QStringLiteral("desktop_automation"));
+
+    ToolPlan plan;
+    plan.orderedToolNames = {QStringLiteral("file_patch"), QStringLiteral("browser_open")};
+    const ActionRiskPermissionEvaluation evaluation =
+        ActionRiskPermissionService::evaluate(plan, TrustDecision{}, true);
+
+    QCOMPARE(evaluation.permissions.size(), 2);
+    QCOMPARE(evaluation.risk.details.value(QStringLiteral("permissionRegistryVersion")).toString(),
+             QStringLiteral("tool_permission_registry.v1"));
+    QVERIFY(evaluation.permissions.at(0).granted);
+    QCOMPARE(evaluation.permissions.at(0).reasonCode, QStringLiteral("permission.allowed_by_registry"));
+}
+
+void AssistantBehaviorPolicyTests::emitsConfirmationOutcomeEvent()
+{
+    ToolPlan plan;
+    plan.sideEffecting = true;
+    plan.orderedToolNames = {QStringLiteral("file_patch")};
+
+    TrustDecision trust;
+    trust.highRisk = true;
+    trust.requiresConfirmation = true;
+    trust.contextReasonCode = QStringLiteral("action_policy.focused_work_confirmation");
+
+    ActionSession session;
+    session.id = QStringLiteral("session-123");
+    session.userRequest = QStringLiteral("patch that file");
+    session.toolPlan = plan;
+    session.trust = trust;
+
+    const ActionRiskPermissionEvaluation evaluation =
+        ActionRiskPermissionService::evaluate(plan, trust, false);
+    const BehaviorTraceEvent event =
+        ActionRiskPermissionService::confirmationOutcomeEvent(
+            evaluation,
+            QStringLiteral("BackgroundTasks"),
+            session,
+            QStringLiteral("approved"),
+            QStringLiteral("yes, continue"),
+            {{QStringLiteral("threadId"), QStringLiteral("desktop::editor_document::vscode::plan_md")}});
+
+    QCOMPARE(event.family, QStringLiteral("confirmation"));
+    QCOMPARE(event.stage, QStringLiteral("approved"));
+    QCOMPARE(event.reasonCode, QStringLiteral("confirmation.approved"));
+    QCOMPARE(event.sessionId, QStringLiteral("session-123"));
+    QVERIFY(event.payload.value(QStringLiteral("executionWillContinue")).toBool());
+    QCOMPARE(event.payload.value(QStringLiteral("riskReasonCode")).toString(),
+             QStringLiteral("action_policy.focused_work_confirmation"));
+}
+
+void AssistantBehaviorPolicyTests::appliesUserPermissionOverrides()
+{
+    ToolPlan plan;
+    plan.sideEffecting = true;
+    plan.orderedToolNames = {
+        QStringLiteral("file_patch"),
+        QStringLiteral("browser_open")
+    };
+
+    TrustDecision trust;
+    trust.highRisk = true;
+    trust.requiresConfirmation = true;
+
+    const ActionRiskPermissionEvaluation evaluation =
+        ActionRiskPermissionService::evaluate(
+            plan,
+            trust,
+            false,
+            {
+                PermissionOverrideRule{
+                    .capabilityId = QStringLiteral("filesystem_write"),
+                    .decision = QStringLiteral("allow"),
+                    .scope = QStringLiteral("project_workspace"),
+                    .reasonCode = QStringLiteral("permission.allowed_by_user_override")
+                },
+                PermissionOverrideRule{
+                    .capabilityId = QStringLiteral("desktop_automation"),
+                    .decision = QStringLiteral("deny"),
+                    .scope = QStringLiteral("blocked"),
+                    .reasonCode = QStringLiteral("permission.denied_by_user_override")
+                }
+            });
+
+    QCOMPARE(evaluation.permissions.size(), 2);
+    QVERIFY(evaluation.permissions.at(0).granted);
+    QCOMPARE(evaluation.permissions.at(0).scope, QStringLiteral("project_workspace"));
+    QCOMPARE(evaluation.permissions.at(0).reasonCode, QStringLiteral("permission.allowed_by_user_override"));
+    QVERIFY(!evaluation.permissions.at(1).granted);
+    QCOMPARE(evaluation.permissions.at(1).reasonCode, QStringLiteral("permission.denied_by_user_override"));
+    QCOMPARE(evaluation.risk.details.value(QStringLiteral("permissionOverrideCount")).toInt(), 2);
 }
 
 void AssistantBehaviorPolicyTests::decidesRouteFromPolicyContext()

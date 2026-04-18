@@ -53,7 +53,32 @@ JarvisUi.VisionGlassPanel {
         if (family === "ui_presentation") {
             return "#ffb6d9"
         }
+        if (family === "risk_check") {
+            return "#ff9f8a"
+        }
+        if (family === "permission") {
+            return "#a8e0a1"
+        }
+        if (family === "confirmation") {
+            return "#d7b6ff"
+        }
         return "#dfe9f7"
+    }
+
+    function permissionSummary(permissions) {
+        const rows = permissions || []
+        const parts = []
+        for (let i = 0; i < rows.length; ++i) {
+            const grant = rows[i] || {}
+            const capabilityId = (grant.capabilityId || "").toString()
+            const granted = !!grant.granted
+            const scope = (grant.scope || "").toString()
+            if (capabilityId.length === 0) {
+                continue
+            }
+            parts.push(capabilityId + "=" + (granted ? "allowed" : "blocked") + (scope.length > 0 ? " (" + scope + ")" : ""))
+        }
+        return parts.join(", ")
     }
 
     function detailText(entry) {
@@ -70,6 +95,10 @@ JarvisUi.VisionGlassPanel {
         const cooldownReasonCode = (entry.cooldownReasonCode || "").toString()
         const confidenceScore = entry.confidenceScore
         const noveltyScore = entry.noveltyScore
+        const riskLevel = (entry.level || entry.riskLevel || "").toString()
+        const confirmationRequired = entry.confirmationRequired
+        const permissionCount = entry.permissionCount
+        const registryVersion = (entry.permissionRegistryVersion || "").toString()
         if (reasonCode.length > 0) {
             parts.push(reasonCode)
         }
@@ -99,6 +128,18 @@ JarvisUi.VisionGlassPanel {
         }
         if (noveltyScore !== undefined && noveltyScore !== null) {
             parts.push("novelty=" + Number(noveltyScore).toFixed(2))
+        }
+        if (riskLevel.length > 0) {
+            parts.push("risk=" + riskLevel)
+        }
+        if (confirmationRequired !== undefined && confirmationRequired !== null) {
+            parts.push("confirm=" + (!!confirmationRequired ? "yes" : "no"))
+        }
+        if (permissionCount !== undefined && permissionCount !== null) {
+            parts.push("permissions=" + Number(permissionCount))
+        }
+        if (registryVersion.length > 0) {
+            parts.push(registryVersion)
         }
         if (threadId.length > 0) {
             parts.push(threadId)
@@ -181,6 +222,57 @@ JarvisUi.VisionGlassPanel {
             const taskId = (entry.desktopTaskId || "").toString()
             const topic = (entry.desktopTopic || "").toString()
             return "Desktop context affected selection" + (taskId ? " for " + taskId : "") + (topic ? " (" + topic + ")" : "")
+        }
+        if (family === "risk_check") {
+            const level = (entry.level || "").toString()
+            const toolNames = entry.toolNames || []
+            const desktopWorkMode = (entry.desktopWorkMode || "").toString()
+            const permissionCount = entry.permissionCount || 0
+            let text = "Risk check"
+            if (level.length > 0) {
+                text += ": " + level
+            }
+            if (!!entry.confirmationRequired) {
+                text += " | confirmation required"
+            }
+            if (toolNames.length > 0) {
+                text += " | tools " + toolNames.join(", ")
+            }
+            if (desktopWorkMode.length > 0) {
+                text += " | desktop " + desktopWorkMode
+            }
+            if (Number(permissionCount) > 0) {
+                text += " | " + Number(permissionCount) + " permission checks"
+            }
+            return text
+        }
+        if (family === "permission") {
+            const permissions = permissionSummary(entry.permissions)
+            const riskLevel = (entry.riskLevel || "").toString()
+            let text = "Permission decision"
+            if (permissions.length > 0) {
+                text += ": " + permissions
+            } else {
+                text += ": no special capability required"
+            }
+            if (riskLevel.length > 0) {
+                text += " | risk " + riskLevel
+            }
+            if (!!entry.confirmationRequired) {
+                text += " | waiting for confirmation"
+            }
+            return text
+        }
+        if (family === "confirmation") {
+            const stage = (entry.stage || "").toString()
+            const permissions = permissionSummary(entry.permissions)
+            const executionWillContinue = !!entry.executionWillContinue
+            let text = "Confirmation " + (stage.length > 0 ? stage : "outcome")
+            if (permissions.length > 0) {
+                text += ": " + permissions
+            }
+            text += executionWillContinue ? " | execution continues" : " | execution stopped"
+            return text
         }
         if (family === "action_proposal") {
             const stage = (entry.stage || "").toString()
@@ -339,7 +431,7 @@ JarvisUi.VisionGlassPanel {
         }
 
         Text {
-            text: "Perception, context-thread, cooldown, selection-context, action-proposal, and UI-presentation events from the behavioral ledger."
+            text: "Perception, context, cooldown, selection, proposal, risk, permission, confirmation, and UI events from the behavioral ledger."
             color: "#8099b8"
             font.pixelSize: 14
             wrapMode: Text.Wrap

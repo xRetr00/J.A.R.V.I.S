@@ -35,6 +35,7 @@ private slots:
     void focusModeDefaultsDisabled();
     void focusModeDurationClamps();
     void privateModeDefaultsDisabled();
+    void permissionOverridesSanitized();
     void settingsChangedEmittedOnSetter();
 };
 
@@ -252,6 +253,34 @@ void AppSettingsTests::privateModeDefaultsDisabled()
 {
     AppSettings settings;
     QVERIFY(!settings.privateModeEnabled());
+}
+
+void AppSettingsTests::permissionOverridesSanitized()
+{
+    AppSettings settings;
+    QVariantMap allowed;
+    allowed.insert(QStringLiteral("capabilityId"), QStringLiteral("filesystem_write"));
+    allowed.insert(QStringLiteral("decision"), QStringLiteral("ALLOW"));
+    allowed.insert(QStringLiteral("scope"), QStringLiteral("project_workspace"));
+    allowed.insert(QStringLiteral("reasonCode"), QStringLiteral("user.whitelist"));
+
+    QVariantMap duplicate;
+    duplicate.insert(QStringLiteral("capabilityId"), QStringLiteral("filesystem_write"));
+    duplicate.insert(QStringLiteral("decision"), QStringLiteral("deny"));
+
+    QVariantMap invalid;
+    invalid.insert(QStringLiteral("capabilityId"), QStringLiteral("desktop_automation"));
+    invalid.insert(QStringLiteral("decision"), QStringLiteral("maybe"));
+
+    settings.setPermissionOverrides({allowed, duplicate, invalid});
+
+    const QVariantList overrides = settings.permissionOverrides();
+    QCOMPARE(overrides.size(), 1);
+    const QVariantMap stored = overrides.first().toMap();
+    QCOMPARE(stored.value(QStringLiteral("capabilityId")).toString(),
+             QStringLiteral("filesystem_write"));
+    QCOMPARE(stored.value(QStringLiteral("decision")).toString(), QStringLiteral("allow"));
+    QCOMPARE(stored.value(QStringLiteral("scope")).toString(), QStringLiteral("project_workspace"));
 }
 
 void AppSettingsTests::settingsChangedEmittedOnSetter()

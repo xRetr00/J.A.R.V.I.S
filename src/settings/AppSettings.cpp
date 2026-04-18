@@ -6,7 +6,9 @@
 #include <QDir>
 #include <QFile>
 #include <QStandardPaths>
+#include <QVariantMap>
 
+#include "core/PermissionOverrideSettings.h"
 #include <nlohmann/json.hpp>
 
 namespace {
@@ -134,6 +136,47 @@ QString normalizeUiMode(const QString &mode)
     }
     return QStringLiteral("full");
 }
+
+QVariantList permissionOverridesFromJson(const nlohmann::json &parsed)
+{
+    QVariantList rows;
+    if (!parsed.contains("permissionOverrides") || !parsed.at("permissionOverrides").is_array()) {
+        return rows;
+    }
+
+    for (const auto &entry : parsed.at("permissionOverrides")) {
+        if (!entry.is_object()) {
+            continue;
+        }
+        QVariantMap row;
+        row.insert(QStringLiteral("capabilityId"),
+                   QString::fromStdString(entry.value("capabilityId", std::string{})));
+        row.insert(QStringLiteral("decision"),
+                   QString::fromStdString(entry.value("decision", std::string{})));
+        row.insert(QStringLiteral("scope"),
+                   QString::fromStdString(entry.value("scope", std::string{})));
+        row.insert(QStringLiteral("reasonCode"),
+                   QString::fromStdString(entry.value("reasonCode", std::string{})));
+        rows.push_back(row);
+    }
+
+    return PermissionOverrideSettings::sanitize(rows);
+}
+
+nlohmann::json permissionOverridesToJson(const QVariantList &overrides)
+{
+    nlohmann::json rows = nlohmann::json::array();
+    for (const QVariant &value : PermissionOverrideSettings::sanitize(overrides)) {
+        const QVariantMap row = value.toMap();
+        rows.push_back({
+            {"capabilityId", row.value(QStringLiteral("capabilityId")).toString().toStdString()},
+            {"decision", row.value(QStringLiteral("decision")).toString().toStdString()},
+            {"scope", row.value(QStringLiteral("scope")).toString().toStdString()},
+            {"reasonCode", row.value(QStringLiteral("reasonCode")).toString().toStdString()}
+        });
+    }
+    return rows;
+}
 }
 
 AppSettings::AppSettings(QObject *parent)
@@ -218,6 +261,7 @@ bool AppSettings::load()
     m_focusModeDurationMinutes = clampFocusModeDurationMinutes(parsed.value("focusModeDurationMinutes", 0));
     m_focusModeUntilEpochMs = parsed.value("focusModeUntilEpochMs", static_cast<qint64>(0));
     m_privateModeEnabled = parsed.value("privateModeEnabled", false);
+    m_permissionOverrides = permissionOverridesFromJson(parsed);
     m_whisperExecutable = QString::fromStdString(parsed.value("whisperExecutable", std::string{}));
     m_whisperModelPath = QString::fromStdString(parsed.value("whisperModelPath", std::string{}));
     m_intentModelPath = QString::fromStdString(parsed.value("intentModelPath", std::string{}));
@@ -321,6 +365,7 @@ bool AppSettings::save() const
         {"focusModeDurationMinutes", m_focusModeDurationMinutes},
         {"focusModeUntilEpochMs", m_focusModeUntilEpochMs},
         {"privateModeEnabled", m_privateModeEnabled},
+        {"permissionOverrides", permissionOverridesToJson(m_permissionOverrides)},
         {"whisperExecutable", m_whisperExecutable.toStdString()},
         {"whisperModelPath", m_whisperModelPath.toStdString()},
         {"intentModelPath", m_intentModelPath.toStdString()},
@@ -549,6 +594,12 @@ qint64 AppSettings::focusModeUntilEpochMs() const { return m_focusModeUntilEpoch
 void AppSettings::setFocusModeUntilEpochMs(qint64 epochMs) { m_focusModeUntilEpochMs = std::max<qint64>(0, epochMs); emit settingsChanged(); }
 bool AppSettings::privateModeEnabled() const { return m_privateModeEnabled; }
 void AppSettings::setPrivateModeEnabled(bool enabled) { m_privateModeEnabled = enabled; emit settingsChanged(); }
+QVariantList AppSettings::permissionOverrides() const { return m_permissionOverrides; }
+void AppSettings::setPermissionOverrides(const QVariantList &overrides)
+{
+    m_permissionOverrides = PermissionOverrideSettings::sanitize(overrides);
+    emit settingsChanged();
+}
 QString AppSettings::whisperExecutable() const { return m_whisperExecutable; }
 void AppSettings::setWhisperExecutable(const QString &path) { m_whisperExecutable = path; emit settingsChanged(); }
 QString AppSettings::whisperModelPath() const { return m_whisperModelPath; }

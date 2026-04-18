@@ -252,9 +252,11 @@ set(JARVIS_SOURCES
     src/audio/SileroVadSession.cpp
     src/core/agent/IntentDetector.cpp
     src/core/agent/IntentEngine.cpp
+    src/core/ActionRiskPermissionService.cpp
     src/core/AiRequestCoordinator.cpp
     src/core/AssistantBehaviorPolicy.cpp
     src/core/AssistantController.cpp
+    src/core/DesktopActionContextPolicy.cpp
     src/core/ExecutionNarrator.cpp
     src/core/InputRouter.cpp
     src/core/IntentRouter.cpp
@@ -262,7 +264,9 @@ set(JARVIS_SOURCES
     src/core/ComputerControl.cpp
     src/core/LocalResponseEngine.cpp
     src/core/ResponseFinalizer.cpp
+    src/core/PermissionOverrideSettings.cpp
     src/core/ToolCoordinator.cpp
+    src/core/ToolPermissionRegistry.cpp
     src/connectors/BrowserBookmarksEventBuilder.cpp
     src/connectors/BrowserBookmarksMonitor.cpp
     src/connectors/CalendarIcsEventBuilder.cpp
@@ -367,18 +371,22 @@ set(JARVIS_HEADERS
     src/audio/SileroVadSession.h
     src/core/agent/IntentDetector.h
     src/core/agent/IntentEngine.h
+    src/core/ActionRiskPermissionService.h
     src/core/AiRequestCoordinator.h
     src/core/AssistantBehaviorPolicy.h
     src/core/AssistantController.h
     src/core/AssistantTypes.h
+    src/core/DesktopActionContextPolicy.h
     src/core/ComputerControl.h
     src/core/ExecutionNarrator.h
     src/core/InputRouter.h
     src/core/IntentRouter.h
     src/core/LocalResponseEngine.h
     src/core/MemoryPolicyHandler.h
+    src/core/PermissionOverrideSettings.h
     src/core/ResponseFinalizer.h
     src/core/ToolCoordinator.h
+    src/core/ToolPermissionRegistry.h
     src/connectors/BrowserBookmarksEventBuilder.h
     src/connectors/BrowserBookmarksMonitor.h
     src/connectors/CalendarIcsEventBuilder.h
@@ -1088,6 +1096,7 @@ if(JARVIS_BUILD_TESTS)
 
     qt_add_executable(jarvis_settings_tests
         tests/AppSettingsTests.cpp
+        src/core/PermissionOverrideSettings.cpp
         src/settings/AppSettings.cpp
     )
 

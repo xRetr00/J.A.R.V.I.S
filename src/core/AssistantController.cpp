@@ -36,6 +36,7 @@
 #include "core/IntentRouter.h"
 #include "core/LocalResponseEngine.h"
 #include "core/MemoryPolicyHandler.h"
+#include "core/PermissionOverrideSettings.h"
 #include "core/ResponseFinalizer.h"
 #include "core/ToolCoordinator.h"
 #include "behavior_tuning/CompiledContextPolicyTuningPromotionPolicy.h"
@@ -62,6 +63,7 @@
 #include "core/tasks/TaskDispatcher.h"
 #include "core/tasks/ToolWorker.h"
 #include "cognition/DesktopContextSelectionBuilder.h"
+#include "core/ActionRiskPermissionService.h"
 #include "cognition/ProactiveSurfaceGate.h"
 #include "devices/DeviceManager.h"
 #include "logging/LoggingService.h"
@@ -2113,28 +2115,44 @@ bool AssistantController::executeRouteDecision(const InputRouteDecision &decisio
         ? m_assistantBehaviorPolicy->buildToolPlan(selectionInput, decision.intent, availableTools)
         : ToolPlan{};
     TrustDecision trustDecision = m_assistantBehaviorPolicy
-        ? m_assistantBehaviorPolicy->assessTrust(routedInput, decision, toolPlan)
+        ? m_assistantBehaviorPolicy->assessTrust(routedInput, decision, toolPlan, m_latestDesktopContext)
         : TrustDecision{};
     if (confirmationGranted) {
         trustDecision.requiresConfirmation = false;
         trustDecision.userMessage.clear();
     }
+    const ActionRiskPermissionEvaluation riskPermissionEvaluation =
+        ActionRiskPermissionService::evaluate(
+            toolPlan,
+            trustDecision,
+            confirmationGranted,
+            PermissionOverrideSettings::rulesFromSettings(m_settings));
 
     if (m_loggingService) {
         m_loggingService->infoFor(
             QStringLiteral("safety_audit"),
-            QStringLiteral("[trust_decision] kind=%1 highRisk=%2 requiresConfirmation=%3 reason=%4 userMessage=%5 sideEffecting=%6 requiresGrounding=%7")
+            QStringLiteral("[trust_decision] kind=%1 highRisk=%2 requiresConfirmation=%3 reason=%4 userMessage=%5 sideEffecting=%6 requiresGrounding=%7 desktopWorkMode=%8 contextReason=%9")
                 .arg(routeKindToString(decision.kind),
                      trustDecision.highRisk ? QStringLiteral("true") : QStringLiteral("false"),
                      trustDecision.requiresConfirmation ? QStringLiteral("true") : QStringLiteral("false"),
                      trustDecision.reason.simplified(),
                      trustDecision.userMessage.simplified(),
                      toolPlan.sideEffecting ? QStringLiteral("true") : QStringLiteral("false"),
-                     toolPlan.requiresGrounding ? QStringLiteral("true") : QStringLiteral("false")));
+                     toolPlan.requiresGrounding ? QStringLiteral("true") : QStringLiteral("false"),
+                     trustDecision.desktopWorkMode.simplified(),
+                     trustDecision.contextReasonCode.simplified()));
+        m_loggingService->logBehaviorEvent(ActionRiskPermissionService::riskEvent(
+            riskPermissionEvaluation,
+            routeKindToString(decision.kind),
+            m_latestDesktopContext));
+        m_loggingService->logBehaviorEvent(ActionRiskPermissionService::permissionEvent(
+            riskPermissionEvaluation,
+            routeKindToString(decision.kind),
+            m_latestDesktopContext));
     }
 
     m_activeActionSession = m_assistantBehaviorPolicy
-        ? m_assistantBehaviorPolicy->createActionSession(routedInput, decision, toolPlan, trustDecision)
+        ? m_assistantBehaviorPolicy->createActionSession(routedInput, decision, toolPlan, trustDecision, m_latestDesktopContext)
         : ActionSession{};
 
     if (!confirmationGranted
@@ -4373,8 +4391,8 @@ void AssistantController::startConversationRequest(const QString &input)
                 selectionContext.compiledDesktopSummary,
                 plan));
         }
-        const TrustDecision trust = m_assistantBehaviorPolicy->assessTrust(input, decision, plan);
-        m_activeActionSession = m_assistantBehaviorPolicy->createActionSession(input, decision, plan, trust);
+        const TrustDecision trust = m_assistantBehaviorPolicy->assessTrust(input, decision, plan, m_latestDesktopContext);
+        m_activeActionSession = m_assistantBehaviorPolicy->createActionSession(input, decision, plan, trust, m_latestDesktopContext);
     }
 
     const QList<MemoryRecord> &memoryRecords = selectionContext.selectedMemoryRecords;
@@ -4498,10 +4516,10 @@ void AssistantController::startAgentConversationRequest(const QString &input, In
     routeDecision.kind = InputRouteKind::AgentConversation;
     routeDecision.intent = expectedIntent;
     const TrustDecision trustDecision = m_assistantBehaviorPolicy
-        ? m_assistantBehaviorPolicy->assessTrust(input, routeDecision, toolPlan)
+        ? m_assistantBehaviorPolicy->assessTrust(input, routeDecision, toolPlan, m_latestDesktopContext)
         : TrustDecision{};
     m_activeActionSession = m_assistantBehaviorPolicy
-        ? m_assistantBehaviorPolicy->createActionSession(input, routeDecision, toolPlan, trustDecision)
+        ? m_assistantBehaviorPolicy->createActionSession(input, routeDecision, toolPlan, trustDecision, m_latestDesktopContext)
         : ActionSession{};
     const QList<AgentToolSpec> relevantTools = m_assistantBehaviorPolicy
         ? m_assistantBehaviorPolicy->selectRelevantTools(selectionInput, expectedIntent, availableTools)
@@ -5158,8 +5176,8 @@ void AssistantController::startCommandRequest(const QString &input)
             selectionInput,
             IntentType::GENERAL_CHAT,
             m_agentToolbox ? m_agentToolbox->builtInTools() : QList<AgentToolSpec>{});
-        const TrustDecision trust = m_assistantBehaviorPolicy->assessTrust(input, decision, plan);
-        m_activeActionSession = m_assistantBehaviorPolicy->createActionSession(input, decision, plan, trust);
+        const TrustDecision trust = m_assistantBehaviorPolicy->assessTrust(input, decision, plan, m_latestDesktopContext);
+        m_activeActionSession = m_assistantBehaviorPolicy->createActionSession(input, decision, plan, trust, m_latestDesktopContext);
     }
     if (m_loggingService) {
         m_loggingService->info(QStringLiteral("Starting command extraction request. model=\"%1\" input=\"%2\"")
@@ -5884,11 +5902,23 @@ bool AssistantController::handlePendingConfirmationInput(const QString &input)
     }
 
     if (m_assistantBehaviorPolicy->isConfirmationReply(input, m_pendingActionSession)) {
+        const ActionRiskPermissionEvaluation evaluation = ActionRiskPermissionService::evaluate(
+            m_pendingActionSession.toolPlan,
+            m_pendingActionSession.trust,
+            false,
+            PermissionOverrideSettings::rulesFromSettings(m_settings));
         if (m_loggingService) {
             m_loggingService->infoFor(
                 QStringLiteral("safety_audit"),
                 QStringLiteral("[confirmation_reply] accepted input=%1")
                     .arg(userFacingPromptForLogging(input).left(240)));
+            m_loggingService->logBehaviorEvent(ActionRiskPermissionService::confirmationOutcomeEvent(
+                evaluation,
+                routeKindToString(m_pendingRouteDecision.kind),
+                m_pendingActionSession,
+                QStringLiteral("approved"),
+                userFacingPromptForLogging(input),
+                m_latestDesktopContext));
         }
         const InputRouteDecision pendingDecision = m_pendingRouteDecision;
         const QString pendingInput = m_pendingRouteInput;
@@ -5899,11 +5929,23 @@ bool AssistantController::handlePendingConfirmationInput(const QString &input)
     }
 
     if (m_assistantBehaviorPolicy->isRejectionReply(input)) {
+        const ActionRiskPermissionEvaluation evaluation = ActionRiskPermissionService::evaluate(
+            m_pendingActionSession.toolPlan,
+            m_pendingActionSession.trust,
+            false,
+            PermissionOverrideSettings::rulesFromSettings(m_settings));
         if (m_loggingService) {
             m_loggingService->infoFor(
                 QStringLiteral("safety_audit"),
                 QStringLiteral("[confirmation_reply] rejected input=%1")
                     .arg(userFacingPromptForLogging(input).left(240)));
+            m_loggingService->logBehaviorEvent(ActionRiskPermissionService::confirmationOutcomeEvent(
+                evaluation,
+                routeKindToString(m_pendingRouteDecision.kind),
+                m_pendingActionSession,
+                QStringLiteral("rejected"),
+                userFacingPromptForLogging(input),
+                m_latestDesktopContext));
         }
         const ActionSession pendingSession = m_pendingActionSession;
         clearPendingConfirmation();
@@ -5917,10 +5959,22 @@ bool AssistantController::handlePendingConfirmationInput(const QString &input)
     }
 
     if (m_loggingService) {
+        const ActionRiskPermissionEvaluation evaluation = ActionRiskPermissionService::evaluate(
+            m_pendingActionSession.toolPlan,
+            m_pendingActionSession.trust,
+            false,
+            PermissionOverrideSettings::rulesFromSettings(m_settings));
         m_loggingService->warnFor(
             QStringLiteral("safety_audit"),
             QStringLiteral("[confirmation_reply] unrecognized input=%1; pending state cleared")
                 .arg(userFacingPromptForLogging(input).left(240)));
+        m_loggingService->logBehaviorEvent(ActionRiskPermissionService::confirmationOutcomeEvent(
+            evaluation,
+            routeKindToString(m_pendingRouteDecision.kind),
+            m_pendingActionSession,
+            QStringLiteral("unrecognized"),
+            userFacingPromptForLogging(input),
+            m_latestDesktopContext));
     }
     clearPendingConfirmation();
     return false;

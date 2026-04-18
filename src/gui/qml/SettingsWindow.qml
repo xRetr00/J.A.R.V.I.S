@@ -103,6 +103,9 @@ Window {
         braveApiKeyField.text = settingsVm.braveSearchApiKey
         braveValidationMessage = ""
         tracePanelCheck.checked = settingsVm.tracePanelEnabled
+        if (permissionOverridesPanel) {
+            permissionOverridesPanel.syncFromBackend()
+        }
 
         const modelIndex = settingsVm.models.indexOf(settingsVm.selectedModel)
         if (modelIndex >= 0) {
@@ -1514,6 +1517,12 @@ Window {
                         }
                     }
                 }
+            }
+
+            JarvisUi.PermissionOverridesPanel {
+                id: permissionOverridesPanel
+                width: parent.width
+                viewModel: settingsVm
             }
 
             JarvisUi.VisionGlassPanel {

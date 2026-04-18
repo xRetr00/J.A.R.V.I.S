@@ -8,6 +8,7 @@
 #include <QRegularExpression>
 #include <QSet>
 
+#include "core/DesktopActionContextPolicy.h"
 #include "core/InputRouter.h"
 
 namespace {
@@ -687,7 +688,8 @@ QList<AgentToolSpec> AssistantBehaviorPolicy::selectRelevantTools(const QString 
 
 TrustDecision AssistantBehaviorPolicy::assessTrust(const QString &input,
                                                    const InputRouteDecision &decision,
-                                                   const ToolPlan &plan) const
+                                                   const ToolPlan &plan,
+                                                   const QVariantMap &desktopContext) const
 {
     const QString lowered = normalizedText(input);
     const bool explicitActionVerb = containsAny(lowered,
@@ -719,7 +721,7 @@ TrustDecision AssistantBehaviorPolicy::assessTrust(const QString &input,
         trust.reason = QStringLiteral("The request needs grounded evidence before answering.");
     }
 
-    return trust;
+    return DesktopActionContextPolicy::applyToTrust(desktopContext, plan, trust);
 }
 
 ResponseMode AssistantBehaviorPolicy::chooseResponseMode(const QString &input,
@@ -754,7 +756,8 @@ ResponseMode AssistantBehaviorPolicy::chooseResponseMode(const QString &input,
 ActionSession AssistantBehaviorPolicy::createActionSession(const QString &input,
                                                            const InputRouteDecision &decision,
                                                            const ToolPlan &plan,
-                                                           const TrustDecision &trust) const
+                                                           const TrustDecision &trust,
+                                                           const QVariantMap &desktopContext) const
 {
     ActionSession session;
     session.id = sessionIdFor(input, decision);
@@ -768,6 +771,9 @@ ActionSession AssistantBehaviorPolicy::createActionSession(const QString &input,
         || decision.kind == InputRouteKind::DeterministicTasks
         || decision.kind == InputRouteKind::AgentConversation
         || decision.kind == InputRouteKind::CommandExtraction;
+    if (DesktopActionContextPolicy::shouldQuietProgress(desktopContext, trust)) {
+        session.shouldAnnounceProgress = false;
+    }
 
     switch (session.responseMode) {
     case ResponseMode::ActWithProgress:

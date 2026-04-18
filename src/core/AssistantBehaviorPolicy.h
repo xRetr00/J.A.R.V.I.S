@@ -17,14 +17,16 @@ public:
                                              const QList<AgentToolSpec> &availableTools) const;
     TrustDecision assessTrust(const QString &input,
                               const InputRouteDecision &decision,
-                              const ToolPlan &plan) const;
+                              const ToolPlan &plan,
+                              const QVariantMap &desktopContext = {}) const;
     ResponseMode chooseResponseMode(const QString &input,
                                     const InputRouteDecision &decision,
                                     const TrustDecision &trust) const;
     ActionSession createActionSession(const QString &input,
                                       const InputRouteDecision &decision,
                                       const ToolPlan &plan,
-                                      const TrustDecision &trust) const;
+                                      const TrustDecision &trust,
+                                      const QVariantMap &desktopContext = {}) const;
     bool shouldContinueActionThread(const QString &input,
                                     const InputRouteDecision &decision,
                                     const ActionThread &thread,

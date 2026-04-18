@@ -407,6 +407,11 @@ bool SettingsViewModel::privateModeEnabled() const
     return m_backend && m_backend->privateModeEnabled();
 }
 
+QVariantList SettingsViewModel::permissionOverrides() const
+{
+    return m_backend ? m_backend->permissionOverrides() : QVariantList{};
+}
+
 bool SettingsViewModel::tracePanelEnabled() const
 {
     return m_backend && m_backend->tracePanelEnabled();
@@ -778,6 +783,11 @@ void SettingsViewModel::setPrivateModeEnabled(bool enabled)
     if (m_backend) {
         m_backend->setPrivateModeEnabled(enabled);
     }
+}
+
+bool SettingsViewModel::savePermissionOverrides(const QVariantList &overrides)
+{
+    return m_backend && m_backend->savePermissionOverrides(overrides);
 }
 
 void SettingsViewModel::startListening()
