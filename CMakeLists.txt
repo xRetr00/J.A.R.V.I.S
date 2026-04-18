@@ -327,6 +327,7 @@ set(JARVIS_SOURCES
     src/overlay/OverlayController.cpp
     src/perception/DesktopContextThreadBuilder.cpp
     src/perception/DesktopPerceptionMonitor.cpp
+    src/perception/DesktopSourceContextAdapter.cpp
     src/perception/WindowsUiAutomationProbe.cpp
     src/platform/PlatformRuntime.cpp
     src/python/PythonRuntimeManager.cpp
@@ -458,6 +459,7 @@ set(JARVIS_HEADERS
     src/overlay/OverlayController.h
     src/perception/DesktopContextThreadBuilder.h
     src/perception/DesktopPerceptionMonitor.h
+    src/perception/DesktopSourceContextAdapter.h
     src/perception/WindowsUiAutomationProbe.h
     src/platform/ComputerControlBackend.h
     src/platform/PlatformCapabilities.h
@@ -878,6 +880,26 @@ if(JARVIS_BUILD_TESTS)
     set_tests_properties(jarvis_behavior_policy_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
     jarvis_copy_optional_runtime_libraries(jarvis_behavior_policy_tests)
 
+    qt_add_executable(jarvis_permission_override_scenario_tests
+        tests/PermissionOverrideScenarioTests.cpp
+        src/core/ActionRiskPermissionService.cpp
+        src/core/ToolPermissionRegistry.cpp
+        src/telemetry/BehavioralEventLedger.cpp
+    )
+
+    target_include_directories(jarvis_permission_override_scenario_tests PRIVATE src)
+    target_link_libraries(jarvis_permission_override_scenario_tests
+        PRIVATE
+            Qt6::Core
+            Qt6::Sql
+            Qt6::Test
+            nlohmann_json::nlohmann_json
+    )
+
+    add_test(NAME jarvis_permission_override_scenario_tests COMMAND jarvis_permission_override_scenario_tests)
+    set_tests_properties(jarvis_permission_override_scenario_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_permission_override_scenario_tests)
+
     qt_add_executable(jarvis_execution_narrator_tests
         tests/ExecutionNarratorTests.cpp
     )
@@ -1097,6 +1119,7 @@ if(JARVIS_BUILD_TESTS)
     qt_add_executable(jarvis_settings_tests
         tests/AppSettingsTests.cpp
         src/core/PermissionOverrideSettings.cpp
+        src/core/ToolPermissionRegistry.cpp
         src/settings/AppSettings.cpp
     )
 
@@ -1195,6 +1218,18 @@ if(JARVIS_BUILD_TESTS)
     add_test(NAME jarvis_desktop_context_tests COMMAND jarvis_desktop_context_tests)
     set_tests_properties(jarvis_desktop_context_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
     jarvis_copy_optional_runtime_libraries(jarvis_desktop_context_tests)
+
+    qt_add_executable(jarvis_desktop_source_adapter_tests
+        tests/DesktopSourceContextAdapterTests.cpp
+        src/perception/DesktopSourceContextAdapter.cpp
+    )
+
+    target_include_directories(jarvis_desktop_source_adapter_tests PRIVATE src)
+    target_link_libraries(jarvis_desktop_source_adapter_tests PRIVATE Qt6::Core Qt6::Test)
+
+    add_test(NAME jarvis_desktop_source_adapter_tests COMMAND jarvis_desktop_source_adapter_tests)
+    set_tests_properties(jarvis_desktop_source_adapter_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_desktop_source_adapter_tests)
 
     qt_add_executable(jarvis_desktop_selection_tests
         tests/DesktopContextSelectionBuilderTests.cpp
@@ -1433,6 +1468,24 @@ if(JARVIS_BUILD_TESTS)
     add_test(NAME jarvis_suggestion_planner_tests COMMAND jarvis_suggestion_planner_tests)
     set_tests_properties(jarvis_suggestion_planner_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
     jarvis_copy_optional_runtime_libraries(jarvis_suggestion_planner_tests)
+
+    qt_add_executable(jarvis_suggestion_builder_metadata_tests
+        tests/SuggestionProposalBuilderMetadataTests.cpp
+        src/cognition/CooldownEngine.cpp
+        src/cognition/ProactiveSuggestionPlanner.cpp
+        src/cognition/ProactiveSuggestionGate.cpp
+        src/cognition/SuggestionProposalBuilder.cpp
+        src/cognition/SuggestionProposalPolicyScoring.cpp
+        src/cognition/DesktopWorkMode.cpp
+        src/cognition/SuggestionProposalRanker.cpp
+    )
+
+    target_include_directories(jarvis_suggestion_builder_metadata_tests PRIVATE src)
+    target_link_libraries(jarvis_suggestion_builder_metadata_tests PRIVATE Qt6::Core Qt6::Test nlohmann_json::nlohmann_json)
+
+    add_test(NAME jarvis_suggestion_builder_metadata_tests COMMAND jarvis_suggestion_builder_metadata_tests)
+    set_tests_properties(jarvis_suggestion_builder_metadata_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_suggestion_builder_metadata_tests)
 
     qt_add_executable(jarvis_suggestion_history_policy_tests
         tests/SuggestionProposalHistoryPolicyTests.cpp

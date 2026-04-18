@@ -3,6 +3,7 @@
 #include <QList>
 #include <QString>
 #include <QStringList>
+#include <QVariantMap>
 
 #include "companion/contracts/ActionProposal.h"
 
@@ -15,6 +16,7 @@ public:
         QString taskType;
         QString resultSummary;
         QStringList sourceUrls;
+        QVariantMap sourceMetadata;
         bool success = true;
     };
 

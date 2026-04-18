@@ -22,6 +22,11 @@ QString metadataString(const QVariantMap &metadata, const QString &key)
     return metadata.value(key).toString().trimmed();
 }
 
+QString proposalString(const ActionProposal &proposal, const QString &key)
+{
+    return proposal.arguments.value(key).toString().trimmed();
+}
+
 QDateTime metadataDateTime(const QVariantMap &metadata, const QString &key)
 {
     const QString value = metadataString(metadata, key);
@@ -118,16 +123,28 @@ double connectorFreshnessBonus(const SuggestionProposalRanker::Input &input, QSt
     return 0.0;
 }
 
-double duplicatePenalty(const SuggestionProposalRanker::Input &input, QString *reasonCode)
+QString effectivePresentationKey(const SuggestionProposalRanker::Input &input,
+                                 const ActionProposal &proposal)
 {
-    if (input.presentationKey.trimmed().isEmpty()
+    const QString inputKey = input.presentationKey.trimmed();
+    return inputKey.isEmpty()
+        ? proposalString(proposal, QStringLiteral("presentationKeyHint"))
+        : inputKey;
+}
+
+double duplicatePenalty(const SuggestionProposalRanker::Input &input,
+                        const ActionProposal &proposal,
+                        QString *reasonCode)
+{
+    const QString key = effectivePresentationKey(input, proposal);
+    if (key.isEmpty()
         || input.lastPresentedKey.trimmed().isEmpty()
         || input.lastPresentedAtMs <= 0
         || input.nowMs <= 0) {
         return 0.0;
     }
 
-    if (input.presentationKey.trimmed() != input.lastPresentedKey.trimmed()) {
+    if (key != input.lastPresentedKey.trimmed()) {
         return 0.0;
     }
 
@@ -138,6 +155,7 @@ double duplicatePenalty(const SuggestionProposalRanker::Input &input, QString *r
     *reasonCode = QStringLiteral("proposal_rank.recent_duplicate_penalty");
     return -0.22;
 }
+
 
 double historyBurstPenalty(const SuggestionProposalRanker::Input &input, QString *reasonCode)
 {
@@ -350,7 +368,7 @@ QList<RankedSuggestionProposal> SuggestionProposalRanker::rank(const Input &inpu
         }
 
         QString duplicateReasonCode;
-        const double duplicateScore = duplicatePenalty(input, &duplicateReasonCode);
+        const double duplicateScore = duplicatePenalty(input, proposal, &duplicateReasonCode);
         if (duplicateScore != 0.0) {
             rankedProposal.score += duplicateScore;
             rankedProposal.reasonCode = duplicateReasonCode;

@@ -48,6 +48,15 @@ double proposalNovelty(const RankedSuggestionProposal &proposal,
     const QString currentThreadId = context.threadId.value;
     const bool meaningfulThreadShift = !currentThreadId.isEmpty()
         && currentThreadId != input.cooldownState.threadId;
+    const QString keyHint = proposal.proposal.arguments.value(QStringLiteral("presentationKeyHint")).toString().trimmed();
+    const QString effectivePresentationKey = input.presentationKey.trimmed().isEmpty()
+        ? keyHint
+        : input.presentationKey.trimmed();
+    const bool recentDuplicateKey = !effectivePresentationKey.isEmpty()
+        && effectivePresentationKey == input.lastPresentedKey.trimmed()
+        && input.lastPresentedAtMs > 0
+        && input.nowMs > 0
+        && (input.nowMs - input.lastPresentedAtMs) <= 120000;
 
     if (meaningfulThreadShift) {
         novelty += 0.28;
@@ -66,6 +75,12 @@ double proposalNovelty(const RankedSuggestionProposal &proposal,
     }
     if (input.cooldownState.isActive(input.nowMs) && !meaningfulThreadShift) {
         novelty -= 0.16;
+    }
+    if (recentDuplicateKey) {
+        novelty -= 0.22;
+    } else if (!keyHint.isEmpty()
+               || !proposal.proposal.arguments.value(QStringLiteral("sourceLabel")).toString().trimmed().isEmpty()) {
+        novelty += 0.04;
     }
     if (proposal.proposal.capabilityId == QStringLiteral("failure_recovery")) {
         novelty += 0.07;
@@ -102,6 +117,7 @@ ProactiveSuggestionPlan ProactiveSuggestionPlanner::plan(const Input &input)
         .taskType = input.taskType,
         .resultSummary = input.resultSummary,
         .sourceUrls = input.sourceUrls,
+        .sourceMetadata = input.sourceMetadata,
         .success = input.success
     });
 

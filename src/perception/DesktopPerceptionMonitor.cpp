@@ -13,6 +13,7 @@
 #include "companion/contracts/FocusModeState.h"
 #include "logging/LoggingService.h"
 #include "perception/DesktopContextThreadBuilder.h"
+#include "perception/DesktopSourceContextAdapter.h"
 #include "perception/WindowsUiAutomationProbe.h"
 #include "settings/AppSettings.h"
 
@@ -266,6 +267,10 @@ DesktopPerceptionMonitor::ActiveWindowSnapshot DesktopPerceptionMonitor::current
     snapshot.metadata = WindowsUiAutomationProbe::probeWindowMetadata(
         reinterpret_cast<quintptr>(windowHandle),
         snapshot.appId);
+    snapshot.metadata = DesktopSourceContextAdapter::augmentMetadata(
+        snapshot.appId,
+        snapshot.windowTitle,
+        snapshot.metadata);
 #endif
     return snapshot;
 }

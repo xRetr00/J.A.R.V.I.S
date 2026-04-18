@@ -88,6 +88,7 @@ class SettingsViewModel : public QObject
     Q_PROPERTY(qlonglong focusModeUntilEpochMs READ focusModeUntilEpochMs NOTIFY settingsChanged)
     Q_PROPERTY(bool privateModeEnabled READ privateModeEnabled NOTIFY settingsChanged)
     Q_PROPERTY(QVariantList permissionOverrides READ permissionOverrides NOTIFY settingsChanged)
+    Q_PROPERTY(QVariantList permissionCapabilityOptions READ permissionCapabilityOptions NOTIFY settingsChanged)
     Q_PROPERTY(bool tracePanelEnabled READ tracePanelEnabled NOTIFY agentStateChanged)
     Q_PROPERTY(QString agentStatus READ agentStatus NOTIFY agentStateChanged)
     Q_PROPERTY(bool agentAvailable READ agentAvailable NOTIFY agentStateChanged)
@@ -180,6 +181,7 @@ public:
     qlonglong focusModeUntilEpochMs() const;
     bool privateModeEnabled() const;
     QVariantList permissionOverrides() const;
+    QVariantList permissionCapabilityOptions() const;
     bool tracePanelEnabled() const;
     QString agentStatus() const;
     bool agentAvailable() const;

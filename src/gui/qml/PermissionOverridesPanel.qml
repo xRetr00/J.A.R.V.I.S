@@ -8,13 +8,7 @@ JarvisUi.VisionGlassPanel {
 
     property var viewModel
     property string statusText: ""
-    readonly property var capabilityOptions: [
-        { capabilityId: "filesystem_write", label: "Filesystem Write", hint: "Patch or create local files." },
-        { capabilityId: "desktop_automation", label: "Desktop Automation", hint: "Open apps, URLs, browser surfaces." },
-        { capabilityId: "memory_write", label: "Memory Write", hint: "Store or delete local memory records." },
-        { capabilityId: "skill_management", label: "Skill Management", hint: "Create or install assistant skills." },
-        { capabilityId: "network_grounding", label: "Network Grounding", hint: "Fetch or search online sources." }
-    ]
+    readonly property var capabilityOptions: viewModel ? (viewModel.permissionCapabilityOptions || []) : []
 
     width: parent ? parent.width : 720
     implicitHeight: contentColumn.implicitHeight + 44
@@ -31,11 +25,12 @@ JarvisUi.VisionGlassPanel {
                 return i
             }
         }
-        return 0
+        return -1
     }
 
     function capabilityLabel(capabilityId) {
-        return capabilityOptions[capabilityIndex(capabilityId)].label
+        const optionIndex = capabilityIndex(capabilityId)
+        return optionIndex >= 0 ? capabilityOptions[optionIndex].label : capabilityId
     }
 
     function capabilityLabels() {
@@ -59,7 +54,7 @@ JarvisUi.VisionGlassPanel {
                 return capabilityOptions[i]
             }
         }
-        return capabilityOptions[0]
+        return null
     }
 
     function syncFromBackend() {
@@ -70,11 +65,12 @@ JarvisUi.VisionGlassPanel {
         const rows = viewModel.permissionOverrides || []
         for (let i = 0; i < rows.length; i += 1) {
             const row = rows[i]
+            const fallbackCapability = capabilityOptions.length > 0 ? capabilityOptions[0].capabilityId : ""
             const decision = ["allow", "deny", "confirm"].indexOf(row.decision) >= 0
                 ? row.decision
                 : "confirm"
             overrideRows.append({
-                capabilityId: row.capabilityId || "filesystem_write",
+                capabilityId: row.capabilityId || fallbackCapability,
                 decision: decision,
                 scope: row.scope || "",
                 reasonCode: row.reasonCode || ""
@@ -99,6 +95,10 @@ JarvisUi.VisionGlassPanel {
 
     function addRule() {
         const option = firstUnusedCapability()
+        if (!option) {
+            statusText = "No registry capabilities are available to add."
+            return
+        }
         overrideRows.append({
             capabilityId: option.capabilityId,
             decision: "confirm",
@@ -137,7 +137,11 @@ JarvisUi.VisionGlassPanel {
                 font.weight: Font.Medium
             }
             Item { Layout.fillWidth: true }
-            Button { text: "Add Rule"; onClicked: root.addRule() }
+            Button {
+                text: "Add Rule"
+                enabled: root.capabilityOptions.length > 0
+                onClicked: root.addRule()
+            }
             Button { text: "Reset"; onClicked: root.syncFromBackend() }
             Button {
                 text: "Clear"
@@ -153,6 +157,15 @@ JarvisUi.VisionGlassPanel {
             text: "Choose only from declared capability permissions. Focus Mode, critical alerts, and hard confirmation safety are not tunable here."
             color: "#8099b8"
             font.pixelSize: 13
+            wrapMode: Text.Wrap
+        }
+
+        Text {
+            visible: root.capabilityOptions.length === 0
+            Layout.fillWidth: true
+            text: "No permission capabilities were exposed by the registry."
+            color: "#f4b86a"
+            font.pixelSize: 12
             wrapMode: Text.Wrap
         }
 

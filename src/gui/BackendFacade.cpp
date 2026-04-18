@@ -32,6 +32,7 @@
 #include "companion/contracts/FocusModeState.h"
 #include "core/AssistantController.h"
 #include "core/PermissionOverrideSettings.h"
+#include "core/ToolPermissionRegistry.h"
 #include "logging/LoggingService.h"
 #include "overlay/OverlayController.h"
 #include "platform/PlatformRuntime.h"
@@ -94,6 +95,16 @@ QVariantMap toVariantMap(const AgentToolSpec &tool)
     map.insert(QStringLiteral("name"), tool.name);
     map.insert(QStringLiteral("description"), tool.description);
     map.insert(QStringLiteral("parameters"), QString::fromStdString(tool.parameters.dump(2)));
+    return map;
+}
+
+QVariantMap toVariantMap(const PermissionCapabilityInfo &capability)
+{
+    QVariantMap map;
+    map.insert(QStringLiteral("capabilityId"), capability.capabilityId);
+    map.insert(QStringLiteral("label"), capability.label);
+    map.insert(QStringLiteral("description"), capability.description);
+    map.insert(QStringLiteral("defaultScope"), capability.defaultScope);
     return map;
 }
 
@@ -1420,6 +1431,14 @@ int BackendFacade::focusModeDurationMinutes() const { return m_settings->focusMo
 qlonglong BackendFacade::focusModeUntilEpochMs() const { return m_settings->focusModeUntilEpochMs(); }
 bool BackendFacade::privateModeEnabled() const { return m_settings->privateModeEnabled(); }
 QVariantList BackendFacade::permissionOverrides() const { return m_settings->permissionOverrides(); }
+QVariantList BackendFacade::permissionCapabilityOptions() const
+{
+    QVariantList rows;
+    for (const PermissionCapabilityInfo &capability : ToolPermissionRegistry::capabilityOptions()) {
+        rows.push_back(toVariantMap(capability));
+    }
+    return rows;
+}
 bool BackendFacade::tracePanelEnabled() const { return m_settings->tracePanelEnabled(); }
 QString BackendFacade::agentStatus() const { return m_assistantController->agentCapabilities().status; }
 bool BackendFacade::agentAvailable() const { return m_settings->agentEnabled(); }

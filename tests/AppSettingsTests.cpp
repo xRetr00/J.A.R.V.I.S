@@ -272,7 +272,11 @@ void AppSettingsTests::permissionOverridesSanitized()
     invalid.insert(QStringLiteral("capabilityId"), QStringLiteral("desktop_automation"));
     invalid.insert(QStringLiteral("decision"), QStringLiteral("maybe"));
 
-    settings.setPermissionOverrides({allowed, duplicate, invalid});
+    QVariantMap unknownCapability;
+    unknownCapability.insert(QStringLiteral("capabilityId"), QStringLiteral("unregistered_power"));
+    unknownCapability.insert(QStringLiteral("decision"), QStringLiteral("allow"));
+
+    settings.setPermissionOverrides({allowed, duplicate, invalid, unknownCapability});
 
     const QVariantList overrides = settings.permissionOverrides();
     QCOMPARE(overrides.size(), 1);

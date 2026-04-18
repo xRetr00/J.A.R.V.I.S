@@ -1,5 +1,6 @@
 #include <QtTest>
 #include <QDateTime>
+#include <QSet>
 
 #include "core/ActionRiskPermissionService.h"
 #include "core/AssistantBehaviorPolicy.h"
@@ -20,6 +21,7 @@ private slots:
     void quietsProgressDuringFocusedDesktopWork();
     void emitsRiskAndPermissionEventsForPendingConfirmation();
     void usesRegistryBackedPermissionRules();
+    void exposesPermissionCapabilitiesForSettingsUi();
     void emitsConfirmationOutcomeEvent();
     void appliesUserPermissionOverrides();
     void decidesRouteFromPolicyContext();
@@ -250,6 +252,25 @@ void AssistantBehaviorPolicyTests::usesRegistryBackedPermissionRules()
              QStringLiteral("tool_permission_registry.v1"));
     QVERIFY(evaluation.permissions.at(0).granted);
     QCOMPARE(evaluation.permissions.at(0).reasonCode, QStringLiteral("permission.allowed_by_registry"));
+}
+
+void AssistantBehaviorPolicyTests::exposesPermissionCapabilitiesForSettingsUi()
+{
+    const QList<PermissionCapabilityInfo> capabilities =
+        ToolPermissionRegistry::capabilityOptions();
+
+    QVERIFY(capabilities.size() >= 5);
+    QCOMPARE(capabilities.first().capabilityId, QStringLiteral("filesystem_write"));
+    QVERIFY(!capabilities.first().label.isEmpty());
+    QVERIFY(!capabilities.first().description.isEmpty());
+
+    QSet<QString> capabilityIds;
+    for (const PermissionCapabilityInfo &capability : capabilities) {
+        QVERIFY(!capability.capabilityId.trimmed().isEmpty());
+        QVERIFY(!capabilityIds.contains(capability.capabilityId));
+        capabilityIds.insert(capability.capabilityId);
+    }
+    QVERIFY(capabilityIds.contains(QStringLiteral("network_grounding")));
 }
 
 void AssistantBehaviorPolicyTests::emitsConfirmationOutcomeEvent()

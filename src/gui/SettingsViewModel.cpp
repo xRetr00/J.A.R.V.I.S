@@ -412,6 +412,11 @@ QVariantList SettingsViewModel::permissionOverrides() const
     return m_backend ? m_backend->permissionOverrides() : QVariantList{};
 }
 
+QVariantList SettingsViewModel::permissionCapabilityOptions() const
+{
+    return m_backend ? m_backend->permissionCapabilityOptions() : QVariantList{};
+}
+
 bool SettingsViewModel::tracePanelEnabled() const
 {
     return m_backend && m_backend->tracePanelEnabled();

@@ -63,6 +63,12 @@ BehaviorDecision ProactiveSuggestionGate::evaluate(const Input &input)
     decision.details.insert(QStringLiteral("capabilityId"), input.proposal.capabilityId);
     decision.details.insert(QStringLiteral("proposalTitle"), input.proposal.title);
     decision.details.insert(QStringLiteral("proposalPriority"), input.proposal.priority);
+    decision.details.insert(QStringLiteral("proposalReasonCode"),
+                            input.proposal.arguments.value(QStringLiteral("proposalReasonCode")).toString());
+    decision.details.insert(QStringLiteral("sourceLabel"),
+                            input.proposal.arguments.value(QStringLiteral("sourceLabel")).toString());
+    decision.details.insert(QStringLiteral("presentationKeyHint"),
+                            input.proposal.arguments.value(QStringLiteral("presentationKeyHint")).toString());
     decision.details.insert(QStringLiteral("desktopTaskId"), input.desktopContext.value(QStringLiteral("taskId")).toString());
     decision.details.insert(QStringLiteral("desktopThreadId"), input.desktopContext.value(QStringLiteral("threadId")).toString());
     decision.details.insert(QStringLiteral("focusModeEnabled"), input.focusMode.enabled);
