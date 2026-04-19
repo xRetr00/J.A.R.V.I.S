@@ -624,6 +624,20 @@ bool JarvisApplication::initialize()
             m_toolsWindow->requestActivate();
         }
     });
+    connect(m_backendFacade.get(), &BackendFacade::settingsWindowRequested, this, [this]() {
+        if (m_settingsWindow) {
+            m_settingsWindow->show();
+            m_settingsWindow->raise();
+            m_settingsWindow->requestActivate();
+        }
+    });
+    connect(m_backendFacade.get(), &BackendFacade::setupWindowRequested, this, [this]() {
+        if (m_setupWindow) {
+            m_setupWindow->show();
+            m_setupWindow->raise();
+            m_setupWindow->requestActivate();
+        }
+    });
     if (m_desktopPerceptionMonitor) {
         m_desktopPerceptionMonitor->start();
     }

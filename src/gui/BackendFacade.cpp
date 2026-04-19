@@ -1515,6 +1515,8 @@ void BackendFacade::interruptSpeechAndListen() { m_assistantController->interrup
 void BackendFacade::cancelRequest() { m_assistantController->cancelActiveRequest(); }
 void BackendFacade::setSelectedModel(const QString &modelId) { m_assistantController->setSelectedModel(modelId); }
 void BackendFacade::openToolsHub() { emit toolsWindowRequested(); }
+void BackendFacade::openSettingsWindow() { emit settingsWindowRequested(); }
+void BackendFacade::openSetupWizard() { emit setupWindowRequested(); }
 void BackendFacade::setSelectedIntentModelId(const QString &modelId)
 {
     const IntentModelPreset *preset = findIntentModelPreset(modelId);

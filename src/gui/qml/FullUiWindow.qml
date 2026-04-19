@@ -814,6 +814,26 @@ Window {
                         inputField.text = ""
                     }
                 }
+
+                Button {
+                    text: "SETTINGS"
+                    onClicked: backend.openSettingsWindow()
+                }
+
+                Button {
+                    text: "SETUP"
+                    onClicked: backend.openSetupWizard()
+                }
+
+                Button {
+                    text: "TOOLS"
+                    onClicked: settingsVm.openToolsHub()
+                }
+
+                Button {
+                    text: "OVERLAY"
+                    onClicked: agentVm.toggleOverlay()
+                }
             }
         }
     }

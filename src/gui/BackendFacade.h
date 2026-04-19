@@ -263,6 +263,8 @@ public:
     Q_INVOKABLE void setSelectedIntentModelId(const QString &modelId);
     Q_INVOKABLE void setAgentEnabled(bool enabled);
     Q_INVOKABLE void openToolsHub();
+    Q_INVOKABLE void openSettingsWindow();
+    Q_INVOKABLE void openSetupWizard();
     Q_INVOKABLE void setBackgroundPanelVisible(bool visible);
     Q_INVOKABLE void notifyTaskToastShown(int taskId);
     Q_INVOKABLE void notifyProactiveSuggestionFeedback(const QString &signalType,
@@ -411,6 +413,8 @@ signals:
     void latestTaskToastChanged();
     void latestProactiveSuggestionChanged();
     void toolsWindowRequested();
+    void settingsWindowRequested();
+    void setupWindowRequested();
 
 private:
     void setSurfaceToolActivity(const QString &primary, const QString &secondary = QString());
