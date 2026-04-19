@@ -753,6 +753,7 @@ bool LearningDataStorage::ensureLayout(const LearningDataSettingsSnapshot &setti
         rootPath(),
         indexRoot(),
         audioRoot(),
+        wakeWordRoot(),
         snapshotsRoot(),
         exportsRoot(),
         quarantineRoot(),
@@ -781,6 +782,16 @@ QString LearningDataStorage::indexRoot() const
 QString LearningDataStorage::audioRoot() const
 {
     return QDir(rootPath()).filePath(QStringLiteral("audio"));
+}
+
+QString LearningDataStorage::wakeWordRoot() const
+{
+    return QDir(rootPath()).filePath(QStringLiteral("wakeword"));
+}
+
+QString LearningDataStorage::wakeWordRoleRoot(WakeWordClipRole role) const
+{
+    return QDir(wakeWordRoot()).filePath(wakeWordRoleDirectory(role));
 }
 
 QString LearningDataStorage::snapshotsRoot() const
