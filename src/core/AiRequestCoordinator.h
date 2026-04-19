@@ -1,6 +1,9 @@
 #pragma once
 
+#include <optional>
+
 #include "core/AssistantTypes.h"
+#include "core/TurnOrchestrationTypes.h"
 
 class AppSettings;
 class AiBackendClient;
@@ -25,6 +28,7 @@ struct ConversationRequestContext {
     ResponseMode responseMode = ResponseMode::Chat;
     QString sessionGoal;
     QString nextStepHint;
+    std::optional<PromptTurnContext> promptContext;
     SamplingProfile sampling;
     bool streaming = true;
     int timeoutMs = 12000;
@@ -46,6 +50,7 @@ struct AgentRequestContext {
     ResponseMode responseMode = ResponseMode::Chat;
     QString sessionGoal;
     QString nextStepHint;
+    std::optional<PromptTurnContext> promptContext;
     SamplingProfile sampling;
     ReasoningMode mode = ReasoningMode::Balanced;
     bool memoryAutoWrite = false;

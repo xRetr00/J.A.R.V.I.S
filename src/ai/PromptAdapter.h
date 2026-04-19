@@ -3,6 +3,7 @@
 #include <QObject>
 
 #include "core/AssistantTypes.h"
+#include "core/TurnOrchestrationTypes.h"
 
 class PromptAdapter : public QObject
 {
@@ -10,6 +11,20 @@ class PromptAdapter : public QObject
 
 public:
     explicit PromptAdapter(QObject *parent = nullptr);
+
+    QList<AiMessage> buildConversationMessages(
+        const PromptTurnContext &context,
+        const QList<AiMessage> &history = {}) const;
+
+    QList<AiMessage> buildHybridAgentMessages(const PromptTurnContext &context) const;
+    QList<AiMessage> buildHybridAgentContinuationMessages(const PromptTurnContext &context) const;
+
+    QString buildAgentInstructions(
+        const PromptTurnContext &context,
+        const QList<SkillManifest> &skills,
+        bool memoryAutoWrite) const;
+
+    PromptAssemblyReport buildPromptAssemblyReport(const PromptTurnContext &context) const;
 
     QList<AiMessage> buildConversationMessages(
         const QString &input,
@@ -86,6 +101,10 @@ public:
     QString applyReasoningMode(const QString &input, ReasoningMode mode) const;
 
 private:
+    QString buildTurnSystemPrompt(const PromptTurnContext &context,
+                                  bool agentSurface,
+                                  bool continuationSurface,
+                                  bool responsesSurface) const;
     QString buildToolSchemaContext(const QList<AgentToolSpec> &tools) const;
     QString buildWorkspaceContext(const QString &workspaceRoot) const;
     QString buildLogsContext(const QString &workspaceRoot) const;

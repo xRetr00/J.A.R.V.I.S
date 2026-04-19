@@ -46,6 +46,7 @@
 #include "core/SpeechTranscriptGuard.h"
 #include "core/StartupReadinessPolicy.h"
 #include "core/ToolCoordinator.h"
+#include "core/TurnOrchestrationRuntime.h"
 #include "behavior_tuning/CompiledContextPolicyTuningPromotionPolicy.h"
 #include "behavior_tuning/FeedbackSignalEventBuilder.h"
 #include "connectors/BrowserBookmarksMonitor.h"
@@ -1345,6 +1346,7 @@ AssistantController::AssistantController(
     m_inputRouter = std::make_unique<InputRouter>(m_assistantBehaviorPolicy.get());
     m_aiRequestCoordinator = std::make_unique<AiRequestCoordinator>(m_settings, m_reasoningRouter, m_loggingService);
     m_actionThreadTracker = std::make_unique<ActionThreadTracker>();
+    m_turnOrchestrationRuntime = std::make_unique<TurnOrchestrationRuntime>(m_assistantBehaviorPolicy.get());
     m_speechTranscriptGuard = std::make_unique<SpeechTranscriptGuard>();
     m_executionNarrator = std::make_unique<ExecutionNarrator>();
     m_memoryPolicyHandler = std::make_unique<MemoryPolicyHandler>(m_identityProfileService, m_memoryStore);
@@ -4713,6 +4715,36 @@ void AssistantController::startConversationRequest(const QString &input)
             compiledContextRecords));
     }
 
+    TurnRuntimePlan turnPlan;
+    if (m_turnOrchestrationRuntime) {
+        InputRouteDecision routeDecision;
+        routeDecision.kind = InputRouteKind::Conversation;
+        routeDecision.intent = IntentType::GENERAL_CHAT;
+
+        TurnRuntimeInput runtimeInput;
+        runtimeInput.rawUserInput = input;
+        runtimeInput.effectiveInput = selectionInput;
+        runtimeInput.routeDecision = routeDecision;
+        runtimeInput.intent = IntentType::GENERAL_CHAT;
+        runtimeInput.actionSession = m_activeActionSession;
+        runtimeInput.desktopContext = selectionContext.compiledDesktopSummary;
+        runtimeInput.desktopContextSnapshot = m_latestDesktopContext;
+        runtimeInput.selectedMemory = memoryContext;
+        runtimeInput.identity = m_identityProfileService->identity();
+        runtimeInput.userProfile = m_identityProfileService->userProfile();
+        runtimeInput.workspaceRoot = QDir::currentPath();
+        runtimeInput.visionContext = assistantPromptContext;
+        runtimeInput.currentTimeMs = QDateTime::currentMSecsSinceEpoch();
+        runtimeInput.focusMode = currentFocusModeState();
+        runtimeInput.privateMode = m_settings != nullptr && m_settings->privateModeEnabled();
+        runtimeInput.reasoningMode = mode;
+        runtimeInput.memoryAutoWrite = m_settings != nullptr && m_settings->memoryAutoWrite();
+        if (m_actionThreadTracker && m_actionThreadTracker->hasCurrent()) {
+            runtimeInput.currentActionThread = m_actionThreadTracker->current();
+        }
+        turnPlan = m_turnOrchestrationRuntime->buildPlan(runtimeInput);
+    }
+
     const ConversationRequestContext requestContext{
         .modelId = modelId,
         .input = input,
@@ -4724,6 +4756,7 @@ void AssistantController::startConversationRequest(const QString &input)
         .responseMode = m_activeActionSession.responseMode,
         .sessionGoal = m_activeActionSession.goal,
         .nextStepHint = m_activeActionSession.nextStepHint,
+        .promptContext = m_turnOrchestrationRuntime ? std::optional<PromptTurnContext>(turnPlan.promptContext) : std::nullopt,
         .sampling = samplingProfile(),
         .streaming = m_settings->streamingEnabled(),
         .timeoutMs = effectiveRequestTimeoutMs(m_settings)
@@ -4876,6 +4909,38 @@ void AssistantController::startAgentConversationRequest(const QString &input, In
             compiledContextRecords));
     }
 
+    TurnRuntimePlan turnPlan;
+    if (m_turnOrchestrationRuntime) {
+        InputRouteDecision routeDecision;
+        routeDecision.kind = InputRouteKind::AgentConversation;
+        routeDecision.intent = expectedIntent;
+
+        TurnRuntimeInput runtimeInput;
+        runtimeInput.rawUserInput = input;
+        runtimeInput.effectiveInput = selectionInput;
+        runtimeInput.routeDecision = routeDecision;
+        runtimeInput.intent = expectedIntent;
+        runtimeInput.actionSession = m_activeActionSession;
+        runtimeInput.desktopContext = selectionContext.compiledDesktopSummary;
+        runtimeInput.desktopContextSnapshot = m_latestDesktopContext;
+        runtimeInput.selectedMemory = memoryContext;
+        runtimeInput.identity = m_identityProfileService->identity();
+        runtimeInput.userProfile = m_identityProfileService->userProfile();
+        runtimeInput.availableTools = availableTools;
+        runtimeInput.preselectedTools = relevantTools;
+        runtimeInput.workspaceRoot = QDir::currentPath();
+        runtimeInput.visionContext = assistantPromptContext;
+        runtimeInput.currentTimeMs = QDateTime::currentMSecsSinceEpoch();
+        runtimeInput.focusMode = currentFocusModeState();
+        runtimeInput.privateMode = m_settings != nullptr && m_settings->privateModeEnabled();
+        runtimeInput.reasoningMode = mode;
+        runtimeInput.memoryAutoWrite = m_settings != nullptr && m_settings->memoryAutoWrite();
+        if (m_actionThreadTracker && m_actionThreadTracker->hasCurrent()) {
+            runtimeInput.currentActionThread = m_actionThreadTracker->current();
+        }
+        turnPlan = m_turnOrchestrationRuntime->buildPlan(runtimeInput);
+    }
+
     const AgentRequestContext requestContext{
         .modelId = modelId,
         .input = input,
@@ -4890,6 +4955,7 @@ void AssistantController::startAgentConversationRequest(const QString &input, In
         .responseMode = m_activeActionSession.responseMode,
         .sessionGoal = m_activeActionSession.goal,
         .nextStepHint = m_activeActionSession.nextStepHint,
+        .promptContext = m_turnOrchestrationRuntime ? std::optional<PromptTurnContext>(turnPlan.promptContext) : std::nullopt,
         .sampling = samplingProfile(),
         .mode = mode,
         .memoryAutoWrite = m_settings->memoryAutoWrite(),
@@ -5005,6 +5071,39 @@ void AssistantController::continueAgentConversation(const QList<AgentToolResult>
             compiledContextRecords));
     }
 
+    TurnRuntimePlan turnPlan;
+    if (m_turnOrchestrationRuntime) {
+        InputRouteDecision routeDecision;
+        routeDecision.kind = InputRouteKind::AgentConversation;
+        routeDecision.intent = m_lastAgentIntent;
+
+        TurnRuntimeInput runtimeInput;
+        runtimeInput.rawUserInput = m_lastAgentInput;
+        runtimeInput.effectiveInput = selectionInput;
+        runtimeInput.routeDecision = routeDecision;
+        runtimeInput.intent = m_lastAgentIntent;
+        runtimeInput.actionSession = m_activeActionSession;
+        runtimeInput.desktopContext = selectionContext.compiledDesktopSummary;
+        runtimeInput.desktopContextSnapshot = m_latestDesktopContext;
+        runtimeInput.selectedMemory = memoryContext;
+        runtimeInput.identity = m_identityProfileService->identity();
+        runtimeInput.userProfile = m_identityProfileService->userProfile();
+        runtimeInput.availableTools = availableTools;
+        runtimeInput.preselectedTools = relevantTools;
+        runtimeInput.toolResults = results;
+        runtimeInput.workspaceRoot = QDir::currentPath();
+        runtimeInput.visionContext = assistantPromptContext;
+        runtimeInput.currentTimeMs = QDateTime::currentMSecsSinceEpoch();
+        runtimeInput.focusMode = currentFocusModeState();
+        runtimeInput.privateMode = m_settings != nullptr && m_settings->privateModeEnabled();
+        runtimeInput.reasoningMode = m_activeReasoningMode;
+        runtimeInput.memoryAutoWrite = m_settings != nullptr && m_settings->memoryAutoWrite();
+        if (m_actionThreadTracker && m_actionThreadTracker->hasCurrent()) {
+            runtimeInput.currentActionThread = m_actionThreadTracker->current();
+        }
+        turnPlan = m_turnOrchestrationRuntime->buildPlan(runtimeInput);
+    }
+
     const AgentRequestContext requestContext{
         .modelId = modelId,
         .input = m_lastAgentInput,
@@ -5021,6 +5120,7 @@ void AssistantController::continueAgentConversation(const QList<AgentToolResult>
         .responseMode = m_activeActionSession.responseMode,
         .sessionGoal = m_activeActionSession.goal,
         .nextStepHint = m_activeActionSession.nextStepHint,
+        .promptContext = m_turnOrchestrationRuntime ? std::optional<PromptTurnContext>(turnPlan.promptContext) : std::nullopt,
         .sampling = samplingProfile(),
         .mode = m_activeReasoningMode,
         .memoryAutoWrite = m_settings->memoryAutoWrite(),

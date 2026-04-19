@@ -3,6 +3,7 @@
 #include "ai/AiBackendClient.h"
 #include "ai/PromptAdapter.h"
 #include "ai/ReasoningRouter.h"
+#include "companion/contracts/BehaviorTraceEvent.h"
 #include "logging/LoggingService.h"
 #include "settings/AppSettings.h"
 
@@ -121,6 +122,29 @@ QString formatToolResults(const QList<AgentToolResult> &results)
     }
     return lines.join(QStringLiteral("\n"));
 }
+
+void logPromptAssembly(LoggingService *loggingService,
+                       const PromptAdapter *promptAdapter,
+                       const PromptTurnContext &context,
+                       const QString &stage)
+{
+    if (loggingService == nullptr || promptAdapter == nullptr) {
+        return;
+    }
+
+    const PromptAssemblyReport report = promptAdapter->buildPromptAssemblyReport(context);
+    loggingService->infoFor(QStringLiteral("ai_prompt"),
+                            QStringLiteral("[%1] %2").arg(stage, report.toLogString()));
+
+    BehaviorTraceEvent event = BehaviorTraceEvent::create(
+        QStringLiteral("prompt_assembly"),
+        stage,
+        QStringLiteral("prompt.dynamic_blocks_assembled"),
+        report.toVariantMap(),
+        QStringLiteral("system"));
+    event.capabilityId = QStringLiteral("turn_orchestration_runtime");
+    loggingService->logBehaviorEvent(event);
+}
 }
 
 AiRequestCoordinator::AiRequestCoordinator(AppSettings *settings,
@@ -207,19 +231,24 @@ quint64 AiRequestCoordinator::startConversationRequest(AiBackendClient *backendC
         return 0;
     }
 
-    const auto messages = promptAdapter->buildConversationMessages(
-        context.input,
-        context.history,
-        context.memory,
-        context.identity,
-        context.userProfile,
-        context.responseMode,
-        context.sessionGoal,
-        context.nextStepHint,
-        mode,
-        context.visionContext);
+    const auto messages = context.promptContext.has_value()
+        ? promptAdapter->buildConversationMessages(*context.promptContext, context.history)
+        : promptAdapter->buildConversationMessages(
+            context.input,
+            context.history,
+            context.memory,
+            context.identity,
+            context.userProfile,
+            context.responseMode,
+            context.sessionGoal,
+            context.nextStepHint,
+            mode,
+            context.visionContext);
 
     if (m_loggingService) {
+        if (context.promptContext.has_value()) {
+            logPromptAssembly(m_loggingService, promptAdapter, *context.promptContext, QStringLiteral("conversation_request"));
+        }
         const QString providerKind = providerKindForAudit(m_settings);
         const QString providerEndpoint = providerEndpointForAudit(m_settings);
         m_loggingService->infoFor(
@@ -287,19 +316,21 @@ AgentStartRequestResult AiRequestCoordinator::startAgentRequest(AiBackendClient 
     }
 
     if (result.transportMode == AgentTransportMode::Responses) {
-        const QString instructions = promptAdapter->buildAgentInstructions(
-            context.memory,
-            context.skills,
-            context.tools,
-            context.identity,
-            context.userProfile,
-            context.workspaceRoot,
-            context.intent,
-            context.memoryAutoWrite,
-            context.responseMode,
-            context.sessionGoal,
-            context.nextStepHint,
-            context.visionContext);
+        const QString instructions = context.promptContext.has_value()
+            ? promptAdapter->buildAgentInstructions(*context.promptContext, context.skills, context.memoryAutoWrite)
+            : promptAdapter->buildAgentInstructions(
+                context.memory,
+                context.skills,
+                context.tools,
+                context.identity,
+                context.userProfile,
+                context.workspaceRoot,
+                context.intent,
+                context.memoryAutoWrite,
+                context.responseMode,
+                context.sessionGoal,
+                context.nextStepHint,
+                context.visionContext);
         const AgentRequest request{
             .model = context.modelId,
             .instructions = instructions,
@@ -312,6 +343,9 @@ AgentStartRequestResult AiRequestCoordinator::startAgentRequest(AiBackendClient 
             .timeout = std::chrono::milliseconds(context.timeoutMs)
         };
         if (m_loggingService) {
+            if (context.promptContext.has_value()) {
+                logPromptAssembly(m_loggingService, promptAdapter, *context.promptContext, QStringLiteral("agent_request.responses"));
+            }
             const QString providerKind = providerKindForAudit(m_settings);
             const QString providerEndpoint = providerEndpointForAudit(m_settings);
             m_loggingService->infoFor(
@@ -330,21 +364,26 @@ AgentStartRequestResult AiRequestCoordinator::startAgentRequest(AiBackendClient 
         return result;
     }
 
-    const auto messages = promptAdapter->buildHybridAgentMessages(
-        context.input,
-        context.memory,
-        context.identity,
-        context.userProfile,
-        context.workspaceRoot,
-        context.intent,
-        context.tools,
-        context.responseMode,
-        context.sessionGoal,
-        context.nextStepHint,
-        context.mode,
-        context.visionContext);
+    const auto messages = context.promptContext.has_value()
+        ? promptAdapter->buildHybridAgentMessages(*context.promptContext)
+        : promptAdapter->buildHybridAgentMessages(
+            context.input,
+            context.memory,
+            context.identity,
+            context.userProfile,
+            context.workspaceRoot,
+            context.intent,
+            context.tools,
+            context.responseMode,
+            context.sessionGoal,
+            context.nextStepHint,
+            context.mode,
+            context.visionContext);
 
     if (m_loggingService) {
+        if (context.promptContext.has_value()) {
+            logPromptAssembly(m_loggingService, promptAdapter, *context.promptContext, QStringLiteral("agent_request.chat_adapter"));
+        }
         const QString providerKind = providerKindForAudit(m_settings);
         const QString providerEndpoint = providerEndpointForAudit(m_settings);
         m_loggingService->infoFor(
@@ -381,19 +420,21 @@ quint64 AiRequestCoordinator::continueAgentRequest(AiBackendClient *backendClien
     }
 
     if (useResponses) {
-        const QString instructions = promptAdapter->buildAgentInstructions(
-            context.memory,
-            context.skills,
-            context.tools,
-            context.identity,
-            context.userProfile,
-            context.workspaceRoot,
-            context.intent,
-            context.memoryAutoWrite,
-            context.responseMode,
-            context.sessionGoal,
-            context.nextStepHint,
-            context.visionContext);
+        const QString instructions = context.promptContext.has_value()
+            ? promptAdapter->buildAgentInstructions(*context.promptContext, context.skills, context.memoryAutoWrite)
+            : promptAdapter->buildAgentInstructions(
+                context.memory,
+                context.skills,
+                context.tools,
+                context.identity,
+                context.userProfile,
+                context.workspaceRoot,
+                context.intent,
+                context.memoryAutoWrite,
+                context.responseMode,
+                context.sessionGoal,
+                context.nextStepHint,
+                context.visionContext);
         const AgentRequest request{
             .model = context.modelId,
             .instructions = instructions,
@@ -406,6 +447,9 @@ quint64 AiRequestCoordinator::continueAgentRequest(AiBackendClient *backendClien
             .timeout = std::chrono::milliseconds(context.timeoutMs)
         };
         if (m_loggingService) {
+            if (context.promptContext.has_value()) {
+                logPromptAssembly(m_loggingService, promptAdapter, *context.promptContext, QStringLiteral("agent_continue.responses"));
+            }
             const QString providerKind = providerKindForAudit(m_settings);
             const QString providerEndpoint = providerEndpointForAudit(m_settings);
             m_loggingService->infoFor(
@@ -423,22 +467,27 @@ quint64 AiRequestCoordinator::continueAgentRequest(AiBackendClient *backendClien
         return backendClient->sendAgentRequest(request);
     }
 
-    const auto messages = promptAdapter->buildHybridAgentContinuationMessages(
-        context.input,
-        context.toolResults,
-        context.memory,
-        context.identity,
-        context.userProfile,
-        context.workspaceRoot,
-        context.intent,
-        context.tools,
-        context.responseMode,
-        context.sessionGoal,
-        context.nextStepHint,
-        context.mode,
-        context.visionContext);
+    const auto messages = context.promptContext.has_value()
+        ? promptAdapter->buildHybridAgentContinuationMessages(*context.promptContext)
+        : promptAdapter->buildHybridAgentContinuationMessages(
+            context.input,
+            context.toolResults,
+            context.memory,
+            context.identity,
+            context.userProfile,
+            context.workspaceRoot,
+            context.intent,
+            context.tools,
+            context.responseMode,
+            context.sessionGoal,
+            context.nextStepHint,
+            context.mode,
+            context.visionContext);
 
     if (m_loggingService) {
+        if (context.promptContext.has_value()) {
+            logPromptAssembly(m_loggingService, promptAdapter, *context.promptContext, QStringLiteral("agent_continue.chat_adapter"));
+        }
         const QString providerKind = providerKindForAudit(m_settings);
         const QString providerEndpoint = providerEndpointForAudit(m_settings);
         m_loggingService->infoFor(

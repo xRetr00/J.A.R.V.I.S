@@ -55,6 +55,7 @@ class MemoryPolicyHandler;
 class ResponseFinalizer;
 class SpeechTranscriptGuard;
 class ToolCoordinator;
+class TurnOrchestrationRuntime;
 namespace LearningData {
 class LearningDataCollector;
 }
@@ -402,6 +403,7 @@ private:
     std::unique_ptr<ExecutionNarrator> m_executionNarrator;
     std::unique_ptr<MemoryPolicyHandler> m_memoryPolicyHandler;
     std::unique_ptr<ToolCoordinator> m_toolCoordinator;
+    std::unique_ptr<TurnOrchestrationRuntime> m_turnOrchestrationRuntime;
     std::unique_ptr<LearningData::LearningDataCollector> m_learningDataCollector;
     std::unique_ptr<WakeWordDataCapture> m_wakeWordDataCapture;
     SkillStore *m_skillStore = nullptr;

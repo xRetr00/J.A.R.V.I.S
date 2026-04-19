@@ -269,6 +269,7 @@ set(JARVIS_SOURCES
     src/core/ResponseFinalizer.cpp
     src/core/PermissionOverrideSettings.cpp
     src/core/ToolCoordinator.cpp
+    src/core/TurnOrchestrationRuntime.cpp
     src/core/ToolPermissionRegistry.cpp
     src/connectors/BrowserBookmarksEventBuilder.cpp
     src/connectors/BrowserBookmarksMonitor.cpp
@@ -404,6 +405,8 @@ set(JARVIS_HEADERS
     src/core/PermissionOverrideSettings.h
     src/core/ResponseFinalizer.h
     src/core/ToolCoordinator.h
+    src/core/TurnOrchestrationRuntime.h
+    src/core/TurnOrchestrationTypes.h
     src/core/ToolPermissionRegistry.h
     src/connectors/BrowserBookmarksEventBuilder.h
     src/connectors/BrowserBookmarksMonitor.h
@@ -924,6 +927,34 @@ if(JARVIS_BUILD_TESTS)
     add_test(NAME jarvis_behavior_policy_tests COMMAND jarvis_behavior_policy_tests)
     set_tests_properties(jarvis_behavior_policy_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
     jarvis_copy_optional_runtime_libraries(jarvis_behavior_policy_tests)
+
+    qt_add_executable(jarvis_turn_orchestration_runtime_tests
+        tests/TurnOrchestrationRuntimeTests.cpp
+    )
+
+    target_link_libraries(jarvis_turn_orchestration_runtime_tests
+        PRIVATE
+            jarvis_lib
+            Qt6::Test
+    )
+
+    add_test(NAME jarvis_turn_orchestration_runtime_tests COMMAND jarvis_turn_orchestration_runtime_tests)
+    set_tests_properties(jarvis_turn_orchestration_runtime_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_turn_orchestration_runtime_tests)
+
+    qt_add_executable(jarvis_prompt_assembly_tests
+        tests/PromptAssemblyTests.cpp
+    )
+
+    target_link_libraries(jarvis_prompt_assembly_tests
+        PRIVATE
+            jarvis_lib
+            Qt6::Test
+    )
+
+    add_test(NAME jarvis_prompt_assembly_tests COMMAND jarvis_prompt_assembly_tests)
+    set_tests_properties(jarvis_prompt_assembly_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_prompt_assembly_tests)
 
     qt_add_executable(jarvis_action_thread_tracker_tests
         tests/ActionThreadTrackerTests.cpp
