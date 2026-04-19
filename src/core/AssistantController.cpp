@@ -42,6 +42,7 @@
 #include "core/MemoryPolicyHandler.h"
 #include "core/PermissionOverrideSettings.h"
 #include "core/ResponseFinalizer.h"
+#include "core/StartupReadinessPolicy.h"
 #include "core/ToolCoordinator.h"
 #include "behavior_tuning/CompiledContextPolicyTuningPromotionPolicy.h"
 #include "behavior_tuning/FeedbackSignalEventBuilder.h"
@@ -3374,12 +3375,6 @@ void AssistantController::updateStartupState()
 
 QString AssistantController::resolveStartupBlockingIssue(bool *blocked) const
 {
-    auto setBlocked = [blocked](bool value) {
-        if (blocked) {
-            *blocked = value;
-        }
-    };
-
 #if defined(JARVIS_HAS_SHERPA_ONNX) && JARVIS_HAS_SHERPA_ONNX
     const bool wakeEngineCompiled = true;
 #else
@@ -3387,84 +3382,42 @@ QString AssistantController::resolveStartupBlockingIssue(bool *blocked) const
 #endif
     const bool wakeEngineRequired = wakeEngineCompiled && m_settings->wakeWordEnabled();
 
-    if (!m_settings->initialSetupCompleted()) {
-        setBlocked(true);
-        return QStringLiteral("Initial setup is incomplete.");
-    }
-    if (m_settings->chatBackendEndpoint().trimmed().isEmpty()) {
-        setBlocked(true);
-        return QStringLiteral("Local AI backend endpoint is missing.");
-    }
-    if (m_settings->whisperExecutable().trimmed().isEmpty() || !QFileInfo::exists(m_settings->whisperExecutable())) {
-        setBlocked(true);
-        return QStringLiteral("Whisper executable is missing.");
-    }
-    if (m_settings->whisperModelPath().trimmed().isEmpty() || !QFileInfo::exists(m_settings->whisperModelPath())) {
-        setBlocked(true);
-        return QStringLiteral("Whisper model is missing.");
-    }
-    if (m_settings->piperExecutable().trimmed().isEmpty() || !QFileInfo::exists(m_settings->piperExecutable())) {
-        setBlocked(true);
-        return QStringLiteral("Piper executable is missing.");
-    }
-    if (m_settings->piperVoiceModel().trimmed().isEmpty() || !QFileInfo::exists(m_settings->piperVoiceModel())) {
-        setBlocked(true);
-        return QStringLiteral("Piper voice model is missing.");
-    }
-    if (m_settings->ffmpegExecutable().trimmed().isEmpty() || !QFileInfo::exists(m_settings->ffmpegExecutable())) {
-        setBlocked(true);
-        return QStringLiteral("FFmpeg executable is missing.");
-    }
+    const QString whisperExecutable = m_settings->whisperExecutable();
+    const QString whisperModelPath = m_settings->whisperModelPath();
+    const QString piperExecutable = m_settings->piperExecutable();
+    const QString piperVoiceModel = m_settings->piperVoiceModel();
+    const QString ffmpegExecutable = m_settings->ffmpegExecutable();
 
-    if (wakeEngineRequired) {
-        const QString wakeRuntime = resolveWakeEngineRuntimePath();
-        if (wakeRuntime.isEmpty()) {
-            setBlocked(true);
-            return QStringLiteral("Wake runtime is missing.");
-        }
-        const QString wakeModel = resolveWakeEngineModelPath();
-        if (wakeModel.isEmpty()) {
-            setBlocked(true);
-            return QStringLiteral("Wake model is missing.");
-        }
-    }
-
-    if (!m_modelCatalogResolved) {
-        setBlocked(false);
-        return QStringLiteral("Loading local AI backend...");
-    }
-
+    StartupReadinessInput input;
+    input.initialSetupCompleted = m_settings->initialSetupCompleted();
+    input.chatBackendEndpoint = m_settings->chatBackendEndpoint();
+    input.whisperExecutable = whisperExecutable;
+    input.whisperExecutableExists = QFileInfo::exists(whisperExecutable);
+    input.whisperModelPath = whisperModelPath;
+    input.whisperModelExists = QFileInfo::exists(whisperModelPath);
+    input.piperExecutable = piperExecutable;
+    input.piperExecutableExists = QFileInfo::exists(piperExecutable);
+    input.piperVoiceModel = piperVoiceModel;
+    input.piperVoiceModelExists = QFileInfo::exists(piperVoiceModel);
+    input.ffmpegExecutable = ffmpegExecutable;
+    input.ffmpegExecutableExists = QFileInfo::exists(ffmpegExecutable);
+    input.wakeEngineRequired = wakeEngineRequired;
+    input.wakeRuntimePath = resolveWakeEngineRuntimePath();
+    input.wakeModelPath = resolveWakeEngineModelPath();
+    input.modelCatalogResolved = m_modelCatalogResolved;
     const AiAvailability availability = m_modelCatalogService->availability();
-    if (!availability.online) {
-        setBlocked(true);
-        return availability.status.trimmed().isEmpty()
-            ? QStringLiteral("Local AI backend is offline.")
-            : availability.status;
-    }
-    if (!availability.modelAvailable) {
-        setBlocked(true);
-        return availability.status.trimmed().isEmpty()
-            ? QStringLiteral("Selected model is unavailable.")
-            : availability.status;
-    }
+    input.availability.online = availability.online;
+    input.availability.modelAvailable = availability.modelAvailable;
+    input.availability.status = availability.status;
+    input.wakeStartRequested = m_wakeStartRequested;
+    input.wakeEngineReady = m_wakeEngineReady;
+    input.wakeEngineError = m_lastWakeError;
 
-    if (wakeEngineRequired) {
-        if (!m_wakeStartRequested) {
-            setBlocked(false);
-            return QStringLiteral("Starting wake engine...");
-        }
-        if (!m_lastWakeError.trimmed().isEmpty()) {
-            setBlocked(true);
-            return m_lastWakeError;
-        }
-        if (!m_wakeEngineReady) {
-            setBlocked(false);
-            return QStringLiteral("Starting wake engine...");
-        }
+    const StartupReadinessResult result = StartupReadinessPolicy::evaluate(input);
+    if (blocked) {
+        *blocked = result.blocked;
     }
-
-    setBlocked(false);
-    return {};
+    return result.issue;
 }
 
 void AssistantController::setStatus(const QString &status)

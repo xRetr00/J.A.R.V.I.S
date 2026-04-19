@@ -1,6 +1,13 @@
 #pragma once
 
-#include "core/AssistantTypes.h"
+#include <QString>
+
+struct StartupReadinessAvailability
+{
+    bool online = false;
+    bool modelAvailable = false;
+    QString status;
+};
 
 struct StartupReadinessInput
 {
@@ -28,7 +35,7 @@ struct StartupReadinessInput
     QString wakeModelPath;
 
     bool modelCatalogResolved = false;
-    AiAvailability availability;
+    StartupReadinessAvailability availability;
 
     bool wakeStartRequested = false;
     bool wakeEngineReady = false;
