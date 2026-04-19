@@ -53,6 +53,7 @@ class ExecutionNarrator;
 class InputRouter;
 class MemoryPolicyHandler;
 class ResponseFinalizer;
+class SpeechTranscriptGuard;
 class ToolCoordinator;
 namespace LearningData {
 class LearningDataCollector;
@@ -396,6 +397,7 @@ private:
     std::unique_ptr<InputRouter> m_inputRouter;
     std::unique_ptr<AiRequestCoordinator> m_aiRequestCoordinator;
     std::unique_ptr<ActionThreadTracker> m_actionThreadTracker;
+    std::unique_ptr<SpeechTranscriptGuard> m_speechTranscriptGuard;
     std::unique_ptr<AssistantBehaviorPolicy> m_assistantBehaviorPolicy;
     std::unique_ptr<ExecutionNarrator> m_executionNarrator;
     std::unique_ptr<MemoryPolicyHandler> m_memoryPolicyHandler;

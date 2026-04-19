@@ -257,6 +257,7 @@ set(JARVIS_SOURCES
     src/core/AiRequestCoordinator.cpp
     src/core/AssistantBehaviorPolicy.cpp
     src/core/AssistantController.cpp
+    src/core/SpeechTranscriptGuard.cpp
     src/core/StartupReadinessPolicy.cpp
     src/core/DesktopActionContextPolicy.cpp
     src/core/ExecutionNarrator.cpp
@@ -384,6 +385,7 @@ set(JARVIS_HEADERS
     src/core/AiRequestCoordinator.h
     src/core/AssistantBehaviorPolicy.h
     src/core/AssistantController.h
+    src/core/SpeechTranscriptGuard.h
     src/core/AssistantTypes.h
     src/core/StartupReadinessPolicy.h
     src/core/DesktopActionContextPolicy.h
@@ -924,6 +926,23 @@ if(JARVIS_BUILD_TESTS)
     add_test(NAME jarvis_startup_readiness_policy_tests COMMAND jarvis_startup_readiness_policy_tests)
     set_tests_properties(jarvis_startup_readiness_policy_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
     jarvis_copy_optional_runtime_libraries(jarvis_startup_readiness_policy_tests)
+
+    qt_add_executable(jarvis_speech_transcript_guard_tests
+        tests/SpeechTranscriptGuardTests.cpp
+        src/core/SpeechTranscriptGuard.cpp
+        src/wakeword/WakeWordDetector.cpp
+    )
+
+    target_include_directories(jarvis_speech_transcript_guard_tests PRIVATE src)
+    target_link_libraries(jarvis_speech_transcript_guard_tests
+        PRIVATE
+            Qt6::Core
+            Qt6::Test
+    )
+
+    add_test(NAME jarvis_speech_transcript_guard_tests COMMAND jarvis_speech_transcript_guard_tests)
+    set_tests_properties(jarvis_speech_transcript_guard_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_speech_transcript_guard_tests)
 
     qt_add_executable(jarvis_permission_override_scenario_tests
         tests/PermissionOverrideScenarioTests.cpp
