@@ -33,6 +33,7 @@
 #include "core/agent/IntentDetector.h"
 #include "core/agent/IntentEngine.h"
 #include "core/ActionThreadTracker.h"
+#include "core/ActionThreadSelectionPolicy.h"
 #include "core/AiRequestCoordinator.h"
 #include "core/AssistantBehaviorPolicy.h"
 #include "core/DesktopActionContextPolicy.h"
@@ -1363,6 +1364,12 @@ AssistantController::AssistantController(
     m_inputRouter = std::make_unique<InputRouter>(m_assistantBehaviorPolicy.get());
     m_aiRequestCoordinator = std::make_unique<AiRequestCoordinator>(m_settings, m_reasoningRouter, m_loggingService);
     m_actionThreadTracker = std::make_unique<ActionThreadTracker>();
+    const QString actionThreadStoreDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    if (!actionThreadStoreDir.trimmed().isEmpty()) {
+        m_actionThreadTracker->enablePersistence(
+            QDir(actionThreadStoreDir).filePath(QStringLiteral("action_threads.json")));
+        m_actionThreadTracker->load();
+    }
     m_turnOrchestrationRuntime = std::make_unique<TurnOrchestrationRuntime>(m_assistantBehaviorPolicy.get());
     m_speechTranscriptGuard = std::make_unique<SpeechTranscriptGuard>();
     m_executionNarrator = std::make_unique<ExecutionNarrator>();
@@ -1518,6 +1525,17 @@ AssistantController::AssistantController(
 
 AssistantController::~AssistantController()
 {
+    if (m_loggingService) {
+        m_loggingService->breadcrumb(
+            QStringLiteral("shutdown"),
+            QStringLiteral("assistant_controller.destroy.begin"),
+            QStringLiteral("wakeActive=%1 toolThreadRunning=%2 gestureThreadRunning=%3")
+                .arg(m_wakeWordEngine != nullptr && m_wakeWordEngine->isActive() ? QStringLiteral("true") : QStringLiteral("false"),
+                     m_toolWorkerThread.isRunning() ? QStringLiteral("true") : QStringLiteral("false"),
+                     m_gestureActionRouterThread.isRunning() ? QStringLiteral("true") : QStringLiteral("false")));
+        m_loggingService->clearRuntimeContext();
+    }
+
     if (m_wakeWordEngine != nullptr && m_wakeWordEngine->isActive()) {
         stopWakeMonitor();
     }
@@ -1541,6 +1559,13 @@ AssistantController::~AssistantController()
     if (m_toolWorkerThread.isRunning()) {
         m_toolWorkerThread.quit();
         m_toolWorkerThread.wait();
+    }
+    if (m_loggingService) {
+        m_loggingService->breadcrumb(
+            QStringLiteral("shutdown"),
+            QStringLiteral("assistant_controller.destroy.end"),
+            QStringLiteral("voice_and_worker_threads_stopped"));
+        m_loggingService->clearRuntimeContext();
     }
 }
 
@@ -2661,17 +2686,83 @@ void AssistantController::submitText(const QString &text)
                      decision.status.simplified(),
                      QString::number(decision.tasks.size())));
     }
-    if (shouldContinueActionThread(effectiveInput, decision, nowMs)) {
+    const ActionThreadSelectionResult actionThreadSelection =
+        selectActionThreadContinuation(effectiveInput, decision, nowMs);
+    if (actionThreadSelection.kind == ActionThreadSelectionKind::PrivateContextBlocked) {
+        if (m_loggingService) {
+            m_loggingService->infoFor(
+                QStringLiteral("follow_up_audit"),
+                QStringLiteral("[action_thread_private_blocked] input=%1 reason=%2")
+                    .arg(userFacingPromptForLogging(effectiveInput).left(320),
+                         actionThreadSelection.reasonCode));
+        }
+        deliverLocalResponse(
+            actionThreadSelection.userMessage.trimmed().isEmpty()
+                ? QStringLiteral("I need your permission before using private desktop context for that.")
+                : actionThreadSelection.userMessage,
+            QStringLiteral("Private context needs permission"),
+            true);
+        return;
+    }
+    if (actionThreadSelection.kind == ActionThreadSelectionKind::AskClarification) {
+        if (m_loggingService) {
+            m_loggingService->infoFor(
+                QStringLiteral("follow_up_audit"),
+                QStringLiteral("[action_thread_clarify] input=%1 reason=%2 candidateCount=%3")
+                    .arg(userFacingPromptForLogging(effectiveInput).left(320),
+                         actionThreadSelection.reasonCode,
+                         QString::number(actionThreadSelection.ambiguousThreads.size())));
+        }
+        deliverLocalResponse(
+            actionThreadSelection.userMessage.trimmed().isEmpty()
+                ? QStringLiteral("Which recent task do you mean?")
+                : actionThreadSelection.userMessage,
+            QStringLiteral("Clarification needed"),
+            true);
+        return;
+    }
+    if (actionThreadSelection.kind == ActionThreadSelectionKind::AuditOnlyCanceled) {
+        const QString reason = actionThreadSelection.reasonCode;
+        if (reason == QStringLiteral("action_thread.cancel_requested")) {
+            m_actionThreadTracker->markCurrentCanceled(
+                effectiveInput,
+                nowMs,
+                nowMs + conversationSessionTimeoutMs());
+        }
+        if (m_loggingService) {
+            m_loggingService->infoFor(
+                QStringLiteral("follow_up_audit"),
+                QStringLiteral("[action_thread_audit_only] input=%1 reason=%2")
+                    .arg(userFacingPromptForLogging(effectiveInput).left(320), reason));
+        }
+        deliverLocalResponse(
+            actionThreadSelection.userMessage.trimmed().isEmpty()
+                ? QStringLiteral("That task is no longer active. I will only resume it if you explicitly ask me to retry it.")
+                : actionThreadSelection.userMessage,
+            reason == QStringLiteral("action_thread.cancel_requested")
+                ? QStringLiteral("Task canceled")
+                : QStringLiteral("Task state"),
+            true);
+        return;
+    }
+    if (actionThreadSelection.shouldAttach()) {
+        if (actionThreadSelection.thread.has_value()) {
+            m_actionThreadTracker->setCurrentThread(actionThreadSelection.thread->id);
+        }
         m_lastPromptForAiLog = effectiveInput;
         const QString continuationInput = buildActionThreadContinuationInput(effectiveInput);
         if (m_loggingService) {
             m_loggingService->infoFor(
                 QStringLiteral("follow_up_audit"),
-                QStringLiteral("[action_thread_continue] input=%1 routedTo=%2")
+                QStringLiteral("[action_thread_continue] input=%1 routedTo=%2 thread=%3 reason=%4")
                     .arg(userFacingPromptForLogging(effectiveInput).left(320),
                          (m_settings->agentEnabled() && availability.online && availability.modelAvailable)
                              ? QStringLiteral("agent_conversation")
-                             : QStringLiteral("conversation")));
+                             : QStringLiteral("conversation"),
+                         actionThreadSelection.thread.has_value()
+                             ? actionThreadSelection.thread->id
+                             : QStringLiteral("unknown"),
+                         actionThreadSelection.reasonCode));
         }
         if (m_settings->agentEnabled() && availability.online && availability.modelAvailable) {
             startAgentConversationRequest(continuationInput, IntentType::GENERAL_CHAT);
@@ -6138,24 +6229,28 @@ void AssistantController::startActionThreadCompletionRequest(const ActionThread 
     startConversationRequest(buildActionThreadCompletionInput(gatedThread));
 }
 
+ActionThreadSelectionResult AssistantController::selectActionThreadContinuation(
+    const QString &input,
+    const InputRouteDecision &decision,
+    qint64 nowMs) const
+{
+    ActionThreadSelectionInput selectionInput;
+    selectionInput.userInput = input;
+    selectionInput.routeDecision = decision;
+    selectionInput.recentThreads = m_actionThreadTracker
+        ? m_actionThreadTracker->recentThreads(nowMs)
+        : QList<ActionThread>{};
+    selectionInput.nowMs = nowMs;
+    selectionInput.privateMode = m_settings != nullptr && m_settings->privateModeEnabled();
+    selectionInput.desktopContext = m_latestDesktopContext;
+    return ActionThreadSelectionPolicy::select(selectionInput);
+}
+
 bool AssistantController::shouldContinueActionThread(const QString &input,
                                                      const InputRouteDecision &decision,
                                                      qint64 nowMs) const
 {
-    if (m_assistantBehaviorPolicy == nullptr) {
-        return false;
-    }
-
-    const std::optional<ActionThread> &currentThread = m_actionThreadTracker->current();
-    if (!currentThread.has_value()) {
-        return false;
-    }
-
-    return m_assistantBehaviorPolicy->shouldContinueActionThread(
-        input,
-        decision,
-        *currentThread,
-        nowMs);
+    return selectActionThreadContinuation(input, decision, nowMs).shouldAttach();
 }
 
 QString AssistantController::buildActionThreadContinuationInput(const QString &userInput) const

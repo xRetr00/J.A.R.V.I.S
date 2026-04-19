@@ -696,17 +696,6 @@ ToolPlan AssistantBehaviorPolicy::buildToolPlan(const QString &input,
         }
     }
 
-    if (plan.orderedToolNames.isEmpty()) {
-        for (const AgentToolSpec &tool : availableTools) {
-            if (tool.name == QStringLiteral("web_search")
-                || tool.name == QStringLiteral("memory_search")
-                || tool.name == QStringLiteral("dir_list")
-                || tool.name == QStringLiteral("file_read")) {
-                plan.orderedToolNames.push_back(tool.name);
-            }
-        }
-    }
-
     if (plan.requiresGrounding && plan.sideEffecting) {
         plan.rationale = QStringLiteral("Inspect and verify state before taking any side-effecting action.");
     } else if (plan.requiresGrounding) {

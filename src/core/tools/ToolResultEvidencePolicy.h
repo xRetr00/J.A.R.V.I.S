@@ -9,6 +9,7 @@ struct ToolResultEvidenceAssessment
 {
     bool lowSignal = false;
     QString lowSignalReason;
+    QString confidence = QStringLiteral("none");
     int outputChars = 0;
     QStringList payloadKeys;
 };

@@ -264,7 +264,28 @@ QList<AgentToolResult> ToolCoordinator::executeAgentToolCalls(
         return results;
     }
 
+    QStringList seenCallShapes;
     for (const AgentToolCall &toolCall : toolCalls) {
+        const QString callShape = toolCall.name + QLatin1Char('|') + toolCall.argumentsJson.simplified();
+        if (seenCallShapes.contains(callShape)) {
+            AgentToolResult rejected;
+            rejected.callId = toolCall.id;
+            rejected.toolName = toolCall.name;
+            rejected.success = false;
+            rejected.errorKind = ToolErrorKind::Invalid;
+            rejected.summary = QStringLiteral("Skipped repeated low-signal tool call.");
+            rejected.output = QStringLiteral("Skipped repeated tool call with identical arguments.");
+            if (m_loggingService) {
+                m_loggingService->warnFor(
+                    QStringLiteral("tool_audit"),
+                    QStringLiteral("[tool_call_rejected] name=%1 reason=repeated_identical_call")
+                        .arg(toolCall.name));
+            }
+            results.push_back(rejected);
+            continue;
+        }
+        seenCallShapes.push_back(callShape);
+
         const qint64 startedAtMs = QDateTime::currentMSecsSinceEpoch();
         if (m_loggingService) {
             m_loggingService->setRuntimeContext(
@@ -304,7 +325,7 @@ QList<AgentToolResult> ToolCoordinator::executeAgentToolCalls(
                 QString());
             m_loggingService->infoFor(
                 QStringLiteral("tool_audit"),
-                QStringLiteral("[tool_result] id=%1 name=%2 success=%3 errorKind=%4 summary=%5 outputChars=%6 payloadKeys=%7 lowSignalReason=%8 output=%9")
+                QStringLiteral("[tool_result] id=%1 name=%2 success=%3 errorKind=%4 summary=%5 outputChars=%6 payloadKeys=%7 evidence=%8 output=%9")
                     .arg(result.callId,
                          result.toolName,
                          result.success ? QStringLiteral("true") : QStringLiteral("false"),
@@ -312,7 +333,9 @@ QList<AgentToolResult> ToolCoordinator::executeAgentToolCalls(
                          result.summary.simplified(),
                          QString::number(evidence.outputChars),
                          evidence.payloadKeys.join(QLatin1Char(',')),
-                         evidence.lowSignalReason.isEmpty() ? QStringLiteral("none") : evidence.lowSignalReason,
+                         QStringLiteral("confidence:%1,lowSignalReason:%2")
+                             .arg(evidence.confidence,
+                                  evidence.lowSignalReason.isEmpty() ? QStringLiteral("none") : evidence.lowSignalReason),
                          result.output.left(8000)));
         }
         if (traceCallback) {
@@ -325,6 +348,13 @@ QList<AgentToolResult> ToolCoordinator::executeAgentToolCalls(
             m_toolExecutionObserver(toolCall, result, startedAtMs, finishedAtMs);
         }
         results.push_back(result);
+    }
+    if (m_loggingService) {
+        m_loggingService->breadcrumb(
+            QStringLiteral("tool"),
+            QStringLiteral("tool.batch.completed"),
+            QStringLiteral("resultCount=%1").arg(QString::number(results.size())));
+        m_loggingService->clearRuntimeContext();
     }
     return results;
 }

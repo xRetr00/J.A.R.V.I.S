@@ -41,6 +41,72 @@ bool isEvidenceTool(const QString &toolName)
         || toolName == QStringLiteral("log_search")
         || toolName == QStringLiteral("ai_log_read");
 }
+
+bool containsAny(const QString &text, const QStringList &needles)
+{
+    for (const QString &needle : needles) {
+        if (text.contains(needle)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+QString combinedEvidenceText(const ToolExecutionResult &result, const QString &modelOutput)
+{
+    QStringList chunks;
+    chunks << modelOutput;
+    chunks << result.summary;
+    chunks << result.detail;
+    for (const QString &key : result.payload.keys()) {
+        const QJsonValue value = result.payload.value(key);
+        if (value.isString()) {
+            chunks << value.toString();
+        }
+    }
+    return chunks.join(QStringLiteral("\n")).trimmed();
+}
+
+bool looksLikeRawMarkupOrSearchShell(const QString &text)
+{
+    const QString lowered = text.left(8000).toLower();
+    if (lowered.isEmpty()) {
+        return false;
+    }
+    if (containsAny(lowered, {
+            QStringLiteral("<html"),
+            QStringLiteral("<script"),
+            QStringLiteral("<body"),
+            QStringLiteral("enable javascript"),
+            QStringLiteral("unusual traffic"),
+            QStringLiteral("captcha"),
+            QStringLiteral("search?q=")
+        })) {
+        return true;
+    }
+
+    const int tagLikeCount = lowered.count(QLatin1Char('<')) + lowered.count(QLatin1Char('>'));
+    return lowered.size() > 500 && tagLikeCount > lowered.size() / 30;
+}
+
+QString confidenceForSuccessfulTool(const ToolExecutionResult &result, int outputChars)
+{
+    if (result.toolName == QStringLiteral("browser_open")
+        || result.toolName == QStringLiteral("computer_open_url")) {
+        return QStringLiteral("weak");
+    }
+    if (hasSources(result.payload)) {
+        return QStringLiteral("strong");
+    }
+    if (!payloadString(result.payload, QStringLiteral("text")).isEmpty()
+        || !payloadString(result.payload, QStringLiteral("content")).isEmpty()
+        || !payloadString(result.payload, QStringLiteral("summary")).isEmpty()
+        || !payloadString(result.payload, QStringLiteral("json")).isEmpty()
+        || outputChars > 200) {
+        return QStringLiteral("medium");
+    }
+    return QStringLiteral("weak");
+}
 }
 
 ToolResultEvidenceAssessment ToolResultEvidencePolicy::assess(const ToolExecutionResult &result,
@@ -49,14 +115,21 @@ ToolResultEvidenceAssessment ToolResultEvidencePolicy::assess(const ToolExecutio
     ToolResultEvidenceAssessment assessment;
     assessment.outputChars = modelOutput.trimmed().size();
     assessment.payloadKeys = sortedPayloadKeys(result.payload);
+    assessment.confidence = QStringLiteral("none");
 
     if (!result.success) {
+        assessment.lowSignal = true;
+        assessment.lowSignalReason = QStringLiteral("tool_result.blocked_or_failed");
+        assessment.confidence = QStringLiteral("blocked");
         return assessment;
     }
+
+    assessment.confidence = confidenceForSuccessfulTool(result, assessment.outputChars);
 
     if (result.toolName == QStringLiteral("browser_fetch_text") && isBrowserTextEmpty(result.payload)) {
         assessment.lowSignal = true;
         assessment.lowSignalReason = QStringLiteral("tool_result.empty_browser_text");
+        assessment.confidence = QStringLiteral("weak");
         return assessment;
     }
 
@@ -69,13 +142,22 @@ ToolResultEvidenceAssessment ToolResultEvidencePolicy::assess(const ToolExecutio
         if (!hasSearchPayload) {
             assessment.lowSignal = true;
             assessment.lowSignalReason = QStringLiteral("tool_result.empty_web_search");
+            assessment.confidence = QStringLiteral("weak");
             return assessment;
         }
+    }
+
+    if (looksLikeRawMarkupOrSearchShell(combinedEvidenceText(result, modelOutput))) {
+        assessment.lowSignal = true;
+        assessment.lowSignalReason = QStringLiteral("tool_result.raw_search_or_browser_html");
+        assessment.confidence = QStringLiteral("weak");
+        return assessment;
     }
 
     if (isEvidenceTool(result.toolName) && modelOutput.trimmed().isEmpty()) {
         assessment.lowSignal = true;
         assessment.lowSignalReason = QStringLiteral("tool_result.empty_model_output");
+        assessment.confidence = QStringLiteral("weak");
     }
 
     return assessment;

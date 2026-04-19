@@ -48,6 +48,7 @@ class VoicePipelineRuntime;
 class WorldStateCache;
 class AiRequestCoordinator;
 class ActionThreadTracker;
+struct ActionThreadSelectionResult;
 class AssistantBehaviorPolicy;
 class ExecutionNarrator;
 class InputRouter;
@@ -304,6 +305,9 @@ private:
     void setSurfaceError(const QString &source, const QString &primary, const QString &secondary = QString());
     void clearSurfaceError(const QString &source = QString());
     void startActionThreadCompletionRequest(const ActionThread &thread);
+    ActionThreadSelectionResult selectActionThreadContinuation(const QString &input,
+                                                               const InputRouteDecision &decision,
+                                                               qint64 nowMs) const;
     bool shouldContinueActionThread(const QString &input,
                                     const InputRouteDecision &decision,
                                     qint64 nowMs) const;

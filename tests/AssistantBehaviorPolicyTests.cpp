@@ -4,6 +4,7 @@
 
 #include "core/ActionRiskPermissionService.h"
 #include "core/AssistantBehaviorPolicy.h"
+#include "core/ActionThreadSelectionPolicy.h"
 #include "core/InputRouter.h"
 #include "core/ToolPermissionRegistry.h"
 
@@ -32,6 +33,9 @@ private slots:
     void continuesResultAndInspectionFollowUpsAgainstRecentActionThread();
     void ignoresFreshRequestAgainstRecentActionThread();
     void rejectsFreshActionWithPronounAgainstRecentActionThread();
+    void selectionPolicyClarifiesAmbiguousRecentThreads();
+    void selectionPolicyRetriesFailedAndAuditsCanceledThreads();
+    void selectionPolicyBlocksPrivateReferentialContext();
     void narrowsExplicitCreateAndBrowserToolsForGeneralChat();
     void routesDesktopContextRecallAsConversation();
 };
@@ -498,6 +502,116 @@ void AssistantBehaviorPolicyTests::rejectsFreshActionWithPronounAgainstRecentAct
         decision,
         thread,
         QDateTime::currentMSecsSinceEpoch()));
+}
+
+void AssistantBehaviorPolicyTests::selectionPolicyClarifiesAmbiguousRecentThreads()
+{
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    InputRouteDecision decision;
+    decision.kind = InputRouteKind::AgentConversation;
+
+    ActionThread browserThread;
+    browserThread.id = QStringLiteral("browser");
+    browserThread.taskType = QStringLiteral("browser_open");
+    browserThread.userGoal = QStringLiteral("Open the course results");
+    browserThread.state = ActionThreadState::Completed;
+    browserThread.valid = true;
+    browserThread.updatedAtMs = nowMs;
+    browserThread.expiresAtMs = nowMs + 60000;
+
+    ActionThread fileThread;
+    fileThread.id = QStringLiteral("file");
+    fileThread.taskType = QStringLiteral("file_write");
+    fileThread.userGoal = QStringLiteral("Create the snake game file");
+    fileThread.state = ActionThreadState::Completed;
+    fileThread.valid = true;
+    fileThread.updatedAtMs = nowMs - 10;
+    fileThread.expiresAtMs = nowMs + 60000;
+
+    ActionThreadSelectionInput input;
+    input.userInput = QStringLiteral("open it");
+    input.routeDecision = decision;
+    input.recentThreads = {browserThread, fileThread};
+    input.nowMs = nowMs;
+
+    const ActionThreadSelectionResult result = ActionThreadSelectionPolicy::select(input);
+    QCOMPARE(result.kind, ActionThreadSelectionKind::AskClarification);
+    QCOMPARE(result.ambiguousThreads.size(), 2);
+    QVERIFY(result.userMessage.contains(QStringLiteral("Which recent task")));
+}
+
+void AssistantBehaviorPolicyTests::selectionPolicyRetriesFailedAndAuditsCanceledThreads()
+{
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    InputRouteDecision decision;
+    decision.kind = InputRouteKind::AgentConversation;
+
+    ActionThread failed;
+    failed.id = QStringLiteral("failed-thread");
+    failed.taskType = QStringLiteral("browser_fetch_text");
+    failed.userGoal = QStringLiteral("Summarize the Avengers page");
+    failed.state = ActionThreadState::Failed;
+    failed.valid = true;
+    failed.updatedAtMs = nowMs;
+    failed.expiresAtMs = nowMs + 60000;
+
+    ActionThread canceled;
+    canceled.id = QStringLiteral("canceled-thread");
+    canceled.taskType = QStringLiteral("file_write");
+    canceled.userGoal = QStringLiteral("Create a snake game");
+    canceled.state = ActionThreadState::Canceled;
+    canceled.valid = true;
+    canceled.updatedAtMs = nowMs - 10;
+    canceled.expiresAtMs = nowMs + 60000;
+
+    ActionThreadSelectionInput retryInput;
+    retryInput.userInput = QStringLiteral("retry that");
+    retryInput.routeDecision = decision;
+    retryInput.recentThreads = {failed, canceled};
+    retryInput.nowMs = nowMs;
+
+    const ActionThreadSelectionResult retry = ActionThreadSelectionPolicy::select(retryInput);
+    QCOMPARE(retry.kind, ActionThreadSelectionKind::RetryFailed);
+    QVERIFY(retry.thread.has_value());
+    QCOMPARE(retry.thread->id, QStringLiteral("failed-thread"));
+
+    ActionThreadSelectionInput auditInput;
+    auditInput.userInput = QStringLiteral("what were you doing?");
+    auditInput.routeDecision = decision;
+    auditInput.recentThreads = {canceled};
+    auditInput.nowMs = nowMs;
+
+    const ActionThreadSelectionResult audit = ActionThreadSelectionPolicy::select(auditInput);
+    QCOMPARE(audit.kind, ActionThreadSelectionKind::AuditOnlyCanceled);
+    QVERIFY(audit.thread.has_value());
+    QCOMPARE(audit.thread->id, QStringLiteral("canceled-thread"));
+}
+
+void AssistantBehaviorPolicyTests::selectionPolicyBlocksPrivateReferentialContext()
+{
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    InputRouteDecision decision;
+    decision.kind = InputRouteKind::AgentConversation;
+
+    ActionThread thread;
+    thread.id = QStringLiteral("private-thread");
+    thread.taskType = QStringLiteral("browser_open");
+    thread.userGoal = QStringLiteral("Inspect private tab");
+    thread.state = ActionThreadState::Completed;
+    thread.valid = true;
+    thread.updatedAtMs = nowMs;
+    thread.expiresAtMs = nowMs + 60000;
+
+    ActionThreadSelectionInput input;
+    input.userInput = QStringLiteral("open it");
+    input.routeDecision = decision;
+    input.recentThreads = {thread};
+    input.nowMs = nowMs;
+    input.privateMode = true;
+
+    const ActionThreadSelectionResult result = ActionThreadSelectionPolicy::select(input);
+    QCOMPARE(result.kind, ActionThreadSelectionKind::PrivateContextBlocked);
+    QVERIFY(!result.userMessage.isEmpty());
 }
 
 void AssistantBehaviorPolicyTests::narrowsExplicitCreateAndBrowserToolsForGeneralChat()

@@ -169,6 +169,32 @@ QString actionThreadEvidenceText(const std::optional<ActionThread> &thread, qint
     return lines.join(QStringLiteral("\n"));
 }
 
+bool isPrivateContextMemory(const MemoryRecord &record)
+{
+    const QString text = (record.key + QLatin1Char(' ') + record.value + QLatin1Char(' ') + record.source).toLower();
+    return text.contains(QStringLiteral("private_mode"))
+        || text.contains(QStringLiteral("private context"))
+        || record.key.startsWith(QStringLiteral("desktop_context"), Qt::CaseInsensitive)
+        || record.key.startsWith(QStringLiteral("compiled_context"), Qt::CaseInsensitive);
+}
+
+MemoryContext suppressPrivateContextMemory(MemoryContext context)
+{
+    auto filterLane = [](QList<MemoryRecord> &lane) {
+        QList<MemoryRecord> kept;
+        for (const MemoryRecord &record : lane) {
+            if (!isPrivateContextMemory(record)) {
+                kept.push_back(record);
+            }
+        }
+        lane = kept;
+    };
+    filterLane(context.profile);
+    filterLane(context.episodic);
+    filterLane(context.activeCommitments);
+    return context;
+}
+
 PromptAssemblyReport runtimeReportFor(const PromptTurnContext &context, const QString &evidenceState)
 {
     PromptAssemblyReport report;
@@ -281,7 +307,9 @@ TurnRuntimePlan TurnOrchestrationRuntime::buildPlan(const TurnRuntimeInput &inpu
         plan.evidenceState = QStringLiteral("low_signal");
     }
 
-    plan.selectedMemory = input.selectedMemory;
+    plan.selectedMemory = input.privateMode
+        ? suppressPrivateContextMemory(input.selectedMemory)
+        : input.selectedMemory;
 
     QStringList constraints;
     constraints << QStringLiteral("route=%1").arg(routeKindName(input.routeDecision.kind));
@@ -327,7 +355,7 @@ TurnRuntimePlan TurnOrchestrationRuntime::buildPlan(const TurnRuntimeInput &inpu
     context.allowedTools = plan.selectedTools;
     context.toolResults = input.toolResults;
     context.workspaceRoot = input.workspaceRoot;
-    context.desktopContext = input.desktopContext;
+    context.desktopContext = input.privateMode ? QString() : input.desktopContext;
     context.visionContext = input.visionContext;
     context.activeTaskState = taskState.join(QStringLiteral("\n"));
     context.verifiedEvidence = verifiedEvidence.join(QStringLiteral("\n\n---\n\n"));

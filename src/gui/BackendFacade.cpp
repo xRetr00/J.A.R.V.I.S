@@ -1139,10 +1139,14 @@ void BackendFacade::logOrbRendererStatus(const QString &eventName, const QVarian
         return;
     }
 
+    QVariantMap diagnosticDetails = details;
+    diagnosticDetails.insert(QStringLiteral("authoritativeStateName"), stateName());
+    diagnosticDetails.insert(QStringLiteral("authoritativeSurfaceState"), assistantSurfaceState());
+
     const QString normalizedEvent = eventName.trimmed().isEmpty()
         ? QStringLiteral("status")
         : eventName.trimmed().toLower();
-    const QString tag = details.value(QStringLiteral("tag")).toString().trimmed();
+    const QString tag = diagnosticDetails.value(QStringLiteral("tag")).toString().trimmed();
     const QString rateLimitKey = normalizedEvent + QStringLiteral("|")
         + (tag.isEmpty() ? QStringLiteral("default") : tag);
 
@@ -1156,7 +1160,7 @@ void BackendFacade::logOrbRendererStatus(const QString &eventName, const QVarian
     }
 
     const QString payloadText = QString::fromUtf8(
-        QJsonDocument(QJsonObject::fromVariantMap(details)).toJson(QJsonDocument::Compact));
+        QJsonDocument(QJsonObject::fromVariantMap(diagnosticDetails)).toJson(QJsonDocument::Compact));
     const QString message = QStringLiteral("[orb] event=\"%1\" details=%2")
         .arg(normalizedEvent, payloadText);
 

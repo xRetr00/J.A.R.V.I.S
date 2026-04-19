@@ -47,6 +47,7 @@ public:
                               const QString &traceId,
                               const QString &sessionId,
                               const QString &threadId);
+    void clearRuntimeContext();
 
     void captureQtFatal(const QString &message);
     void captureHandledException(const QString &module,

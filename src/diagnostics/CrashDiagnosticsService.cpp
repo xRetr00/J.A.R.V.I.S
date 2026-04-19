@@ -226,6 +226,17 @@ void CrashDiagnosticsService::updateRuntimeContext(const QString &module,
     }
 }
 
+void CrashDiagnosticsService::clearRuntimeContext()
+{
+    QMutexLocker locker(&m_mutex);
+    m_runtimeModule.clear();
+    m_runtimeRoute.clear();
+    m_runtimeTool.clear();
+    m_runtimeTraceId.clear();
+    m_runtimeSessionId.clear();
+    m_runtimeThreadId.clear();
+}
+
 void CrashDiagnosticsService::captureQtFatal(const QString &message)
 {
     handleWindowsCrash(message,

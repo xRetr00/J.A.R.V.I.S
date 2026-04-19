@@ -1,4 +1,5 @@
 #include <QtTest>
+#include <QTemporaryDir>
 
 #include "core/ActionThreadTracker.h"
 
@@ -17,6 +18,7 @@ private slots:
     void buildCompletionInputPreservesLegacyPromptAndFallback();
     void clearRemovesCurrentThread();
     void isCurrentUsableReturnsFalseForMissingOrExpiredThread();
+    void recentThreadsSurviveClearAndShortRestart();
 };
 
 void ActionThreadTrackerTests::beginCreatesRunningThread()
@@ -331,6 +333,48 @@ void ActionThreadTrackerTests::isCurrentUsableReturnsFalseForMissingOrExpiredThr
 
     QVERIFY(!tracker.isCurrentUsable(30));
     QVERIFY(tracker.isCurrentUsable(15));
+}
+
+void ActionThreadTrackerTests::recentThreadsSurviveClearAndShortRestart()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath(QStringLiteral("action_threads.json"));
+
+    ActionThreadTracker tracker;
+    tracker.enablePersistence(path);
+
+    ActionThreadReplyContext first;
+    first.threadId = QStringLiteral("thread-one");
+    first.taskType = QStringLiteral("browser_open");
+    first.userGoal = QStringLiteral("Open the browser");
+    first.resultSummary = QStringLiteral("Opened.");
+    first.success = true;
+    first.updatedAtMs = 100;
+    first.expiresAtMs = 1000;
+    tracker.rememberReply(first);
+
+    ActionThreadReplyContext second;
+    second.threadId = QStringLiteral("thread-two");
+    second.taskType = QStringLiteral("file_write");
+    second.userGoal = QStringLiteral("Create the game file");
+    second.resultSummary = QStringLiteral("Created.");
+    second.success = true;
+    second.updatedAtMs = 200;
+    second.expiresAtMs = 1000;
+    tracker.rememberReply(second);
+
+    QCOMPARE(tracker.recentThreads(250).size(), 2);
+    tracker.clear();
+    QVERIFY(!tracker.hasCurrent());
+    QCOMPARE(tracker.recentThreads(250).size(), 2);
+
+    ActionThreadTracker reloaded;
+    reloaded.enablePersistence(path);
+    QVERIFY(reloaded.load());
+    QCOMPARE(reloaded.recentThreads(250).size(), 2);
+    QVERIFY(reloaded.threadById(QStringLiteral("thread-one")).has_value());
+    QVERIFY(reloaded.threadById(QStringLiteral("thread-two")).has_value());
 }
 
 QTEST_MAIN(ActionThreadTrackerTests)

@@ -253,6 +253,7 @@ set(JARVIS_SOURCES
     src/core/agent/IntentDetector.cpp
     src/core/agent/IntentEngine.cpp
     src/core/ActionThreadTracker.cpp
+    src/core/ActionThreadSelectionPolicy.cpp
     src/core/ActionRiskPermissionService.cpp
     src/core/AiRequestCoordinator.cpp
     src/core/AssistantBehaviorPolicy.cpp
@@ -392,6 +393,7 @@ set(JARVIS_HEADERS
     src/core/AiRequestCoordinator.h
     src/core/AssistantBehaviorPolicy.h
     src/core/AssistantController.h
+    src/core/ActionThreadSelectionPolicy.h
     src/core/SpeechTranscriptGuard.h
     src/core/AssistantTypes.h
     src/core/StartupReadinessPolicy.h

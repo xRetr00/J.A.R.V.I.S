@@ -454,6 +454,16 @@ struct ActionThread {
     bool valid = false;
     qint64 updatedAtMs = 0;
     qint64 expiresAtMs = 0;
+    QString originalUserGoal;
+    QString evidenceSummary;
+    QString evidenceConfidence;
+    bool privateContext = false;
+    QString failureReason;
+    QString cancelReason;
+    QString supersededByThreadId;
+    QStringList nextStepCandidates;
+    QString contextThreadId;
+    qint64 createdAtMs = 0;
 
     [[nodiscard]] bool isUsable(qint64 nowMs) const
     {

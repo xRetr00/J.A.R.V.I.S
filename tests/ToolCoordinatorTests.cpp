@@ -15,6 +15,7 @@ private slots:
     void webSearchFollowUpUsesJsonOnlyPayload();
     void jsonOnlyWebSearchPayloadProducesModelOutput();
     void emptyBrowserFetchTextIsLowSignal();
+    void rawHtmlSearchShellIsWeakEvidence();
 };
 
 void ToolCoordinatorTests::webSearchFollowUpUsesTextPayloadWhenContentMissing()
@@ -108,6 +109,22 @@ void ToolCoordinatorTests::emptyBrowserFetchTextIsLowSignal()
         ToolResultEvidencePolicy::assess(result, ToolExecutionService::outputTextForModel(result));
     QVERIFY(assessment.lowSignal);
     QCOMPARE(assessment.lowSignalReason, QStringLiteral("tool_result.empty_browser_text"));
+}
+
+void ToolCoordinatorTests::rawHtmlSearchShellIsWeakEvidence()
+{
+    ToolExecutionResult result;
+    result.toolName = QStringLiteral("web_fetch");
+    result.success = true;
+    result.payload = QJsonObject{
+        {QStringLiteral("content"), QStringLiteral("<html><body><script>window.x=1</script>enable javascript to continue</body></html>")}
+    };
+
+    const ToolResultEvidenceAssessment assessment =
+        ToolResultEvidencePolicy::assess(result, QStringLiteral("<html><script>search?q=avengers</script></html>"));
+    QVERIFY(assessment.lowSignal);
+    QCOMPARE(assessment.lowSignalReason, QStringLiteral("tool_result.raw_search_or_browser_html"));
+    QCOMPARE(assessment.confidence, QStringLiteral("weak"));
 }
 
 QTEST_APPLESS_MAIN(ToolCoordinatorTests)

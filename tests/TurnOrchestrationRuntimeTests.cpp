@@ -58,6 +58,7 @@ private slots:
     void selectedToolsAreNarrowedByIntent();
     void lowSignalEvidenceBlocksGroundedState();
     void promptTaskStateClipsRecursiveThreadEnvelope();
+    void privateModeSuppressesDesktopContextMemory();
 };
 
 void TurnOrchestrationRuntimeTests::sameTaskFollowUpContinuesThreadState()
@@ -232,6 +233,48 @@ void TurnOrchestrationRuntimeTests::promptTaskStateClipsRecursiveThreadEnvelope(
     QVERIFY(!plan.promptContext.activeTaskState.contains(QStringLiteral("Thread state:")));
     QVERIFY(plan.promptContext.activeTaskState.contains(
         QStringLiteral("user_goal=Create a simple HTML snake game and launch it on the browser.")));
+}
+
+void TurnOrchestrationRuntimeTests::privateModeSuppressesDesktopContextMemory()
+{
+    AssistantBehaviorPolicy policy;
+    TurnOrchestrationRuntime runtime(&policy);
+
+    InputRouteDecision route;
+    route.kind = InputRouteKind::Conversation;
+    route.intent = IntentType::GENERAL_CHAT;
+
+    MemoryContext memory;
+    memory.activeCommitments.push_back(MemoryRecord{
+        .type = QStringLiteral("context"),
+        .key = QStringLiteral("desktop_context_topic"),
+        .value = QStringLiteral("private_mode browser tab"),
+        .source = QStringLiteral("desktop_context")
+    });
+    memory.profile.push_back(MemoryRecord{
+        .type = QStringLiteral("preference"),
+        .key = QStringLiteral("reply_style"),
+        .value = QStringLiteral("concise"),
+        .source = QStringLiteral("profile")
+    });
+
+    TurnRuntimeInput input;
+    input.rawUserInput = QStringLiteral("thanks");
+    input.effectiveInput = input.rawUserInput;
+    input.routeDecision = route;
+    input.intent = IntentType::GENERAL_CHAT;
+    input.selectedMemory = memory;
+    input.identity = identity();
+    input.userProfile = userProfile();
+    input.desktopContext = QStringLiteral("Private browser tab: banking");
+    input.privateMode = true;
+    input.currentTimeMs = QDateTime::currentMSecsSinceEpoch();
+
+    const TurnRuntimePlan plan = runtime.buildPlan(input);
+
+    QCOMPARE(plan.selectedMemory.activeCommitments.size(), 0);
+    QCOMPARE(plan.selectedMemory.profile.size(), 1);
+    QVERIFY(plan.promptContext.desktopContext.isEmpty());
 }
 
 QTEST_APPLESS_MAIN(TurnOrchestrationRuntimeTests)

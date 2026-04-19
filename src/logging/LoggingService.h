@@ -48,6 +48,7 @@ public:
                            const QString &traceId = QString(),
                            const QString &sessionId = QString(),
                            const QString &threadId = QString()) const;
+    void clearRuntimeContext() const;
     void logVisionSnapshot(const VisionSnapshot &snapshot, const QString &source = QStringLiteral("vision_ingest")) const;
     void logVisionStatus(const QString &message,
                          const QString &rateLimitKey = QStringLiteral("vision_status"),

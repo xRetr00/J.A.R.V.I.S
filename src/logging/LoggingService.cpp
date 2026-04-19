@@ -332,6 +332,11 @@ void LoggingService::setRuntimeContext(const QString &module,
     CrashDiagnosticsService::instance().updateRuntimeContext(module, route, tool, traceId, sessionId, threadId);
 }
 
+void LoggingService::clearRuntimeContext() const
+{
+    CrashDiagnosticsService::instance().clearRuntimeContext();
+}
+
 void LoggingService::logWithSeverity(const QString &channel,
                                      const QString &message,
                                      const QString &severity,
