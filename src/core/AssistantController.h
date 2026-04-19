@@ -47,6 +47,7 @@ class WakeWordDataCapture;
 class VoicePipelineRuntime;
 class WorldStateCache;
 class AiRequestCoordinator;
+class ActionThreadTracker;
 class AssistantBehaviorPolicy;
 class ExecutionNarrator;
 class InputRouter;
@@ -394,6 +395,7 @@ private:
     MemoryStore *m_memoryStore = nullptr;
     std::unique_ptr<InputRouter> m_inputRouter;
     std::unique_ptr<AiRequestCoordinator> m_aiRequestCoordinator;
+    std::unique_ptr<ActionThreadTracker> m_actionThreadTracker;
     std::unique_ptr<AssistantBehaviorPolicy> m_assistantBehaviorPolicy;
     std::unique_ptr<ExecutionNarrator> m_executionNarrator;
     std::unique_ptr<MemoryPolicyHandler> m_memoryPolicyHandler;
@@ -445,7 +447,6 @@ private:
     InputRouteDecision m_pendingRouteDecision;
     QString m_pendingRouteInput;
     LocalIntent m_pendingLocalIntent = LocalIntent::Unknown;
-    std::optional<ActionThread> m_recentActionThread;
     QString m_previousAgentResponseId;
     int m_activeAgentIteration = 0;
     AgentCapabilitySet m_agentCapabilities;

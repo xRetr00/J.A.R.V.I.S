@@ -32,6 +32,7 @@
 #include "agent/AgentToolbox.h"
 #include "core/agent/IntentDetector.h"
 #include "core/agent/IntentEngine.h"
+#include "core/ActionThreadTracker.h"
 #include "core/AiRequestCoordinator.h"
 #include "core/AssistantBehaviorPolicy.h"
 #include "core/ExecutionNarrator.h"
@@ -1575,6 +1576,7 @@ AssistantController::AssistantController(
     m_assistantBehaviorPolicy = std::make_unique<AssistantBehaviorPolicy>();
     m_inputRouter = std::make_unique<InputRouter>(m_assistantBehaviorPolicy.get());
     m_aiRequestCoordinator = std::make_unique<AiRequestCoordinator>(m_settings, m_reasoningRouter, m_loggingService);
+    m_actionThreadTracker = std::make_unique<ActionThreadTracker>();
     m_executionNarrator = std::make_unique<ExecutionNarrator>();
     m_memoryPolicyHandler = std::make_unique<MemoryPolicyHandler>(m_identityProfileService, m_memoryStore);
     m_toolCoordinator = std::make_unique<ToolCoordinator>(m_loggingService, m_executionNarrator.get());
@@ -2842,7 +2844,7 @@ void AssistantController::submitText(const QString &text)
         }
         return;
     }
-    if (m_recentActionThread.has_value() && !m_recentActionThread->isUsable(nowMs)) {
+    if (!m_actionThreadTracker->isCurrentUsable(nowMs) && m_actionThreadTracker->hasCurrent()) {
         clearActionThread();
     } else {
         switch (decision.kind) {
@@ -4753,12 +4755,15 @@ bool AssistantController::finalizeReply(const QString &source,
                                         bool logAgentExchange,
                                         bool allowFollowUpWakeDelay)
 {
+    const std::optional<ActionThread> &currentActionThread = m_actionThreadTracker->current();
     ActionSession finalSession = m_activeActionSession;
     finalSession.nextStepHint = gateNextStepHint(
         finalSession.nextStepHint,
         source,
-        m_recentActionThread.has_value() ? m_recentActionThread->taskType : QStringLiteral("conversation"),
-        !m_recentActionThread.has_value() || m_recentActionThread->success);
+        currentActionThread.has_value()
+            ? currentActionThread->taskType
+            : QStringLiteral("conversation"),
+        !currentActionThread.has_value() || currentActionThread->success);
     const bool appendedHint = m_responseFinalizer != nullptr
         && m_responseFinalizer->willAppendHint(finalSession, reply)
         && !finalSession.nextStepHint.trimmed().isEmpty();
@@ -4776,8 +4781,10 @@ bool AssistantController::finalizeReply(const QString &source,
     if (appendedHint) {
         commitProactivePresentation(
             QStringLiteral("response_hint"),
-            m_recentActionThread.has_value() ? m_recentActionThread->taskType : QStringLiteral("conversation"),
-            (!m_recentActionThread.has_value() || m_recentActionThread->success)
+            currentActionThread.has_value()
+                ? currentActionThread->taskType
+                : QStringLiteral("conversation"),
+            (!currentActionThread.has_value() || currentActionThread->success)
                 ? QStringLiteral("medium")
                 : QStringLiteral("high"),
             QStringLiteral("surface.response_hint_presented"));
@@ -6031,9 +6038,11 @@ void AssistantController::recordTaskResult(const QJsonObject &resultObject)
         return;
     }
 
-    if (m_recentActionThread.has_value()
-        && m_recentActionThread->success
-        && m_recentActionThread->hasArtifacts()) {
+    const std::optional<ActionThread> &currentActionThread = m_actionThreadTracker->current();
+
+    if (currentActionThread.has_value()
+        && currentActionThread->success
+        && currentActionThread->hasArtifacts()) {
         const BehaviorDecision completionDecision = ProactiveSurfaceGate::evaluateCompletionFollowUp(
             followUpInput,
             true);
@@ -6067,9 +6076,9 @@ void AssistantController::recordTaskResult(const QJsonObject &resultObject)
                 m_loggingService->infoFor(
                     QStringLiteral("follow_up_audit"),
                     QStringLiteral("[completion_follow_up_action] starting completion request for thread=%1")
-                        .arg(m_recentActionThread->id));
+                        .arg(currentActionThread->id));
             }
-            startActionThreadCompletionRequest(*m_recentActionThread);
+            startActionThreadCompletionRequest(*currentActionThread);
             return;
         }
     }
@@ -6080,10 +6089,10 @@ void AssistantController::recordTaskResult(const QJsonObject &resultObject)
             ? handling.completedResult->detail
             : handling.completedResult->summary);
     ActionSession outcomeSession = m_activeActionSession;
-    if (m_recentActionThread.has_value()) {
-        outcomeSession.nextStepHint = m_recentActionThread->nextStepHint;
-        outcomeSession.successSummary = m_recentActionThread->resultSummary;
-        outcomeSession.failureSummary = m_recentActionThread->resultSummary;
+    if (currentActionThread.has_value()) {
+        outcomeSession.nextStepHint = currentActionThread->nextStepHint;
+        outcomeSession.successSummary = currentActionThread->resultSummary;
+        outcomeSession.failureSummary = currentActionThread->resultSummary;
     }
     const QString message = m_executionNarrator
         ? m_executionNarrator->outcomeSummary(
@@ -6233,74 +6242,30 @@ bool AssistantController::shouldContinueActionThread(const QString &input,
                                                      const InputRouteDecision &decision,
                                                      qint64 nowMs) const
 {
-    if (!m_recentActionThread.has_value() || m_assistantBehaviorPolicy == nullptr) {
+    if (m_assistantBehaviorPolicy == nullptr) {
+        return false;
+    }
+
+    const std::optional<ActionThread> &currentThread = m_actionThreadTracker->current();
+    if (!currentThread.has_value()) {
         return false;
     }
 
     return m_assistantBehaviorPolicy->shouldContinueActionThread(
         input,
         decision,
-        *m_recentActionThread,
+        *currentThread,
         nowMs);
 }
 
 QString AssistantController::buildActionThreadContinuationInput(const QString &userInput) const
 {
-    if (!m_recentActionThread.has_value()) {
-        return userInput;
-    }
-
-    const ActionThread &thread = *m_recentActionThread;
-    const QString sources = thread.sourceUrls.join(QStringLiteral("\n"));
-    const QString stateText = thread.state == ActionThreadState::Running
-        ? QStringLiteral("running")
-        : (thread.state == ActionThreadState::Completed
-            ? QStringLiteral("completed")
-            : (thread.state == ActionThreadState::Failed
-                ? QStringLiteral("failed")
-                : QStringLiteral("canceled")));
-
-    return QStringLiteral(
-        "You are continuing the current assistant action thread.\n"
-        "Treat the user's message as a follow-up to this task when appropriate. "
-        "Only start a brand-new unrelated task if the user clearly asks for one.\n\n"
-        "Thread state: %1\n"
-        "Task type: %2\n"
-        "User goal: %3\n"
-        "Result summary: %4\n"
-        "Artifacts:\n%5\n"
-        "Sources:\n%6\n"
-        "Suggested next step: %7\n\n"
-        "User follow-up: %8")
-        .arg(stateText,
-             thread.taskType.trimmed().isEmpty() ? QStringLiteral("task") : thread.taskType.trimmed(),
-             thread.userGoal.trimmed().isEmpty() ? QStringLiteral("unknown") : thread.userGoal.trimmed(),
-             thread.resultSummary.trimmed().isEmpty() ? QStringLiteral("none") : thread.resultSummary.trimmed(),
-             thread.artifactText.trimmed().isEmpty() ? QStringLiteral("none") : thread.artifactText.trimmed(),
-             sources.trimmed().isEmpty() ? QStringLiteral("none") : sources.trimmed(),
-             thread.nextStepHint.trimmed().isEmpty() ? QStringLiteral("none") : thread.nextStepHint.trimmed(),
-             userInput.trimmed());
+    return m_actionThreadTracker->buildContinuationInput(userInput);
 }
 
 QString AssistantController::buildActionThreadCompletionInput(const ActionThread &thread) const
 {
-    const QString sources = thread.sourceUrls.join(QStringLiteral("\n"));
-    return QStringLiteral(
-        "A task just completed.\n"
-        "Give the user a short useful completion summary grounded only in the task result below. "
-        "If there is an obvious next step, suggest one short follow-up.\n\n"
-        "Task type: %1\n"
-        "User goal: %2\n"
-        "Result summary: %3\n"
-        "Artifacts:\n%4\n"
-        "Sources:\n%5\n"
-        "Suggested next step: %6")
-        .arg(thread.taskType.trimmed().isEmpty() ? QStringLiteral("task") : thread.taskType.trimmed(),
-             thread.userGoal.trimmed().isEmpty() ? QStringLiteral("unknown") : thread.userGoal.trimmed(),
-             thread.resultSummary.trimmed().isEmpty() ? QStringLiteral("none") : thread.resultSummary.trimmed(),
-             thread.artifactText.trimmed().isEmpty() ? QStringLiteral("none") : thread.artifactText.trimmed(),
-             sources.trimmed().isEmpty() ? QStringLiteral("none") : sources.trimmed(),
-             thread.nextStepHint.trimmed().isEmpty() ? QStringLiteral("none") : thread.nextStepHint.trimmed());
+    return m_actionThreadTracker->buildCompletionInput(thread);
 }
 
 void AssistantController::beginActionThread(const QList<AgentTask> &tasks, qint64 nowMs)
@@ -6309,67 +6274,59 @@ void AssistantController::beginActionThread(const QList<AgentTask> &tasks, qint6
         return;
     }
 
-    ActionThread thread;
-    thread.id = m_activeActionSession.id;
-    thread.taskType = taskTypeForTasks(tasks);
-    thread.userGoal = m_activeActionSession.userRequest.trimmed().isEmpty()
+    ActionThreadStartContext context;
+    context.threadId = m_activeActionSession.id;
+    context.taskType = taskTypeForTasks(tasks);
+    context.userGoal = m_activeActionSession.userRequest.trimmed().isEmpty()
         ? m_activeActionSession.goal
         : m_activeActionSession.userRequest.trimmed();
-    thread.resultSummary = m_executionNarrator
+    context.resultSummary = m_executionNarrator
         ? m_executionNarrator->preActionText(m_activeActionSession, QStringLiteral("Working on it."))
         : QStringLiteral("Working on it.");
-    thread.nextStepHint = planNextStepSuggestion(
+    context.nextStepHint = planNextStepSuggestion(
         QStringLiteral("task_start"),
-        thread.taskType,
-        thread.resultSummary,
+        context.taskType,
+        context.resultSummary,
         {},
         {},
         {},
         true).selectedSummary;
-    thread.state = ActionThreadState::Running;
-    thread.success = false;
-    thread.valid = true;
-    thread.updatedAtMs = nowMs;
-    thread.expiresAtMs = nowMs + conversationSessionTimeoutMs();
-    m_recentActionThread = thread;
+    context.updatedAtMs = nowMs;
+    context.expiresAtMs = nowMs + conversationSessionTimeoutMs();
+    m_actionThreadTracker->begin(context);
 }
 
 void AssistantController::rememberActionThreadResult(const BackgroundTaskResult &result, qint64 nowMs)
 {
-    ActionThread thread;
-    if (m_recentActionThread.has_value()) {
-        thread = *m_recentActionThread;
-    } else {
-        thread.id = m_activeActionSession.id;
-        thread.userGoal = m_activeActionSession.userRequest.trimmed().isEmpty()
-            ? m_activeActionSession.goal
-            : m_activeActionSession.userRequest.trimmed();
-    }
-
-    thread.taskType = result.type.trimmed().isEmpty() ? thread.taskType : result.type.trimmed();
-    thread.resultSummary = m_executionNarrator
+    ActionThreadResultContext context;
+    context.fallbackThreadId = m_activeActionSession.id;
+    context.fallbackUserGoal = m_activeActionSession.userRequest.trimmed().isEmpty()
+        ? m_activeActionSession.goal
+        : m_activeActionSession.userRequest.trimmed();
+    context.taskType = result.type;
+    const std::optional<ActionThread> &currentThread = m_actionThreadTracker->current();
+    const QString effectiveTaskType = context.taskType.trimmed().isEmpty() && currentThread.has_value()
+        ? currentThread->taskType
+        : context.taskType.trimmed();
+    context.resultSummary = m_executionNarrator
         ? m_executionNarrator->summarizeBackgroundResult(result)
         : (result.summary.trimmed().isEmpty() ? result.detail.trimmed() : result.summary.trimmed());
-    thread.artifactText = clippedBackgroundPayload(result);
-    thread.payload = result.payload;
-    thread.sourceUrls = sourceUrlsForResult(result);
-    thread.nextStepHint = planNextStepSuggestion(
+    context.artifactText = clippedBackgroundPayload(result);
+    context.payload = result.payload;
+    context.sourceUrls = sourceUrlsForResult(result);
+    context.nextStepHint = planNextStepSuggestion(
         QStringLiteral("task_result"),
-        thread.taskType,
-        thread.resultSummary,
-        thread.sourceUrls,
+        effectiveTaskType,
+        context.resultSummary,
+        context.sourceUrls,
         result.payload.toVariantMap(),
         result.taskKey,
         result.success).selectedSummary;
-    thread.state = result.success ? ActionThreadState::Completed : ActionThreadState::Failed;
-    if (result.state == TaskState::Canceled) {
-        thread.state = ActionThreadState::Canceled;
-    }
-    thread.success = result.success;
-    thread.valid = true;
-    thread.updatedAtMs = nowMs;
-    thread.expiresAtMs = nowMs + conversationSessionTimeoutMs();
-    m_recentActionThread = thread;
+    context.success = result.success;
+    context.taskState = result.state;
+    context.updatedAtMs = nowMs;
+    context.expiresAtMs = nowMs + conversationSessionTimeoutMs();
+    m_actionThreadTracker->rememberResult(context);
 }
 
 void AssistantController::rememberCompletedActionReply(const QString &taskType,
@@ -6377,32 +6334,30 @@ void AssistantController::rememberCompletedActionReply(const QString &taskType,
                                                        bool success,
                                                        qint64 nowMs)
 {
-    ActionThread thread;
-    thread.id = m_activeActionSession.id;
-    thread.taskType = taskType.trimmed().isEmpty() ? QStringLiteral("assistant_action") : taskType.trimmed();
-    thread.userGoal = m_activeActionSession.userRequest.trimmed().isEmpty()
+    ActionThreadReplyContext context;
+    context.threadId = m_activeActionSession.id;
+    context.taskType = taskType;
+    context.userGoal = m_activeActionSession.userRequest.trimmed().isEmpty()
         ? m_activeActionSession.goal
         : m_activeActionSession.userRequest.trimmed();
-    thread.resultSummary = summary.trimmed();
-    thread.nextStepHint = planNextStepSuggestion(
+    context.resultSummary = summary;
+    context.nextStepHint = planNextStepSuggestion(
         QStringLiteral("reply_result"),
-        thread.taskType,
-        thread.resultSummary,
+        context.taskType.trimmed().isEmpty() ? QStringLiteral("assistant_action") : context.taskType.trimmed(),
+        context.resultSummary.trimmed(),
         {},
         {},
         {},
         success).selectedSummary;
-    thread.state = success ? ActionThreadState::Completed : ActionThreadState::Failed;
-    thread.success = success;
-    thread.valid = true;
-    thread.updatedAtMs = nowMs;
-    thread.expiresAtMs = nowMs + conversationSessionTimeoutMs();
-    m_recentActionThread = thread;
+    context.success = success;
+    context.updatedAtMs = nowMs;
+    context.expiresAtMs = nowMs + conversationSessionTimeoutMs();
+    m_actionThreadTracker->rememberReply(context);
 }
 
 void AssistantController::clearActionThread()
 {
-    m_recentActionThread.reset();
+    m_actionThreadTracker->clear();
 }
 
 bool AssistantController::handlePendingConfirmationInput(const QString &input)

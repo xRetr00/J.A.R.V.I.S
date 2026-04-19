@@ -1,0 +1,25 @@
+{
+  "god_object_thresholds": {
+    "source_line_warning": 350,
+    "public_method_warning": 14,
+    "domain_hit_warning": 4
+  },
+  "suspicious_name_fragments": [
+    "Manager",
+    "Coordinator",
+    "System",
+    "Global",
+    "Unified",
+    "Engine"
+  ],
+  "domain_keywords": {
+    "routing": ["route", "router", "decision"],
+    "prompting": ["prompt", "template", "summary"],
+    "tasking": ["task", "tool", "execution"],
+    "memory": ["memory", "context"],
+    "voice": ["wake", "speech", "stt", "tts", "audio"],
+    "ui": ["ui", "qml", "surface"],
+    "network": ["http", "request", "api", "socket"],
+    "logging": ["log", "trace", "audit"]
+  }
+}

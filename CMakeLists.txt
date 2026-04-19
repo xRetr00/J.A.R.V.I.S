@@ -252,6 +252,7 @@ set(JARVIS_SOURCES
     src/audio/SileroVadSession.cpp
     src/core/agent/IntentDetector.cpp
     src/core/agent/IntentEngine.cpp
+    src/core/ActionThreadTracker.cpp
     src/core/ActionRiskPermissionService.cpp
     src/core/AiRequestCoordinator.cpp
     src/core/AssistantBehaviorPolicy.cpp
@@ -891,6 +892,20 @@ if(JARVIS_BUILD_TESTS)
     add_test(NAME jarvis_behavior_policy_tests COMMAND jarvis_behavior_policy_tests)
     set_tests_properties(jarvis_behavior_policy_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
     jarvis_copy_optional_runtime_libraries(jarvis_behavior_policy_tests)
+
+    qt_add_executable(jarvis_action_thread_tracker_tests
+        tests/ActionThreadTrackerTests.cpp
+    )
+
+    target_link_libraries(jarvis_action_thread_tracker_tests
+        PRIVATE
+            jarvis_lib
+            Qt6::Test
+    )
+
+    add_test(NAME jarvis_action_thread_tracker_tests COMMAND jarvis_action_thread_tracker_tests)
+    set_tests_properties(jarvis_action_thread_tracker_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_action_thread_tracker_tests)
 
     qt_add_executable(jarvis_permission_override_scenario_tests
         tests/PermissionOverrideScenarioTests.cpp
