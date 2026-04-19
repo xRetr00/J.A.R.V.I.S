@@ -1621,6 +1621,28 @@ if(JARVIS_BUILD_TESTS)
     set_tests_properties(jarvis_proactive_action_cooccurrence_policy_matrix_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
     jarvis_copy_optional_runtime_libraries(jarvis_proactive_action_cooccurrence_policy_matrix_tests)
 
+    qt_add_executable(jarvis_proactive_action_focus_mode_policy_tests
+        tests/ProactiveActionFocusModePolicyRegressionTests.cpp
+        src/cognition/CooldownEngine.cpp
+        src/cognition/ProactivePlannerInputEnricher.cpp
+        src/cognition/ProactiveSuggestionPlanner.cpp
+        src/cognition/ProactiveSuggestionGate.cpp
+        src/cognition/SuggestionProposalBuilder.cpp
+        src/cognition/SuggestionProposalPolicyScoring.cpp
+        src/cognition/DesktopWorkMode.cpp
+        src/cognition/SuggestionProposalRanker.cpp
+        src/core/ActionRiskPermissionService.cpp
+        src/core/ToolPermissionRegistry.cpp
+        src/telemetry/BehavioralEventLedger.cpp
+    )
+
+    target_include_directories(jarvis_proactive_action_focus_mode_policy_tests PRIVATE src)
+    target_link_libraries(jarvis_proactive_action_focus_mode_policy_tests PRIVATE Qt6::Core Qt6::Sql Qt6::Test nlohmann_json::nlohmann_json)
+
+    add_test(NAME jarvis_proactive_action_focus_mode_policy_tests COMMAND jarvis_proactive_action_focus_mode_policy_tests)
+    set_tests_properties(jarvis_proactive_action_focus_mode_policy_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_proactive_action_focus_mode_policy_tests)
+
     qt_add_executable(jarvis_suggestion_history_policy_tests
         tests/SuggestionProposalHistoryPolicyTests.cpp
         src/cognition/SuggestionProposalPolicyScoring.cpp

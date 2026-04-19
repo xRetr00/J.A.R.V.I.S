@@ -220,14 +220,12 @@ void ProactiveActionCooccurrencePolicyMatrixTests::connectorNoveltyPenaltyThenDe
 
     const qint64 nowMs = QDateTime::fromString(QStringLiteral("2026-04-18T21:00:00.000Z"),
                                                Qt::ISODateWithMs).toMSecsSinceEpoch();
-    QVariantMap metadata{
-        {QStringLiteral("connectorKind"), QStringLiteral("schedule")},
-        {QStringLiteral("eventTitle"), QStringLiteral("Sprint planning")},
-        {QStringLiteral("occurredAtUtc"), QStringLiteral("2026-04-18T10:00:00.000Z")},
-        {QStringLiteral("historySeenCount"), 5},
-        {QStringLiteral("connectorKindRecentSeenCount"), 5},
-        {QStringLiteral("connectorKindRecentPresentedCount"), 2}
-    };
+    QVariantMap metadata{{QStringLiteral("connectorKind"), QStringLiteral("schedule")},
+                         {QStringLiteral("eventTitle"), QStringLiteral("Sprint planning")},
+                         {QStringLiteral("occurredAtUtc"), QStringLiteral("2026-04-18T10:00:00.000Z")},
+                         {QStringLiteral("historySeenCount"), 5},
+                         {QStringLiteral("connectorKindRecentSeenCount"), 5},
+                         {QStringLiteral("connectorKindRecentPresentedCount"), 2}};
     const ProactiveSuggestionPlan proactive = ProactiveSuggestionPlanner::plan({
         .sourceKind = QStringLiteral("connector_schedule_calendar"),
         .taskType = QStringLiteral("live_update"),
