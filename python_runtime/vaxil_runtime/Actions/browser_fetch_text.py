@@ -24,4 +24,7 @@ def run(service, args, _context):
     text = payload.get("text", "")
     if len(text) > 12000:
         payload["text"] = text[:12000] + "\n...[truncated]"
+    if not str(payload.get("text") or "").strip():
+        payload["lowSignalReason"] = "tool_result.empty_browser_text"
+        return failure("Browser text empty", f"No readable text was extracted from {payload.get('url') or url} with Playwright.", **payload)
     return success("Browser text fetched", f"Fetched and extracted text from {payload['url']} with Playwright.", **payload)

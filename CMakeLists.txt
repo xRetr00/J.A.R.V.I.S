@@ -315,6 +315,7 @@ set(JARVIS_SOURCES
     src/core/tasks/TaskDispatcher.cpp
     src/core/tasks/ToolWorker.cpp
     src/core/tools/ToolExecutionService.cpp
+    src/core/tools/ToolResultEvidencePolicy.cpp
     src/devices/DeviceManager.cpp
     src/devices/MockDevices.cpp
     src/gui/AgentViewModel.cpp
@@ -442,6 +443,7 @@ set(JARVIS_HEADERS
     src/core/tasks/TaskDispatcher.h
     src/core/tasks/ToolWorker.h
     src/core/tools/ToolExecutionService.h
+    src/core/tools/ToolResultEvidencePolicy.h
     src/companion/contracts/ActionOutcome.h
     src/companion/contracts/ActionProposal.h
     src/companion/contracts/BehaviorDecision.h

@@ -22,7 +22,8 @@ public:
 
     [[nodiscard]] static BehaviorDecision evaluateTaskToast(const Input &input);
     [[nodiscard]] static BehaviorDecision evaluateCompletionFollowUp(const Input &input,
-                                                                    bool hasArtifacts);
+                                                                    bool hasArtifacts,
+                                                                    bool userRequested = false);
 
 private:
     [[nodiscard]] static bool hasFreshDesktopContext(const Input &input);

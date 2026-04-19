@@ -73,7 +73,8 @@ BehaviorDecision ProactiveSurfaceGate::evaluateTaskToast(const Input &input)
 }
 
 BehaviorDecision ProactiveSurfaceGate::evaluateCompletionFollowUp(const Input &input,
-                                                                 bool hasArtifacts)
+                                                                 bool hasArtifacts,
+                                                                 bool userRequested)
 {
     BehaviorDecision decision;
     decision.action = hasArtifacts
@@ -85,6 +86,7 @@ BehaviorDecision ProactiveSurfaceGate::evaluateCompletionFollowUp(const Input &i
     decision.details.insert(QStringLiteral("taskType"), input.result.type);
     decision.details.insert(QStringLiteral("success"), input.result.success);
     decision.details.insert(QStringLiteral("hasArtifacts"), hasArtifacts);
+    decision.details.insert(QStringLiteral("userRequested"), userRequested);
     decision.details.insert(QStringLiteral("focusModeEnabled"), input.focusMode.enabled);
     decision.details.insert(QStringLiteral("desktopTaskId"), input.desktopContext.value(QStringLiteral("taskId")).toString());
     decision.details.insert(QStringLiteral("desktopThreadId"), input.desktopContext.value(QStringLiteral("threadId")).toString());
@@ -108,6 +110,12 @@ BehaviorDecision ProactiveSurfaceGate::evaluateCompletionFollowUp(const Input &i
         decision.action = QStringLiteral("suppress_follow_up");
         decision.reasonCode = QStringLiteral("surface.follow_up_focused_context_suppressed");
         decision.score = 0.89;
+        return decision;
+    }
+
+    if (userRequested) {
+        decision.reasonCode = QStringLiteral("surface.user_requested_completion_allow");
+        decision.score = 0.9;
         return decision;
     }
 

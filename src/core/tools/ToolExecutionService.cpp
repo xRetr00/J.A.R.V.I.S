@@ -20,6 +20,7 @@
 #include <QUrl>
 
 #include "core/ComputerControl.h"
+#include "core/tools/ToolResultEvidencePolicy.h"
 #include "logging/LoggingService.h"
 #include "memory/MemoryManager.h"
 #include "python/PythonRuntimeManager.h"
@@ -323,7 +324,7 @@ ToolExecutionResult ToolExecutionService::execute(const ToolExecutionRequest &re
                     return executeComputerOpenUrl(fallbackRequest);
                 }
 
-                return ok
+                ToolExecutionResult result = ok
                     ? successResult(request, summary, detail, payload)
                     : failureResult(request,
                                     classifyErrorKind(detail),
@@ -331,6 +332,22 @@ ToolExecutionResult ToolExecutionService::execute(const ToolExecutionRequest &re
                                     detail,
                                     payload,
                                     runtimeError);
+                const ToolResultEvidenceAssessment assessment =
+                    ToolResultEvidencePolicy::assess(result, outputTextForModel(result));
+                if (assessment.lowSignal) {
+                    result.success = false;
+                    result.errorKind = ToolErrorKind::Transport;
+                    result.summary = result.toolName == QStringLiteral("browser_fetch_text")
+                        ? QStringLiteral("Browser text empty")
+                        : QStringLiteral("Tool returned no usable evidence");
+                    result.detail = result.toolName == QStringLiteral("browser_fetch_text")
+                        ? QStringLiteral("Playwright reached the page, but no readable page text was extracted.")
+                        : QStringLiteral("The tool completed without model-visible evidence.");
+                    result.payload.insert(QStringLiteral("lowSignalReason"), assessment.lowSignalReason);
+                    result.payload.insert(QStringLiteral("outputChars"), assessment.outputChars);
+                    result.payload.insert(QStringLiteral("payloadKeys"), QJsonArray::fromStringList(assessment.payloadKeys));
+                }
+                return result;
             }
 
             if (!runtimeError.trimmed().isEmpty()) {
@@ -409,6 +426,26 @@ QString ToolExecutionService::outputTextForModel(const ToolExecutionResult &resu
                                      entry.value(QStringLiteral("name")).toString()));
         }
         return lines.join(QStringLiteral("\n"));
+    }
+    if (result.payload.contains(QStringLiteral("sources"))) {
+        const QString sourceText = compactSourcesContext(result.payload.value(QStringLiteral("sources")).toArray());
+        if (!sourceText.trimmed().isEmpty()) {
+            return sourceText;
+        }
+    }
+    if (result.payload.contains(QStringLiteral("json"))) {
+        const QString jsonText = result.payload.value(QStringLiteral("json")).toString().trimmed();
+        if (!jsonText.isEmpty()) {
+            QJsonArray sources = extractBraveSources(jsonText);
+            if (sources.isEmpty()) {
+                sources = extractDuckSources(jsonText);
+            }
+            const QString sourceText = compactSourcesContext(sources);
+            if (!sourceText.trimmed().isEmpty()) {
+                return sourceText;
+            }
+            return jsonText.left(12000);
+        }
     }
     if (!result.detail.trimmed().isEmpty()) {
         return result.detail;

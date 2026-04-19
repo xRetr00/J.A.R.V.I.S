@@ -29,7 +29,9 @@ private slots:
     void acceptsExplicitConfirmationReply();
     void recognizesRejectionReply();
     void continuesReferentialFollowUpAgainstRecentActionThread();
+    void continuesResultAndInspectionFollowUpsAgainstRecentActionThread();
     void ignoresFreshRequestAgainstRecentActionThread();
+    void routesDesktopContextRecallAsConversation();
 };
 
 void AssistantBehaviorPolicyTests::buildsMemoryContextLanes()
@@ -418,6 +420,40 @@ void AssistantBehaviorPolicyTests::continuesReferentialFollowUpAgainstRecentActi
         QDateTime::currentMSecsSinceEpoch()));
 }
 
+void AssistantBehaviorPolicyTests::continuesResultAndInspectionFollowUpsAgainstRecentActionThread()
+{
+    AssistantBehaviorPolicy policy;
+    InputRouteDecision decision;
+    decision.kind = InputRouteKind::BackgroundTasks;
+
+    ActionThread thread;
+    thread.taskType = QStringLiteral("browser_open");
+    thread.userGoal = QStringLiteral("Open YouTube and search for machine learning courses");
+    thread.resultSummary = QStringLiteral("Opened YouTube search results.");
+    thread.artifactText = QStringLiteral("Machine learning course results were visible.");
+    thread.state = ActionThreadState::Completed;
+    thread.success = true;
+    thread.valid = true;
+    thread.expiresAtMs = QDateTime::currentMSecsSinceEpoch() + 30000;
+
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    QVERIFY(policy.shouldContinueActionThread(
+        QStringLiteral("Can You Tell Me The Best Courses From The Result?"),
+        decision,
+        thread,
+        nowMs));
+    QVERIFY(policy.shouldContinueActionThread(
+        QStringLiteral("What courses did you see?"),
+        decision,
+        thread,
+        nowMs));
+    QVERIFY(policy.shouldContinueActionThread(
+        QStringLiteral("What have you done?"),
+        decision,
+        thread,
+        nowMs));
+}
+
 void AssistantBehaviorPolicyTests::ignoresFreshRequestAgainstRecentActionThread()
 {
     AssistantBehaviorPolicy policy;
@@ -437,6 +473,20 @@ void AssistantBehaviorPolicyTests::ignoresFreshRequestAgainstRecentActionThread(
         decision,
         thread,
         QDateTime::currentMSecsSinceEpoch()));
+}
+
+void AssistantBehaviorPolicyTests::routesDesktopContextRecallAsConversation()
+{
+    AssistantBehaviorPolicy policy;
+    InputRouterContext context;
+    context.agentEnabled = true;
+    context.aiAvailable = true;
+    context.likelyKnowledgeLookup = true;
+    context.desktopContextRecall = true;
+    context.effectiveIntent = IntentType::GENERAL_CHAT;
+
+    const InputRouteDecision decision = policy.decideRoute(context);
+    QCOMPARE(decision.kind, InputRouteKind::Conversation);
 }
 
 QTEST_APPLESS_MAIN(AssistantBehaviorPolicyTests)

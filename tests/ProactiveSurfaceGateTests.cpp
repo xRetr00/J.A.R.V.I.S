@@ -14,6 +14,7 @@ private slots:
     void keepsFailureToastVisible();
     void suppressesCompletionFollowUpDuringFocusMode();
     void suppressesCompletionFollowUpDuringActiveCooldown();
+    void allowsUserRequestedCompletionDuringActiveCooldown();
     void allowsFailureFollowUpEvenInFocusMode();
 };
 
@@ -122,6 +123,22 @@ void ProactiveSurfaceGateTests::suppressesCompletionFollowUpDuringActiveCooldown
     const BehaviorDecision decision = ProactiveSurfaceGate::evaluateCompletionFollowUp(input, true);
     QVERIFY(!decision.allowed);
     QCOMPARE(decision.reasonCode, QStringLiteral("surface.follow_up_cooldown_suppressed"));
+}
+
+void ProactiveSurfaceGateTests::allowsUserRequestedCompletionDuringActiveCooldown()
+{
+    ProactiveSurfaceGate::Input input;
+    input.result.type = QStringLiteral("web_search");
+    input.result.success = true;
+    input.desktopContext.insert(QStringLiteral("threadId"), QStringLiteral("browser::research"));
+    input.desktopContextAtMs = 1000;
+    input.cooldownState.threadId = QStringLiteral("browser::research");
+    input.cooldownState.activeUntilEpochMs = 3000;
+    input.nowMs = 1500;
+
+    const BehaviorDecision decision = ProactiveSurfaceGate::evaluateCompletionFollowUp(input, true, true);
+    QVERIFY(decision.allowed);
+    QCOMPARE(decision.reasonCode, QStringLiteral("surface.user_requested_completion_allow"));
 }
 
 void ProactiveSurfaceGateTests::allowsFailureFollowUpEvenInFocusMode()

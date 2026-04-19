@@ -30,10 +30,10 @@ bool containsAny(const QString &input, const QStringList &needles)
 bool containsWholeWordOrPhrase(const QString &input, const QString &needle)
 {
     const QString escaped = QRegularExpression::escape(needle);
-    const QString pattern = QStringLiteral("(^|\\s)%1(\\s|$)")
+    const QString pattern = QStringLiteral("(^|[^a-z0-9])%1(?=$|[^a-z0-9])")
         .arg(escaped)
         .replace(QStringLiteral("\\ "), QStringLiteral("\\s+"));
-    return QRegularExpression(pattern).match(input).hasMatch();
+    return QRegularExpression(pattern, QRegularExpression::CaseInsensitiveOption).match(input).hasMatch();
 }
 
 bool containsWholeWordOrPhraseAny(const QString &input, const QStringList &needles)
@@ -313,6 +313,11 @@ bool containsReferentialLanguage(const QString &input)
         QStringLiteral("which"),
         QStringLiteral("result"),
         QStringLiteral("results"),
+        QStringLiteral("from the result"),
+        QStringLiteral("from the results"),
+        QStringLiteral("best courses from the result"),
+        QStringLiteral("what did you see"),
+        QStringLiteral("what have you done"),
         QStringLiteral("summary"),
         QStringLiteral("summarize"),
         QStringLiteral("why"),
@@ -468,6 +473,12 @@ InputRouteDecision AssistantBehaviorPolicy::decideRoute(const InputRouterContext
         task.args = QJsonObject{{QStringLiteral("query"), context.explicitWebQuery}};
         task.priority = 85;
         decision.tasks = {task};
+        return decision;
+    }
+
+    if (context.desktopContextRecall) {
+        decision.kind = InputRouteKind::Conversation;
+        decision.intent = context.effectiveIntent;
         return decision;
     }
 

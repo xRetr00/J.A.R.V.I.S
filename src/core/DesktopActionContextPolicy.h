@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QVariantMap>
+#include <QString>
 
 #include "core/AssistantTypes.h"
 
@@ -12,4 +13,5 @@ public:
                                                     const TrustDecision &trust);
     [[nodiscard]] static bool shouldQuietProgress(const QVariantMap &desktopContext,
                                                   const TrustDecision &trust);
+    [[nodiscard]] static bool isDesktopContextRecallRequest(const QString &input);
 };

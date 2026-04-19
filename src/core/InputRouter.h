@@ -26,6 +26,7 @@ struct InputRouterContext {
     QString freshnessCode;
     bool likelyKnowledgeLookup = false;
     bool freshnessSensitive = false;
+    bool desktopContextRecall = false;
     bool agentEnabled = false;
     bool explicitAgentWorldQuery = false;
     bool likelyCommand = false;

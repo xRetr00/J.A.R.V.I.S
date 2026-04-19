@@ -233,7 +233,7 @@ QString styleFormatJarvisResponse(const QString &text)
         return {};
     }
 
-    formatted.replace(QRegularExpression(QStringLiteral("\\b(uh|um|you know|kind of|sort of|basically|actually|literally|like)\\b"),
+    formatted.replace(QRegularExpression(QStringLiteral("\\b(uh|um|you know|kind of|sort of|basically|actually|literally)\\b"),
                                          QRegularExpression::CaseInsensitiveOption),
                       QStringLiteral(""));
     formatted.replace(QRegularExpression(QStringLiteral("\\b(okay|ok)\\b"), QRegularExpression::CaseInsensitiveOption),

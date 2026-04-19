@@ -255,7 +255,8 @@ quint64 OpenAiCompatibleClient::sendAgentRequest(const AgentRequest &request)
     m_timeoutTimer->stop();
     m_activeRequestId = 0;
     m_activeReply = nullptr;
-    m_capabilities.selectedModelToolCapable = modelLooksToolCapable(request.model);
+    m_capabilities.selectedModelToolCapable = modelLooksToolCapable(request.model)
+        || (m_capabilities.responsesApi && m_capabilities.toolCalling);
     m_capabilities.agentEnabled = m_capabilities.responsesApi && m_capabilities.selectedModelToolCapable;
     emit capabilitiesChanged(m_capabilities);
 
@@ -496,6 +497,11 @@ bool OpenAiCompatibleClient::modelLooksToolCapable(const QString &modelId)
     return lowered.contains(QStringLiteral("qwen"))
         || lowered.contains(QStringLiteral("granite"))
         || lowered.contains(QStringLiteral("llama"))
+        || lowered.contains(QStringLiteral("gpt"))
+        || lowered.contains(QStringLiteral("claude"))
+        || lowered.contains(QStringLiteral("gemini"))
+        || lowered.contains(QStringLiteral("mistral"))
+        || lowered.contains(QStringLiteral("deepseek"))
         || lowered.contains(QStringLiteral("gpt-oss"))
         || lowered.contains(QStringLiteral("tool"));
 }

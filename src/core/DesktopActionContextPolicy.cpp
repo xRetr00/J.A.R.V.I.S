@@ -1,5 +1,8 @@
 #include "core/DesktopActionContextPolicy.h"
 
+#include <QRegularExpression>
+#include <QStringList>
+
 #include "cognition/DesktopWorkMode.h"
 
 namespace {
@@ -79,4 +82,50 @@ bool DesktopActionContextPolicy::shouldQuietProgress(const QVariantMap &desktopC
     }
 
     return isFocusedWorkMode(DesktopWorkMode::inferFromContext(desktopContext));
+}
+
+bool DesktopActionContextPolicy::isDesktopContextRecallRequest(const QString &input)
+{
+    const QString lowered = input.trimmed().toLower();
+    if (lowered.isEmpty()) {
+        return false;
+    }
+
+    static const QStringList directPhrases{
+        QStringLiteral("what was i doing"),
+        QStringLiteral("what i was doing"),
+        QStringLiteral("what am i doing"),
+        QStringLiteral("what was i working on"),
+        QStringLiteral("what am i working on"),
+        QStringLiteral("what was i looking at"),
+        QStringLiteral("what was on my screen"),
+        QStringLiteral("what is on my screen"),
+        QStringLiteral("what did you see on my screen")
+    };
+    for (const QString &phrase : directPhrases) {
+        if (lowered.contains(phrase)) {
+            return true;
+        }
+    }
+
+    const bool mentionsSurface = lowered.contains(QStringLiteral("vs code"))
+        || lowered.contains(QStringLiteral("vscode"))
+        || lowered.contains(QStringLiteral("visual studio code"))
+        || lowered.contains(QStringLiteral("editor"))
+        || lowered.contains(QStringLiteral("browser"))
+        || lowered.contains(QStringLiteral("tab"))
+        || lowered.contains(QStringLiteral("window"))
+        || lowered.contains(QStringLiteral("screen"));
+    const bool asksRecentActivity = lowered.contains(QStringLiteral("doing"))
+        || lowered.contains(QStringLiteral("working on"))
+        || lowered.contains(QStringLiteral("looking at"))
+        || lowered.contains(QStringLiteral("just now"))
+        || lowered.contains(QStringLiteral("current"));
+
+    return mentionsSurface
+        && asksRecentActivity
+        && QRegularExpression(QStringLiteral("\\b(what|which|where|tell me)\\b"),
+                              QRegularExpression::CaseInsensitiveOption)
+               .match(lowered)
+               .hasMatch();
 }

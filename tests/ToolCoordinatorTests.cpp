@@ -2,6 +2,8 @@
 #include <QJsonArray>
 
 #include "core/ToolCoordinator.h"
+#include "core/tools/ToolExecutionService.h"
+#include "core/tools/ToolResultEvidencePolicy.h"
 
 class ToolCoordinatorTests : public QObject
 {
@@ -10,6 +12,9 @@ class ToolCoordinatorTests : public QObject
 private slots:
     void webSearchFollowUpUsesTextPayloadWhenContentMissing();
     void webSearchFollowUpUsesSourcesWhenTextMissing();
+    void webSearchFollowUpUsesJsonOnlyPayload();
+    void jsonOnlyWebSearchPayloadProducesModelOutput();
+    void emptyBrowserFetchTextIsLowSignal();
 };
 
 void ToolCoordinatorTests::webSearchFollowUpUsesTextPayloadWhenContentMissing()
@@ -54,6 +59,55 @@ void ToolCoordinatorTests::webSearchFollowUpUsesSourcesWhenTextMissing()
     QVERIFY(followUp.has_value());
     QVERIFY(!followUp->synthesisInput.isEmpty());
     QVERIFY(followUp->synthesisInput.contains(QStringLiteral("https://example.com/changelog")));
+}
+
+void ToolCoordinatorTests::webSearchFollowUpUsesJsonOnlyPayload()
+{
+    ToolCoordinator coordinator;
+
+    BackgroundTaskResult result;
+    result.type = QStringLiteral("web_search");
+    result.success = true;
+    result.payload = QJsonObject{
+        {QStringLiteral("query"), QStringLiteral("machine learning courses")},
+        {QStringLiteral("provider"), QStringLiteral("brave")},
+        {QStringLiteral("json"), QStringLiteral("{\"web\":{\"results\":[{\"title\":\"Machine Learning Course\",\"url\":\"https://example.com/ml\",\"description\":\"A practical course.\"}]}}")}
+    };
+
+    const auto followUp = coordinator.buildWebSearchFollowUp(result);
+    QVERIFY(followUp.has_value());
+    QVERIFY(followUp->synthesisInput.contains(QStringLiteral("https://example.com/ml")));
+}
+
+void ToolCoordinatorTests::jsonOnlyWebSearchPayloadProducesModelOutput()
+{
+    ToolExecutionResult result;
+    result.toolName = QStringLiteral("web_search");
+    result.success = true;
+    result.payload = QJsonObject{
+        {QStringLiteral("json"), QStringLiteral("{\"web\":{\"results\":[{\"title\":\"Course result\",\"url\":\"https://example.com/course\",\"description\":\"A grounded source.\"}]}}")}
+    };
+
+    const QString output = ToolExecutionService::outputTextForModel(result);
+    QVERIFY(output.contains(QStringLiteral("Course result")));
+    QVERIFY(output.contains(QStringLiteral("https://example.com/course")));
+}
+
+void ToolCoordinatorTests::emptyBrowserFetchTextIsLowSignal()
+{
+    ToolExecutionResult result;
+    result.toolName = QStringLiteral("browser_fetch_text");
+    result.success = true;
+    result.detail = QStringLiteral("Fetched and extracted text from https://youtube.com with Playwright.");
+    result.payload = QJsonObject{
+        {QStringLiteral("url"), QStringLiteral("https://youtube.com")},
+        {QStringLiteral("text"), QString()}
+    };
+
+    const ToolResultEvidenceAssessment assessment =
+        ToolResultEvidencePolicy::assess(result, ToolExecutionService::outputTextForModel(result));
+    QVERIFY(assessment.lowSignal);
+    QCOMPARE(assessment.lowSignalReason, QStringLiteral("tool_result.empty_browser_text"));
 }
 
 QTEST_APPLESS_MAIN(ToolCoordinatorTests)

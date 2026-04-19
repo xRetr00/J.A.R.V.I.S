@@ -11,6 +11,7 @@
 #include "cognition/ConnectorEventBuilder.h"
 #include "core/ExecutionNarrator.h"
 #include "core/tasks/TaskDispatcher.h"
+#include "core/tools/ToolResultEvidencePolicy.h"
 #include "logging/LoggingService.h"
 
 namespace {
@@ -288,6 +289,7 @@ QList<AgentToolResult> ToolCoordinator::executeAgentToolCalls(
             traceCallback(QStringLiteral("tool_call"), toolCall.name, toolCall.argumentsJson.left(500), true);
         }
         const AgentToolResult result = agentToolbox->execute(toolCall);
+        const ToolResultEvidenceAssessment evidence = ToolResultEvidencePolicy::assess(result);
         const qint64 finishedAtMs = QDateTime::currentMSecsSinceEpoch();
         if (m_loggingService) {
             m_loggingService->breadcrumb(
@@ -302,12 +304,15 @@ QList<AgentToolResult> ToolCoordinator::executeAgentToolCalls(
                 QString());
             m_loggingService->infoFor(
                 QStringLiteral("tool_audit"),
-                QStringLiteral("[tool_result] id=%1 name=%2 success=%3 errorKind=%4 summary=%5 output=%6")
+                QStringLiteral("[tool_result] id=%1 name=%2 success=%3 errorKind=%4 summary=%5 outputChars=%6 payloadKeys=%7 lowSignalReason=%8 output=%9")
                     .arg(result.callId,
                          result.toolName,
                          result.success ? QStringLiteral("true") : QStringLiteral("false"),
                          QString::number(static_cast<int>(result.errorKind)),
                          result.summary.simplified(),
+                         QString::number(evidence.outputChars),
+                         evidence.payloadKeys.join(QLatin1Char(',')),
+                         evidence.lowSignalReason.isEmpty() ? QStringLiteral("none") : evidence.lowSignalReason,
                          result.output.left(8000)));
         }
         if (traceCallback) {

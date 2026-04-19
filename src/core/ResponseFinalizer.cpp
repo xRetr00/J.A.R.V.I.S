@@ -18,7 +18,7 @@ bool isDisplaySafeHint(const QString &hint)
         && !lowered.contains(QStringLiteral("keep execution explicit"));
 }
 
-QString modeAwareStatus(const ActionSession &session, const QString &status)
+QString modeAwareStatus(const ActionSession &session, const QString &status, const QString &displayText)
 {
     if (!status.trimmed().isEmpty() && status != QStringLiteral("Response ready")) {
         return status;
@@ -32,6 +32,9 @@ QString modeAwareStatus(const ActionSession &session, const QString &status)
     case ResponseMode::Recover:
         return QStringLiteral("Recovery response");
     case ResponseMode::Confirm:
+        if (!displayText.contains(QStringLiteral("confirm"), Qt::CaseInsensitive)) {
+            return status.trimmed().isEmpty() ? QStringLiteral("Response ready") : status;
+        }
         return QStringLiteral("Confirmation needed");
     case ResponseMode::Summarize:
         return QStringLiteral("Direct response");
@@ -104,7 +107,7 @@ bool ResponseFinalizer::finalizeResponse(const QString &source,
         }
     }
 
-    const QString effectiveStatus = modeAwareStatus(session, status);
+    const QString effectiveStatus = modeAwareStatus(session, status, finalizedReply.displayText);
 
     if (responseText) {
         *responseText = finalizedReply.displayText;

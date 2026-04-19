@@ -35,6 +35,7 @@
 #include "core/ActionThreadTracker.h"
 #include "core/AiRequestCoordinator.h"
 #include "core/AssistantBehaviorPolicy.h"
+#include "core/DesktopActionContextPolicy.h"
 #include "core/ExecutionNarrator.h"
 #include "core/InputRouter.h"
 #include "core/IntentRouter.h"
@@ -523,6 +524,7 @@ bool shouldUseDesktopContextForPrompt(const QString &input, IntentType intent)
     }
 
     return lowered.contains(QStringLiteral("this"))
+        || DesktopActionContextPolicy::isDesktopContextRecallRequest(input)
         || lowered.contains(QStringLiteral("current"))
         || lowered.contains(QStringLiteral("here"))
         || lowered.contains(QStringLiteral("tab"))
@@ -1214,7 +1216,9 @@ QString runtimeToolStatusSummary(const AppSettings *settings)
     const QString mcpCatalog = settings != nullptr ? settings->mcpCatalogUrl().trimmed() : QString();
 
     QStringList lines;
-    lines.push_back(QStringLiteral("mcp_runtime=disabled"));
+    lines.push_back(QStringLiteral("mcp_runtime=disabled_server_only"));
+    lines.push_back(QStringLiteral("python_runtime_actions=enabled"));
+    lines.push_back(QStringLiteral("python_browser_tools=playwright_actions_available_when_packaged"));
     lines.push_back(QStringLiteral("mcp_configured=%1").arg(mcpEnabled ? QStringLiteral("true") : QStringLiteral("false")));
     lines.push_back(QStringLiteral("npm_available=%1").arg(npmAvailable ? QStringLiteral("true") : QStringLiteral("false")));
     lines.push_back(QStringLiteral("mcp_server=%1").arg(mcpServer.isEmpty() ? QStringLiteral("unset") : mcpServer));
@@ -1588,6 +1592,11 @@ void AssistantController::initialize()
         m_agentCapabilities.selectedModelToolCapable = lowered.contains(QStringLiteral("qwen"))
             || lowered.contains(QStringLiteral("granite"))
             || lowered.contains(QStringLiteral("llama"))
+            || lowered.contains(QStringLiteral("gpt"))
+            || lowered.contains(QStringLiteral("claude"))
+            || lowered.contains(QStringLiteral("gemini"))
+            || lowered.contains(QStringLiteral("mistral"))
+            || lowered.contains(QStringLiteral("deepseek"))
             || lowered.contains(QStringLiteral("gpt-oss"))
             || lowered.contains(QStringLiteral("tool"));
         m_agentCapabilities.agentEnabled = m_settings->agentEnabled();
@@ -2207,8 +2216,9 @@ InputRouterContext AssistantController::buildInputRouteContext(const QString &ro
     routeContext.explicitWebSearch = !visionRelevantQuery && isExplicitWebSearchQuery(routedInput);
     routeContext.explicitWebQuery = extractedWebQuery;
     routeContext.freshnessCode = freshnessCodeForQuery(routedInput);
-    routeContext.likelyKnowledgeLookup = !visionRelevantQuery && m_settings->agentEnabled() && isLikelyKnowledgeLookupQuery(routedInput);
-    routeContext.freshnessSensitive = !visionRelevantQuery && m_settings->agentEnabled() && isFreshnessSensitiveQuery(routedInput);
+    routeContext.desktopContextRecall = DesktopActionContextPolicy::isDesktopContextRecallRequest(routedInput);
+    routeContext.likelyKnowledgeLookup = !visionRelevantQuery && !routeContext.desktopContextRecall && m_settings->agentEnabled() && isLikelyKnowledgeLookupQuery(routedInput);
+    routeContext.freshnessSensitive = !visionRelevantQuery && !routeContext.desktopContextRecall && m_settings->agentEnabled() && isFreshnessSensitiveQuery(routedInput);
     routeContext.agentEnabled = m_settings->agentEnabled();
     routeContext.explicitAgentWorldQuery = isExplicitAgentWorldQuery(routedInput);
     routeContext.likelyCommand = m_reasoningRouter->isLikelyCommand(routedInput);
@@ -2888,6 +2898,11 @@ void AssistantController::setSelectedModel(const QString &modelId)
     m_agentCapabilities.selectedModelToolCapable = modelId.toLower().contains(QStringLiteral("qwen"))
         || modelId.toLower().contains(QStringLiteral("granite"))
         || modelId.toLower().contains(QStringLiteral("llama"))
+        || modelId.toLower().contains(QStringLiteral("gpt"))
+        || modelId.toLower().contains(QStringLiteral("claude"))
+        || modelId.toLower().contains(QStringLiteral("gemini"))
+        || modelId.toLower().contains(QStringLiteral("mistral"))
+        || modelId.toLower().contains(QStringLiteral("deepseek"))
         || modelId.toLower().contains(QStringLiteral("gpt-oss"))
         || modelId.toLower().contains(QStringLiteral("tool"));
     m_agentCapabilities.providerMode = effectiveAgentProviderModeText(m_settings,
@@ -5807,6 +5822,7 @@ void AssistantController::recordTaskResult(const QJsonObject &resultObject)
         && currentActionThread->hasArtifacts()) {
         const BehaviorDecision completionDecision = ProactiveSurfaceGate::evaluateCompletionFollowUp(
             followUpInput,
+            true,
             true);
         if (m_loggingService) {
             m_loggingService->infoFor(
@@ -5865,7 +5881,8 @@ void AssistantController::recordTaskResult(const QJsonObject &resultObject)
     if (!message.trimmed().isEmpty()) {
         const BehaviorDecision followUpDecision = ProactiveSurfaceGate::evaluateCompletionFollowUp(
             followUpInput,
-            false);
+            false,
+            true);
         if (m_loggingService) {
             m_loggingService->infoFor(
                 QStringLiteral("follow_up_audit"),
