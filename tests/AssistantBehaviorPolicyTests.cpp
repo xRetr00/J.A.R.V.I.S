@@ -31,6 +31,8 @@ private slots:
     void continuesReferentialFollowUpAgainstRecentActionThread();
     void continuesResultAndInspectionFollowUpsAgainstRecentActionThread();
     void ignoresFreshRequestAgainstRecentActionThread();
+    void rejectsFreshActionWithPronounAgainstRecentActionThread();
+    void narrowsExplicitCreateAndBrowserToolsForGeneralChat();
     void routesDesktopContextRecallAsConversation();
 };
 
@@ -473,6 +475,64 @@ void AssistantBehaviorPolicyTests::ignoresFreshRequestAgainstRecentActionThread(
         decision,
         thread,
         QDateTime::currentMSecsSinceEpoch()));
+}
+
+void AssistantBehaviorPolicyTests::rejectsFreshActionWithPronounAgainstRecentActionThread()
+{
+    AssistantBehaviorPolicy policy;
+    InputRouteDecision decision;
+    decision.kind = InputRouteKind::AgentConversation;
+    decision.intent = IntentType::GENERAL_CHAT;
+
+    ActionThread thread;
+    thread.taskType = QStringLiteral("browser_open");
+    thread.userGoal = QStringLiteral("Open YouTube and search for machine learning courses");
+    thread.resultSummary = QStringLiteral("Opened search results.");
+    thread.state = ActionThreadState::Completed;
+    thread.success = true;
+    thread.valid = true;
+    thread.expiresAtMs = QDateTime::currentMSecsSinceEpoch() + 30000;
+
+    QVERIFY(!policy.shouldContinueActionThread(
+        QStringLiteral("Create a simple HTML snake game and launch it on the browser."),
+        decision,
+        thread,
+        QDateTime::currentMSecsSinceEpoch()));
+}
+
+void AssistantBehaviorPolicyTests::narrowsExplicitCreateAndBrowserToolsForGeneralChat()
+{
+    AssistantBehaviorPolicy policy;
+    const QList<AgentToolSpec> selected = policy.selectRelevantTools(
+        QStringLiteral("Create a simple HTML snake game and launch it on the browser."),
+        IntentType::GENERAL_CHAT,
+        {
+            {QStringLiteral("web_search"), {}, {}},
+            {QStringLiteral("memory_search"), {}, {}},
+            {QStringLiteral("dir_list"), {}, {}},
+            {QStringLiteral("file_read"), {}, {}},
+            {QStringLiteral("browser_open"), {}, {}},
+            {QStringLiteral("browser_fetch_text"), {}, {}},
+            {QStringLiteral("computer_list_apps"), {}, {}},
+            {QStringLiteral("computer_open_app"), {}, {}},
+            {QStringLiteral("computer_write_file"), {}, {}},
+            {QStringLiteral("file_patch"), {}, {}}
+        });
+
+    QStringList selectedNames;
+    for (const AgentToolSpec &tool : selected) {
+        selectedNames.push_back(tool.name);
+    }
+
+    QVERIFY(selectedNames.contains(QStringLiteral("browser_open")));
+    QVERIFY(selectedNames.contains(QStringLiteral("computer_write_file"))
+            || selectedNames.contains(QStringLiteral("file_patch")));
+    QVERIFY(!selectedNames.contains(QStringLiteral("web_search")));
+    QVERIFY(!selectedNames.contains(QStringLiteral("memory_search")));
+    QVERIFY(!selectedNames.contains(QStringLiteral("dir_list")));
+    QVERIFY(!selectedNames.contains(QStringLiteral("file_read")));
+    QVERIFY(!selectedNames.contains(QStringLiteral("computer_list_apps")));
+    QVERIFY(!selectedNames.contains(QStringLiteral("computer_open_app")));
 }
 
 void AssistantBehaviorPolicyTests::routesDesktopContextRecallAsConversation()

@@ -105,6 +105,23 @@ QString isoNowUtc()
     return QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
 }
 
+QString runtimeWorkspaceRoot()
+{
+    QDir sourceRoot(QStringLiteral(JARVIS_SOURCE_DIR));
+    if (sourceRoot.exists(QStringLiteral("CMakeLists.txt"))) {
+        const QString canonical = sourceRoot.canonicalPath();
+        return canonical.isEmpty() ? QDir::cleanPath(sourceRoot.absolutePath()) : QDir::cleanPath(canonical);
+    }
+
+    QDir appDir(QCoreApplication::applicationDirPath());
+    if (appDir.dirName().compare(QStringLiteral("bin"), Qt::CaseInsensitive) == 0 && appDir.cdUp()) {
+        const QString canonical = appDir.canonicalPath();
+        return canonical.isEmpty() ? QDir::cleanPath(appDir.absolutePath()) : QDir::cleanPath(canonical);
+    }
+
+    return QDir::cleanPath(QDir::currentPath());
+}
+
 QString responseModeToLearningLabel(ResponseMode mode)
 {
     switch (mode) {
@@ -1501,6 +1518,10 @@ AssistantController::AssistantController(
 
 AssistantController::~AssistantController()
 {
+    if (m_wakeWordEngine != nullptr && m_wakeWordEngine->isActive()) {
+        stopWakeMonitor();
+    }
+
     closeLearningSession();
     if (m_learningDataCollector) {
         m_learningDataCollector->waitForIdle();
@@ -4732,7 +4753,7 @@ void AssistantController::startConversationRequest(const QString &input)
         runtimeInput.selectedMemory = memoryContext;
         runtimeInput.identity = m_identityProfileService->identity();
         runtimeInput.userProfile = m_identityProfileService->userProfile();
-        runtimeInput.workspaceRoot = QDir::currentPath();
+        runtimeInput.workspaceRoot = runtimeWorkspaceRoot();
         runtimeInput.visionContext = assistantPromptContext;
         runtimeInput.currentTimeMs = QDateTime::currentMSecsSinceEpoch();
         runtimeInput.focusMode = currentFocusModeState();
@@ -4928,7 +4949,7 @@ void AssistantController::startAgentConversationRequest(const QString &input, In
         runtimeInput.userProfile = m_identityProfileService->userProfile();
         runtimeInput.availableTools = availableTools;
         runtimeInput.preselectedTools = relevantTools;
-        runtimeInput.workspaceRoot = QDir::currentPath();
+        runtimeInput.workspaceRoot = runtimeWorkspaceRoot();
         runtimeInput.visionContext = assistantPromptContext;
         runtimeInput.currentTimeMs = QDateTime::currentMSecsSinceEpoch();
         runtimeInput.focusMode = currentFocusModeState();
@@ -4950,7 +4971,7 @@ void AssistantController::startAgentConversationRequest(const QString &input, In
         .tools = relevantTools,
         .identity = m_identityProfileService->identity(),
         .userProfile = m_identityProfileService->userProfile(),
-        .workspaceRoot = QDir::currentPath(),
+        .workspaceRoot = runtimeWorkspaceRoot(),
         .visionContext = assistantPromptContext,
         .responseMode = m_activeActionSession.responseMode,
         .sessionGoal = m_activeActionSession.goal,
@@ -5091,7 +5112,7 @@ void AssistantController::continueAgentConversation(const QList<AgentToolResult>
         runtimeInput.availableTools = availableTools;
         runtimeInput.preselectedTools = relevantTools;
         runtimeInput.toolResults = results;
-        runtimeInput.workspaceRoot = QDir::currentPath();
+        runtimeInput.workspaceRoot = runtimeWorkspaceRoot();
         runtimeInput.visionContext = assistantPromptContext;
         runtimeInput.currentTimeMs = QDateTime::currentMSecsSinceEpoch();
         runtimeInput.focusMode = currentFocusModeState();
@@ -5115,7 +5136,7 @@ void AssistantController::continueAgentConversation(const QList<AgentToolResult>
         .toolResults = results,
         .identity = m_identityProfileService->identity(),
         .userProfile = m_identityProfileService->userProfile(),
-        .workspaceRoot = QDir::currentPath(),
+        .workspaceRoot = runtimeWorkspaceRoot(),
         .visionContext = assistantPromptContext,
         .responseMode = m_activeActionSession.responseMode,
         .sessionGoal = m_activeActionSession.goal,
@@ -6391,11 +6412,12 @@ bool AssistantController::requiresConfirmationFor(const InputRouteDecision &deci
 
 QStringList AssistantController::backgroundAllowedRoots() const
 {
+    const QString root = runtimeWorkspaceRoot();
     return {
-        QDir::cleanPath(QDir::currentPath()),
-        QDir::cleanPath(QDir::currentPath() + QStringLiteral("/config")),
-        QDir::cleanPath(QDir::currentPath() + QStringLiteral("/bin/logs")),
-        QDir::cleanPath(QDir::currentPath() + QStringLiteral("/skills")),
+        QDir::cleanPath(root),
+        QDir::cleanPath(root + QStringLiteral("/config")),
+        QDir::cleanPath(root + QStringLiteral("/bin/logs")),
+        QDir::cleanPath(root + QStringLiteral("/skills")),
         QDir::cleanPath(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation))
     };
 }

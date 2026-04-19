@@ -149,6 +149,23 @@ int affordanceScoreForTool(const QString &input, IntentType intent, const AgentT
 {
     const QString toolName = tool.name;
     const QString lowered = input.toLower();
+    const bool browserDirected = containsAny(lowered, {
+        QStringLiteral("browser"),
+        QStringLiteral("website"),
+        QStringLiteral("web page"),
+        QStringLiteral("url")
+    });
+    const bool explicitActionRequest = containsAny(lowered, {
+        QStringLiteral("open "),
+        QStringLiteral("launch"),
+        QStringLiteral("create"),
+        QStringLiteral("write"),
+        QStringLiteral("make "),
+        QStringLiteral("save"),
+        QStringLiteral("patch"),
+        QStringLiteral("edit"),
+        QStringLiteral("set a timer")
+    });
     int score = 0;
 
     switch (intent) {
@@ -172,9 +189,11 @@ int affordanceScoreForTool(const QString &input, IntentType intent, const AgentT
         break;
     case IntentType::GENERAL_CHAT:
     default:
-        if (toolName == QStringLiteral("web_search")) score += 110;
-        if (toolName == QStringLiteral("memory_search")) score += 100;
-        if (toolName == QStringLiteral("file_read") || toolName == QStringLiteral("dir_list")) score += 92;
+        if (!explicitActionRequest) {
+            if (toolName == QStringLiteral("web_search")) score += 110;
+            if (toolName == QStringLiteral("memory_search")) score += 100;
+            if (toolName == QStringLiteral("file_read") || toolName == QStringLiteral("dir_list")) score += 92;
+        }
         break;
     }
 
@@ -184,7 +203,7 @@ int affordanceScoreForTool(const QString &input, IntentType intent, const AgentT
         }
     }
 
-    if (containsAny(lowered, {QStringLiteral("browser"), QStringLiteral("website"), QStringLiteral("url"), QStringLiteral("open ")})) {
+    if (browserDirected || lowered.contains(QStringLiteral("open "))) {
         if (toolName == QStringLiteral("browser_open")) {
             score += 150;
         }
@@ -196,7 +215,13 @@ int affordanceScoreForTool(const QString &input, IntentType intent, const AgentT
         }
     }
 
-    if (containsAny(lowered, {QStringLiteral("app"), QStringLiteral("launch"), QStringLiteral("open app")})) {
+    const bool appDirected = containsAny(lowered, {
+        QStringLiteral("app"),
+        QStringLiteral("application"),
+        QStringLiteral("program"),
+        QStringLiteral("open app")
+    }) || (!browserDirected && lowered.contains(QStringLiteral("launch")));
+    if (appDirected) {
         if (toolName == QStringLiteral("computer_open_app") || toolName == QStringLiteral("computer_list_apps")) {
             score += 130;
         }
@@ -226,7 +251,7 @@ int affordanceScoreForTool(const QString &input, IntentType intent, const AgentT
         }
     }
 
-    if (requiresGroundingTool(toolName)) {
+    if (score > 0 && requiresGroundingTool(toolName)) {
         score += 12;
     }
 
@@ -391,6 +416,27 @@ bool isClearlyFreshRequest(const QString &input, const InputRouteDecision &decis
 
     return decision.kind == InputRouteKind::BackgroundTasks
         || decision.kind == InputRouteKind::DeterministicTasks;
+}
+
+bool isSpecificContinuationRequest(const QString &input)
+{
+    return containsWholeWordOrPhraseAny(input, {
+        QStringLiteral("from the result"),
+        QStringLiteral("from the results"),
+        QStringLiteral("what did you see"),
+        QStringLiteral("what have you done"),
+        QStringLiteral("what courses did you see"),
+        QStringLiteral("what is the result"),
+        QStringLiteral("open it"),
+        QStringLiteral("open the first"),
+        QStringLiteral("open the first one"),
+        QStringLiteral("read it"),
+        QStringLiteral("show it"),
+        QStringLiteral("use it"),
+        QStringLiteral("summarize that"),
+        QStringLiteral("summarize the result"),
+        QStringLiteral("summarize the results")
+    });
 }
 }
 
@@ -862,7 +908,9 @@ bool AssistantBehaviorPolicy::shouldContinueActionThread(const QString &input,
         return false;
     }
 
-    if (isClearlyFreshRequest(lowered, decision) && !referential) {
+    const bool clearlyFresh = isClearlyFreshRequest(lowered, decision);
+    const bool specificContinuation = isSpecificContinuationRequest(lowered);
+    if (clearlyFresh && !specificContinuation) {
         return false;
     }
 

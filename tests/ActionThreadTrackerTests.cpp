@@ -13,6 +13,7 @@ private slots:
     void rememberResultMapsCanceled();
     void rememberReplyCreatesCompletedAndFailedThread();
     void buildContinuationInputPreservesLegacyPromptAndFallback();
+    void sanitizesRecursiveContinuationEnvelope();
     void buildCompletionInputPreservesLegacyPromptAndFallback();
     void clearRemovesCurrentThread();
     void isCurrentUsableReturnsFalseForMissingOrExpiredThread();
@@ -216,6 +217,43 @@ void ActionThreadTrackerTests::buildContinuationInputPreservesLegacyPromptAndFal
         "Suggested next step: next step text\n\n"
         "User follow-up: follow up question");
     QCOMPARE(actual, expected);
+}
+
+void ActionThreadTrackerTests::sanitizesRecursiveContinuationEnvelope()
+{
+    ActionThreadTracker tracker;
+
+    const QString recursiveGoal = QStringLiteral(
+        "You are continuing the current assistant action thread.\n"
+        "Treat the user's message as a follow-up to this task when appropriate. "
+        "Only start a brand-new unrelated task if the user clearly asks for one.\n\n"
+        "Thread state: completed\n"
+        "Task type: browser_open\n"
+        "User goal: Open YouTube and search for machine learning courses\n"
+        "Result summary: Opened search results\n\n"
+        "User follow-up: Create a simple HTML snake game and launch it on the browser.");
+
+    ActionThreadStartContext startContext;
+    startContext.threadId = QStringLiteral("thread-recursive");
+    startContext.taskType = QStringLiteral("browser_open");
+    startContext.userGoal = recursiveGoal;
+    startContext.resultSummary = recursiveGoal;
+    startContext.nextStepHint = recursiveGoal;
+    startContext.updatedAtMs = 10;
+    startContext.expiresAtMs = 2000;
+    tracker.begin(startContext);
+
+    QVERIFY(tracker.current().has_value());
+    QCOMPARE(tracker.current()->userGoal,
+             QStringLiteral("Create a simple HTML snake game and launch it on the browser."));
+    QVERIFY(!tracker.current()->resultSummary.contains(QStringLiteral("Thread state:")));
+    QVERIFY(!tracker.current()->nextStepHint.contains(QStringLiteral("Thread state:")));
+
+    const QString continuation = tracker.buildContinuationInput(QStringLiteral("what have you done?"));
+    QCOMPARE(continuation.count(QStringLiteral("You are continuing the current assistant action thread.")), 1);
+    QVERIFY(!continuation.contains(QStringLiteral("User goal: You are continuing")));
+    QVERIFY(!continuation.contains(QStringLiteral("Result summary: You are continuing")));
+    QVERIFY(continuation.contains(QStringLiteral("User goal: Create a simple HTML snake game")));
 }
 
 void ActionThreadTrackerTests::buildCompletionInputPreservesLegacyPromptAndFallback()

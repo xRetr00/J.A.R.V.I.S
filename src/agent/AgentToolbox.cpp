@@ -1,6 +1,8 @@
 #include "agent/AgentToolbox.h"
 
 #include <QDir>
+#include <QCoreApplication>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonValue>
@@ -21,6 +23,23 @@ QString canonicalPath(const QString &path)
         return info.canonicalFilePath();
     }
     return QDir::cleanPath(info.absoluteFilePath());
+}
+
+QString workspaceRootPath()
+{
+    QDir sourceRoot(QStringLiteral(JARVIS_SOURCE_DIR));
+    if (sourceRoot.exists(QStringLiteral("CMakeLists.txt"))) {
+        const QString canonical = sourceRoot.canonicalPath();
+        return canonical.isEmpty() ? QDir::cleanPath(sourceRoot.absolutePath()) : QDir::cleanPath(canonical);
+    }
+
+    QDir appDir(QCoreApplication::applicationDirPath());
+    if (appDir.dirName().compare(QStringLiteral("bin"), Qt::CaseInsensitive) == 0 && appDir.cdUp()) {
+        const QString canonical = appDir.canonicalPath();
+        return canonical.isEmpty() ? QDir::cleanPath(appDir.absolutePath()) : QDir::cleanPath(canonical);
+    }
+
+    return QDir::cleanPath(QDir::currentPath());
 }
 
 nlohmann::json schemaObject(const std::initializer_list<std::pair<const char *, nlohmann::json>> &properties,
@@ -148,11 +167,12 @@ AgentToolResult AgentToolbox::execute(const AgentToolCall &call)
 
 QStringList AgentToolbox::allowedRoots() const
 {
+    const QString root = workspaceRootPath();
     return {
-        canonicalPath(QDir::currentPath()),
-        canonicalPath(QDir::currentPath() + QStringLiteral("/config")),
-        canonicalPath(QDir::currentPath() + QStringLiteral("/bin/logs")),
-        canonicalPath(QDir::currentPath() + QStringLiteral("/skills")),
+        canonicalPath(root),
+        canonicalPath(root + QStringLiteral("/config")),
+        canonicalPath(root + QStringLiteral("/bin/logs")),
+        canonicalPath(root + QStringLiteral("/skills")),
         canonicalPath(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)),
         canonicalPath(m_skillStore->skillsRoot())
     };

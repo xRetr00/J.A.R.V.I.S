@@ -57,6 +57,7 @@ private slots:
     void unrelatedRequestDoesNotAttachToThread();
     void selectedToolsAreNarrowedByIntent();
     void lowSignalEvidenceBlocksGroundedState();
+    void promptTaskStateClipsRecursiveThreadEnvelope();
 };
 
 void TurnOrchestrationRuntimeTests::sameTaskFollowUpContinuesThreadState()
@@ -179,6 +180,58 @@ void TurnOrchestrationRuntimeTests::lowSignalEvidenceBlocksGroundedState()
     QCOMPARE(plan.evidenceState, QStringLiteral("low_signal"));
     QVERIFY(plan.promptContext.verifiedEvidence.trimmed().isEmpty());
     QVERIFY(plan.promptContext.activeBehavioralConstraints.contains(QStringLiteral("low_signal")));
+}
+
+void TurnOrchestrationRuntimeTests::promptTaskStateClipsRecursiveThreadEnvelope()
+{
+    AssistantBehaviorPolicy policy;
+    TurnOrchestrationRuntime runtime(&policy);
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+
+    const QString recursiveText = QStringLiteral(
+        "You are continuing the current assistant action thread.\n"
+        "Treat the user's message as a follow-up to this task when appropriate. "
+        "Only start a brand-new unrelated task if the user clearly asks for one.\n\n"
+        "Thread state: completed\n"
+        "Task type: browser_open\n"
+        "User goal: Open YouTube and search for machine learning courses\n"
+        "Result summary: Opened search results\n\n"
+        "User follow-up: Create a simple HTML snake game and launch it on the browser.");
+
+    ActionThread thread;
+    thread.id = QStringLiteral("thread-recursive");
+    thread.taskType = QStringLiteral("browser_open");
+    thread.userGoal = recursiveText;
+    thread.resultSummary = recursiveText + QString(1200, QLatin1Char('x'));
+    thread.nextStepHint = recursiveText;
+    thread.state = ActionThreadState::Completed;
+    thread.success = true;
+    thread.valid = true;
+    thread.updatedAtMs = nowMs;
+    thread.expiresAtMs = nowMs + 60000;
+
+    InputRouteDecision route;
+    route.kind = InputRouteKind::AgentConversation;
+    route.intent = IntentType::GENERAL_CHAT;
+
+    TurnRuntimeInput input;
+    input.rawUserInput = QStringLiteral("Create a simple HTML snake game and launch it on the browser.");
+    input.effectiveInput = input.rawUserInput;
+    input.routeDecision = route;
+    input.intent = IntentType::GENERAL_CHAT;
+    input.currentActionThread = thread;
+    input.identity = identity();
+    input.userProfile = userProfile();
+    input.currentTimeMs = nowMs;
+
+    const TurnRuntimePlan plan = runtime.buildPlan(input);
+
+    QVERIFY(!plan.continuesActionThread);
+    QVERIFY(plan.promptContext.activeTaskState.size() < 1200);
+    QVERIFY(!plan.promptContext.activeTaskState.contains(QStringLiteral("You are continuing")));
+    QVERIFY(!plan.promptContext.activeTaskState.contains(QStringLiteral("Thread state:")));
+    QVERIFY(plan.promptContext.activeTaskState.contains(
+        QStringLiteral("user_goal=Create a simple HTML snake game and launch it on the browser.")));
 }
 
 QTEST_APPLESS_MAIN(TurnOrchestrationRuntimeTests)

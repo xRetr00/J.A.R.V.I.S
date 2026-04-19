@@ -5,6 +5,7 @@
 
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QRegularExpression>
 
 namespace {
 QString routeKindName(InputRouteKind kind)
@@ -71,6 +72,36 @@ QString payloadPreview(const QJsonObject &payload)
     return preview;
 }
 
+QString clipStateText(QString text, int maxChars)
+{
+    text = text.simplified();
+    if (text.size() > maxChars) {
+        text = text.left(maxChars).trimmed() + QStringLiteral("...");
+    }
+    return text;
+}
+
+QString sanitizeThreadText(QString text, int maxChars)
+{
+    text = text.trimmed();
+    const QString marker = QStringLiteral("User follow-up:");
+    const int markerIndex = text.lastIndexOf(marker, -1, Qt::CaseInsensitive);
+    if (markerIndex >= 0) {
+        text = text.mid(markerIndex + marker.size()).trimmed();
+    }
+    text.remove(QRegularExpression(
+        QStringLiteral("^You are continuing the current assistant action thread\\.?\\s*"),
+        QRegularExpression::CaseInsensitiveOption));
+    text.remove(QRegularExpression(
+        QStringLiteral("^Treat the user's message as a follow-up to this task when appropriate\\.?\\s*Only start a brand-new unrelated task if the user clearly asks for one\\.?\\s*"),
+        QRegularExpression::CaseInsensitiveOption));
+    const int threadStateIndex = text.indexOf(QStringLiteral("Thread state:"), 0, Qt::CaseInsensitive);
+    if (threadStateIndex >= 0) {
+        text = text.left(threadStateIndex).trimmed();
+    }
+    return clipStateText(text, maxChars);
+}
+
 QString evidenceTextForResult(const AgentToolResult &result)
 {
     QStringList lines;
@@ -104,13 +135,13 @@ QString actionThreadStateText(const std::optional<ActionThread> &thread, qint64 
         lines << QStringLiteral("task_type=%1").arg(thread->taskType.trimmed());
     }
     if (!thread->userGoal.trimmed().isEmpty()) {
-        lines << QStringLiteral("user_goal=%1").arg(thread->userGoal.trimmed());
+        lines << QStringLiteral("user_goal=%1").arg(sanitizeThreadText(thread->userGoal, 420));
     }
     if (!thread->resultSummary.trimmed().isEmpty()) {
-        lines << QStringLiteral("last_result=%1").arg(thread->resultSummary.trimmed());
+        lines << QStringLiteral("last_result=%1").arg(sanitizeThreadText(thread->resultSummary, 700));
     }
     if (!thread->nextStepHint.trimmed().isEmpty()) {
-        lines << QStringLiteral("next_step=%1").arg(thread->nextStepHint.trimmed());
+        lines << QStringLiteral("next_step=%1").arg(sanitizeThreadText(thread->nextStepHint, 240));
     }
     if (!thread->sourceUrls.isEmpty()) {
         lines << QStringLiteral("sources=%1").arg(thread->sourceUrls.join(QStringLiteral(", ")));
@@ -126,7 +157,7 @@ QString actionThreadEvidenceText(const std::optional<ActionThread> &thread, qint
 
     QStringList lines;
     if (!thread->artifactText.trimmed().isEmpty()) {
-        lines << thread->artifactText.trimmed().left(3200);
+        lines << sanitizeThreadText(thread->artifactText, 2400);
     }
     const QString payload = payloadPreview(thread->payload);
     if (!payload.isEmpty()) {
