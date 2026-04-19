@@ -53,7 +53,7 @@ void SelectionContextCompilerTests::compilesDesktopAndConnectorContextTogether()
     };
 
     const SelectionContextCompilation compilation = SelectionContextCompiler::compile(
-        QStringLiteral("what should I check next"),
+        QStringLiteral("what should I check on this page next"),
         IntentType::GENERAL_CHAT,
         desktopContext,
         QStringLiteral("Desktop context: browser tab \"Vaxil Release Notes\" on github.com in edge."),
@@ -110,7 +110,7 @@ void SelectionContextCompilerTests::selectsPromptContextBlocksByIntent()
     QVERIFY(promptContext.contains(QStringLiteral("Document: CooldownEngine.cpp.")));
     QVERIFY(promptContext.contains(QStringLiteral("Workspace: D:/Vaxil/src/cognition.")));
     QVERIFY(promptContext.contains(QStringLiteral("App: cursor.")));
-    QVERIFY(!promptContext.contains(QStringLiteral("Site: github.com.")));
+    QVERIFY(promptContext.contains(QStringLiteral("Site: github.com.")));
 
     const SelectionContextCompilation compilation = SelectionContextCompiler::compile(
         QStringLiteral("tighten cooldown gating"),
