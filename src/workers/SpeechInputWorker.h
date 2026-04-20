@@ -33,7 +33,10 @@ signals:
     void audioLevelChanged(quint64 generationId, const AudioLevel &level);
     void speechFrame(quint64 generationId, const AudioFrame &frame);
     void speechActivityChanged(quint64 generationId, bool active);
-    void captureFinished(quint64 generationId, const QByteArray &pcmData, bool hadSpeech);
+    void captureFinished(quint64 generationId,
+                         const QByteArray &pcmData,
+                         bool hadSpeech,
+                         const SpeechCaptureEvidence &evidence);
     void captureFailed(quint64 generationId, const QString &errorText);
 
 private:
@@ -65,6 +68,11 @@ private:
     double m_silenceThreshold = 0.02;
     int m_consecutiveSpeechMs = 0;
     int m_consecutiveSilenceMs = 0;
+    int m_totalFrames = 0;
+    int m_voicedFrames = 0;
+    int m_speechActivityTransitions = 0;
+    float m_peakMax = 0.0f;
+    double m_rmsSum = 0.0;
     qint64 m_frameSequence = 0;
     QElapsedTimer m_captureElapsed;
     QElapsedTimer m_speechElapsed;

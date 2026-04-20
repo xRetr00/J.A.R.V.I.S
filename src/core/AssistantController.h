@@ -56,6 +56,7 @@ class InputRouter;
 class MemoryPolicyHandler;
 class ResponseFinalizer;
 class SpeechTranscriptGuard;
+class ListeningEngagementPolicy;
 class ToolCoordinator;
 class TurnOrchestrationRuntime;
 namespace LearningData {
@@ -275,7 +276,7 @@ private:
                        bool allowFollowUpWakeDelay = false);
     void deliverLocalResponse(const QString &text, const QString &status, bool speak = true);
     void scheduleWakeMonitorRestart(int delayMs = 250);
-    bool canStartWakeMonitor() const;
+    bool canStartWakeMonitor(bool allowWhileSpeaking = false) const;
     void reconfigureGestureActionRouter();
     bool startAudioCapture(AudioCaptureMode mode, bool announceListening);
     void startConversationRequest(const QString &input);
@@ -409,6 +410,7 @@ private:
     std::unique_ptr<AiRequestCoordinator> m_aiRequestCoordinator;
     std::unique_ptr<ActionThreadTracker> m_actionThreadTracker;
     std::unique_ptr<SpeechTranscriptGuard> m_speechTranscriptGuard;
+    std::unique_ptr<ListeningEngagementPolicy> m_listeningEngagementPolicy;
     std::unique_ptr<AssistantBehaviorPolicy> m_assistantBehaviorPolicy;
     std::unique_ptr<ExecutionNarrator> m_executionNarrator;
     std::unique_ptr<MemoryPolicyHandler> m_memoryPolicyHandler;
@@ -501,6 +503,9 @@ private:
     bool m_wakeStartRequested = false;
     bool m_learningSessionStarted = false;
     bool m_lastInputFromVoice = false;
+    bool m_lastSpeechAttemptAccepted = false;
+    bool m_lastSpeechAttemptNearField = false;
+    float m_lastSpeechAttemptConfidence = 0.0f;
     QString m_lastWakeError;
     QString m_learningSessionId;
     QString m_learningSessionStartedAt;

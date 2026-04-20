@@ -259,6 +259,7 @@ set(JARVIS_SOURCES
     src/core/AiRequestCoordinator.cpp
     src/core/AssistantBehaviorPolicy.cpp
     src/core/AssistantController.cpp
+    src/core/ListeningEngagementPolicy.cpp
     src/core/SpeechTranscriptGuard.cpp
     src/core/StartupReadinessPolicy.cpp
     src/core/CurrentContextReferentResolver.cpp
@@ -402,6 +403,7 @@ set(JARVIS_HEADERS
     src/core/AiRequestCoordinator.h
     src/core/AssistantBehaviorPolicy.h
     src/core/AssistantController.h
+    src/core/ListeningEngagementPolicy.h
     src/core/ActionThreadSelectionPolicy.h
     src/core/SpeechTranscriptGuard.h
     src/core/AssistantTypes.h
@@ -1124,6 +1126,23 @@ if(JARVIS_BUILD_TESTS)
     add_test(NAME jarvis_speech_transcript_guard_tests COMMAND jarvis_speech_transcript_guard_tests)
     set_tests_properties(jarvis_speech_transcript_guard_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
     jarvis_copy_optional_runtime_libraries(jarvis_speech_transcript_guard_tests)
+
+    qt_add_executable(jarvis_listening_engagement_policy_tests
+        tests/ListeningEngagementPolicyTests.cpp
+        src/core/ListeningEngagementPolicy.cpp
+    )
+
+    target_include_directories(jarvis_listening_engagement_policy_tests PRIVATE src)
+    target_link_libraries(jarvis_listening_engagement_policy_tests
+        PRIVATE
+            Qt6::Core
+            Qt6::Test
+            nlohmann_json::nlohmann_json
+    )
+
+    add_test(NAME jarvis_listening_engagement_policy_tests COMMAND jarvis_listening_engagement_policy_tests)
+    set_tests_properties(jarvis_listening_engagement_policy_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_listening_engagement_policy_tests)
 
     qt_add_executable(jarvis_permission_override_scenario_tests
         tests/PermissionOverrideScenarioTests.cpp

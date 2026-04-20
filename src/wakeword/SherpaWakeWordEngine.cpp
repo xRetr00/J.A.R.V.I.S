@@ -439,12 +439,13 @@ void SherpaWakeWordEngine::consumeHelperStdout()
             emit engineReady();
         } else if (text.startsWith(QStringLiteral("DETECTED:"), Qt::CaseInsensitive)) {
             if (!m_paused && m_ready) {
+                const QString detectedKeyword = text.mid(QStringLiteral("DETECTED:").size()).trimmed();
                 if (m_loggingService) {
                     m_loggingService->infoFor(QStringLiteral("wake_engine"), QStringLiteral("[VAXIL] Wake word detected. keyword=\"%1\"")
-                        .arg(text.mid(QStringLiteral("DETECTED:").size()).trimmed()));
+                        .arg(detectedKeyword));
                 }
                 emit probabilityUpdated(1.0f);
-                emit wakeWordDetected();
+                emit wakeKeywordDetected(detectedKeyword);
             }
         } else if (text.startsWith(QStringLiteral("ERROR:"), Qt::CaseInsensitive)) {
             const QString message = text.mid(QStringLiteral("ERROR:").size()).trimmed();
@@ -595,19 +596,27 @@ bool SherpaWakeWordEngine::writeKeywordsFile(const QString &modelPath, QString *
 
     QStringList lines;
     QSet<QString> emittedLines;
-    for (const WakeKeywordVariant &variant : wakePhraseVariants(displayPhrase, m_threshold)) {
-        const std::string variantUtf8 = variant.phrase.toStdString();
+    auto addEncodedKeyword = [&](const QString &phrase,
+                                 const QString &label,
+                                 float boostingScore,
+                                 float triggerThreshold) -> bool {
+        const QString normalizedPhrase = normalizeWakePhrase(phrase);
+        if (normalizedPhrase.isEmpty()) {
+            return true;
+        }
+
+        const std::string phraseUtf8 = normalizedPhrase.toStdString();
         std::vector<std::string> pieces;
-        const auto encodeStatus = processor.Encode(variantUtf8, &pieces);
+        const auto encodeStatus = processor.Encode(phraseUtf8, &pieces);
         if (!encodeStatus.ok() || pieces.empty()) {
             if (errorText) {
                 *errorText = QStringLiteral("Failed to encode wake phrase \"%1\": %2")
-                    .arg(variant.phrase, QString::fromStdString(encodeStatus.ToString()));
+                    .arg(normalizedPhrase, QString::fromStdString(encodeStatus.ToString()));
             }
             return false;
         }
 
-        auto addKeywordPieces = [&](const std::vector<std::string> &keywordPieces, float boostingScore, float triggerThreshold) {
+        auto addKeywordPieces = [&](const std::vector<std::string> &keywordPieces, float score, float threshold) {
             if (keywordPieces.empty()) {
                 return;
             }
@@ -620,23 +629,53 @@ bool SherpaWakeWordEngine::writeKeywordsFile(const QString &modelPath, QString *
 
             const QString line = QStringLiteral("%1 :%2 #%3 @%4")
                 .arg(linePieces.join(QChar::fromLatin1(' ')))
-                .arg(boostingScore, 0, 'f', 2)
-                .arg(triggerThreshold, 0, 'f', 2)
-                .arg(keywordLabel);
+                .arg(score, 0, 'f', 2)
+                .arg(threshold, 0, 'f', 2)
+                .arg(label);
             if (!emittedLines.contains(line)) {
                 emittedLines.insert(line);
                 lines.push_back(line);
             }
         };
 
-        addKeywordPieces(pieces, variant.boostingScore, variant.triggerThreshold);
+        addKeywordPieces(pieces, boostingScore, triggerThreshold);
 
         std::vector<std::vector<std::string>> nbestPieces;
-        const auto nbestStatus = processor.NBestEncode(variantUtf8, kKeywordSegmentationCandidates, &nbestPieces);
+        const auto nbestStatus = processor.NBestEncode(phraseUtf8, kKeywordSegmentationCandidates, &nbestPieces);
         if (nbestStatus.ok()) {
             for (const auto &candidate : nbestPieces) {
-                addKeywordPieces(candidate, variant.boostingScore, variant.triggerThreshold);
+                addKeywordPieces(candidate, boostingScore, triggerThreshold);
             }
+        }
+
+        return true;
+    };
+
+    for (const WakeKeywordVariant &variant : wakePhraseVariants(displayPhrase, m_threshold)) {
+        if (!addEncodedKeyword(variant.phrase, keywordLabel, variant.boostingScore, variant.triggerThreshold)) {
+            return false;
+        }
+    }
+
+    const QString interruptionLabel = keywordLabel + QStringLiteral("_INTERRUPT");
+    const float interruptionThreshold = std::clamp(m_threshold + 0.18f, 0.36f, 0.86f);
+    const float interruptionScore = 1.05f;
+    const QStringList interruptionPhrases = {
+        QStringLiteral("STOP"),
+        QStringLiteral("WAIT"),
+        QStringLiteral("NO"),
+        QStringLiteral("LISTEN"),
+        QStringLiteral("HEY VAXIL STOP"),
+        QStringLiteral("HEY VAXIL WAIT"),
+        QStringLiteral("HEY VAXIL LISTEN"),
+        QStringLiteral("VAXIL STOP"),
+        QStringLiteral("VAXIL WAIT"),
+        QStringLiteral("VAXIL NO"),
+        QStringLiteral("VAXIL LISTEN")
+    };
+    for (const QString &phrase : interruptionPhrases) {
+        if (!addEncodedKeyword(phrase, interruptionLabel, interruptionScore, interruptionThreshold)) {
+            return false;
         }
     }
 

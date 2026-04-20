@@ -168,6 +168,17 @@ struct AudioLevel {
     float peak = 0.0f;
 };
 
+struct SpeechCaptureEvidence {
+    bool hadSpeech = false;
+    int captureDurationMs = 0;
+    int voicedDurationMs = 0;
+    float voicedRatio = 0.0f;
+    float averageRms = 0.0f;
+    float peakLevel = 0.0f;
+    int speechActivityTransitions = 0;
+    int trailingSilenceMs = 0;
+};
+
 struct AiMessage {
     QString role;
     QString content;
@@ -552,3 +563,4 @@ Q_DECLARE_METATYPE(AgentRequest)
 Q_DECLARE_METATYPE(TranscriptionResult)
 Q_DECLARE_METATYPE(AiRequestOptions)
 Q_DECLARE_METATYPE(AudioLevel)
+Q_DECLARE_METATYPE(SpeechCaptureEvidence)

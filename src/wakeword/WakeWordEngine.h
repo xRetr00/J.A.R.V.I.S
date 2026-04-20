@@ -34,5 +34,6 @@ signals:
     void engineReady();
     void probabilityUpdated(float probability);
     void wakeWordDetected();
+    void wakeKeywordDetected(const QString &keyword);
     void errorOccurred(const QString &message);
 };

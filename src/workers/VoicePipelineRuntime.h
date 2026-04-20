@@ -50,7 +50,10 @@ signals:
     void inputAudioLevelChanged(quint64 generationId, const AudioLevel &level);
     void speechFrame(quint64 generationId, const AudioFrame &frame);
     void speechActivityChanged(quint64 generationId, bool active);
-    void inputCaptureFinished(quint64 generationId, const QByteArray &pcmData, bool hadSpeech);
+    void inputCaptureFinished(quint64 generationId,
+                              const QByteArray &pcmData,
+                              bool hadSpeech,
+                              const SpeechCaptureEvidence &evidence);
     void inputCaptureFailed(quint64 generationId, const QString &errorText);
     void transcriptionReady(quint64 generationId, const TranscriptionResult &result);
     void transcriptionFailed(quint64 generationId, const QString &errorText);

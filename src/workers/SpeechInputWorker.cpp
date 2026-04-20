@@ -157,9 +157,18 @@ void SpeechInputWorker::processMicBuffer()
             }
             return std::sqrt(sumSquares / static_cast<float>(processed.sampleCount));
         }();
-        emit audioLevelChanged(m_generationId, {rms, computePeak(processed)});
+        const float peak = computePeak(processed);
+        emit audioLevelChanged(m_generationId, {rms, peak});
+
+        ++m_totalFrames;
+        if (processed.speechDetected) {
+            ++m_voicedFrames;
+        }
+        m_rmsSum += rms;
+        m_peakMax = std::max(m_peakMax, peak);
 
         if (processed.speechDetected != m_lastSpeechActive) {
+            ++m_speechActivityTransitions;
             m_lastSpeechActive = processed.speechDetected;
             emit speechActivityChanged(m_generationId, m_lastSpeechActive);
         }
@@ -194,7 +203,7 @@ void SpeechInputWorker::processMicBuffer()
 
             const bool sustainedSilence = m_consecutiveSilenceMs >= kSilenceHoldMs;
             const bool lowEnergySilence = rms < static_cast<float>(m_silenceThreshold)
-                && computePeak(processed) < std::max(static_cast<float>(m_silenceThreshold * 2.0), 0.06f);
+                && peak < std::max(static_cast<float>(m_silenceThreshold * 2.0), 0.06f);
             if (sustainedSilence && lowEnergySilence) {
                 finishCapture(true);
                 return;
@@ -207,11 +216,24 @@ void SpeechInputWorker::finishCapture(bool hadSpeech)
 {
     const quint64 generationId = m_generationId;
     const QByteArray pcmData = m_recordedPcm;
+    SpeechCaptureEvidence evidence;
+    evidence.hadSpeech = hadSpeech;
+    evidence.captureDurationMs = m_captureElapsed.isValid() ? m_captureElapsed.elapsed() : 0;
+    evidence.voicedDurationMs = m_voicedFrames * kFrameMs;
+    evidence.voicedRatio = m_totalFrames > 0
+        ? static_cast<float>(m_voicedFrames) / static_cast<float>(m_totalFrames)
+        : 0.0f;
+    evidence.averageRms = m_totalFrames > 0
+        ? static_cast<float>(m_rmsSum / static_cast<double>(m_totalFrames))
+        : 0.0f;
+    evidence.peakLevel = m_peakMax;
+    evidence.speechActivityTransitions = m_speechActivityTransitions;
+    evidence.trailingSilenceMs = m_consecutiveSilenceMs;
 
     stopAudioDevice();
     resetCaptureState();
 
-    emit captureFinished(generationId, pcmData, hadSpeech);
+    emit captureFinished(generationId, pcmData, hadSpeech, evidence);
 }
 
 bool SpeechInputWorker::startAudioDevice(const QString &preferredDeviceId)
@@ -267,6 +289,11 @@ void SpeechInputWorker::resetCaptureState()
     m_lastSpeechActive = false;
     m_consecutiveSpeechMs = 0;
     m_consecutiveSilenceMs = 0;
+    m_totalFrames = 0;
+    m_voicedFrames = 0;
+    m_speechActivityTransitions = 0;
+    m_peakMax = 0.0f;
+    m_rmsSum = 0.0;
     m_frameSequence = 0;
     m_speechElapsed.invalidate();
     m_captureElapsed.invalidate();

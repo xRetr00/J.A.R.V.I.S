@@ -42,6 +42,7 @@
 #include "core/ExecutionNarrator.h"
 #include "core/InputRouter.h"
 #include "core/IntentRouter.h"
+#include "core/ListeningEngagementPolicy.h"
 #include "core/LocalResponseEngine.h"
 #include "core/MemoryPolicyHandler.h"
 #include "core/PermissionOverrideSettings.h"
@@ -1395,6 +1396,7 @@ AssistantController::AssistantController(
     }
     m_turnOrchestrationRuntime = std::make_unique<TurnOrchestrationRuntime>(m_assistantBehaviorPolicy.get());
     m_speechTranscriptGuard = std::make_unique<SpeechTranscriptGuard>();
+    m_listeningEngagementPolicy = std::make_unique<ListeningEngagementPolicy>();
     m_executionNarrator = std::make_unique<ExecutionNarrator>();
     m_memoryPolicyHandler = std::make_unique<MemoryPolicyHandler>(m_identityProfileService, m_memoryStore);
     m_toolCoordinator = std::make_unique<ToolCoordinator>(m_loggingService, m_executionNarrator.get());
@@ -1745,7 +1747,10 @@ void AssistantController::initialize()
             m_wakeWordEngine->processAudioFrame(frame);
         }
     });
-    connect(m_voicePipelineRuntime, &VoicePipelineRuntime::inputCaptureFinished, this, [this](quint64 generationId, const QByteArray &pcmData, bool hadSpeech) {
+    connect(m_voicePipelineRuntime, &VoicePipelineRuntime::inputCaptureFinished, this, [this](quint64 generationId,
+                                                                                               const QByteArray &pcmData,
+                                                                                               bool hadSpeech,
+                                                                                               const SpeechCaptureEvidence &evidence) {
         if (generationId != m_activeInputCaptureId) {
             return;
         }
@@ -1760,10 +1765,14 @@ void AssistantController::initialize()
                     : (completedMode == AudioCaptureMode::WakeMonitor
                         ? QStringLiteral("wake")
                         : QStringLiteral("none"));
-            m_loggingService->info(QStringLiteral("Audio capture finished. mode=%1 bytes=%2 hadSpeech=%3")
+            m_loggingService->info(QStringLiteral("Audio capture finished. mode=%1 bytes=%2 hadSpeech=%3 voicedMs=%4 voicedRatio=%5 avgRms=%6 peak=%7")
                 .arg(mode)
                 .arg(pcmData.size())
-                .arg(hadSpeech ? QStringLiteral("true") : QStringLiteral("false")));
+                .arg(hadSpeech ? QStringLiteral("true") : QStringLiteral("false"))
+                .arg(evidence.voicedDurationMs)
+                .arg(evidence.voicedRatio, 0, 'f', 3)
+                .arg(evidence.averageRms, 0, 'f', 4)
+                .arg(evidence.peakLevel, 0, 'f', 4));
         }
 
         if (m_learningDataCollector
@@ -1814,6 +1823,9 @@ void AssistantController::initialize()
         }
 
         if (!hadSpeech || pcmData.isEmpty()) {
+            m_lastSpeechAttemptAccepted = false;
+            m_lastSpeechAttemptNearField = false;
+            m_lastSpeechAttemptConfidence = 0.0f;
             if (completedMode == AudioCaptureMode::Direct
                 && m_followUpListeningAfterWakeAck
                 && m_wakeWordDataCapture
@@ -1829,6 +1841,42 @@ void AssistantController::initialize()
             }
             handleConversationSessionMiss(QStringLiteral("No speech detected"));
             return;
+        }
+
+        if (completedMode == AudioCaptureMode::Direct && m_listeningEngagementPolicy) {
+            const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+            const ListeningEngagementContext context{
+                .conversationSessionActive = m_conversationSessionActive,
+                .followUpWindowOpen = m_listeningEngagementPolicy->isFollowUpWindowOpen(nowMs),
+                .assistantSpeaking = m_ttsEngine->isSpeaking() || m_duplexState == DuplexState::TtsExclusive,
+                .postTtsResidueGuardActive = m_listeningEngagementPolicy->isPostTtsResidueGuardActive(nowMs)
+            };
+            const ListeningEngagementDecision decision = m_listeningEngagementPolicy->evaluateSpeechAttempt(evidence, context);
+            m_lastSpeechAttemptAccepted = decision.allowRecognition;
+            m_lastSpeechAttemptNearField = decision.nearField;
+            m_lastSpeechAttemptConfidence = decision.engagementConfidence;
+
+            if (m_loggingService) {
+                m_loggingService->infoFor(
+                    QStringLiteral("follow_up_audit"),
+                    QStringLiteral("[engagement_gate] allow=%1 reason=%2 confidence=%3 nearField=%4 nearFieldConf=%5 residue=%6 farField=%7 followUpWindow=%8 minConf=%9 minNear=%10")
+                        .arg(decision.allowRecognition ? QStringLiteral("true") : QStringLiteral("false"),
+                             decision.reasonCode,
+                             QString::number(decision.engagementConfidence, 'f', 3),
+                             decision.nearField ? QStringLiteral("true") : QStringLiteral("false"),
+                             QString::number(decision.nearFieldConfidence, 'f', 3),
+                             decision.rejectedAsEchoResidue ? QStringLiteral("true") : QStringLiteral("false"),
+                             decision.rejectedAsFarField ? QStringLiteral("true") : QStringLiteral("false"),
+                             context.followUpWindowOpen ? QStringLiteral("true") : QStringLiteral("false"),
+                             QString::number(m_listeningEngagementPolicy->thresholds().minEngagementConfidence, 'f', 3),
+                             QString::number(m_listeningEngagementPolicy->thresholds().minNearFieldConfidence, 'f', 3)));
+            }
+
+            if (!decision.allowRecognition) {
+                m_nextTurnId.clear();
+                handleConversationSessionMiss(QStringLiteral("No speech detected"));
+                return;
+            }
         }
 
         m_consecutiveSessionMisses = 0;
@@ -1905,6 +1953,25 @@ void AssistantController::initialize()
             if (m_loggingService) {
                 m_loggingService->info(QStringLiteral("Ignoring ambiguous transcription. text=\"%1\"").arg(transcript.left(120)));
             }
+            ListeningEngagementDecision lastDecision;
+            lastDecision.allowRecognition = m_lastSpeechAttemptAccepted;
+            lastDecision.nearField = m_lastSpeechAttemptNearField;
+            lastDecision.engagementConfidence = m_lastSpeechAttemptConfidence;
+            const bool shouldEmitRepair = m_listeningEngagementPolicy
+                && m_listeningEngagementPolicy->shouldEmitRepair(lastDecision, transcriptDecision.disposition);
+
+            if (!shouldEmitRepair) {
+                if (m_loggingService) {
+                    m_loggingService->infoFor(
+                        QStringLiteral("stt"),
+                        QStringLiteral("[repair_suppressed] disposition=ambiguous confidence=%1 nearField=%2")
+                            .arg(QString::number(m_lastSpeechAttemptConfidence, 'f', 3),
+                                 m_lastSpeechAttemptNearField ? QStringLiteral("true") : QStringLiteral("false")));
+                }
+                handleConversationSessionMiss(QStringLiteral("No speech detected"));
+                return;
+            }
+
             if (m_conversationSessionActive) {
                 ++m_consecutiveSessionMisses;
                 refreshConversationSession();
@@ -1955,6 +2022,24 @@ void AssistantController::initialize()
             m_loggingService->error(QStringLiteral("Speech transcription failed: %1").arg(errorText));
         }
         if (m_conversationSessionActive) {
+            const bool strongDirectedAttempt = m_lastSpeechAttemptAccepted
+                && m_lastSpeechAttemptNearField
+                && m_lastSpeechAttemptConfidence >= (m_listeningEngagementPolicy
+                        ? m_listeningEngagementPolicy->thresholds().minRepairConfidence
+                        : 0.72f);
+            if (strongDirectedAttempt) {
+                if (m_loggingService) {
+                    m_loggingService->infoFor(
+                        QStringLiteral("stt"),
+                        QStringLiteral("[repair_emitted] cause=transcription_failed confidence=%1")
+                            .arg(QString::number(m_lastSpeechAttemptConfidence, 'f', 3)));
+                }
+                deliverLocalResponse(
+                    m_executionNarrator->clarificationPrompt(m_activeActionSession),
+                    QStringLiteral("Please repeat"),
+                    true);
+                return;
+            }
             handleConversationSessionMiss(errorText);
             return;
         }
@@ -1973,6 +2058,9 @@ void AssistantController::initialize()
         if (m_loggingService) {
             m_loggingService->infoFor(QStringLiteral("tts"), QStringLiteral("TTS playback started."));
         }
+        if (m_listeningEngagementPolicy) {
+            m_listeningEngagementPolicy->noteAssistantSpeechStarted(QDateTime::currentMSecsSinceEpoch());
+        }
         clearSurfaceError(QStringLiteral("assistant"));
         beginTtsExclusiveMode();
         emit speakingRequested();
@@ -1981,12 +2069,26 @@ void AssistantController::initialize()
         if (m_loggingService) {
             m_loggingService->infoFor(QStringLiteral("tts"), QStringLiteral("TTS playback finished."));
         }
+        if (m_listeningEngagementPolicy) {
+            const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+            m_listeningEngagementPolicy->noteAssistantSpeechFinished(nowMs);
+            m_listeningEngagementPolicy->openFollowUpWindow(nowMs);
+            if (m_loggingService) {
+                m_loggingService->infoFor(
+                    QStringLiteral("follow_up_audit"),
+                    QStringLiteral("[post_tts_residue_guard] active=true guardMs=%1")
+                        .arg(m_listeningEngagementPolicy->thresholds().postTtsResidueGuardMs));
+            }
+        }
         enterPostSpeechCooldown();
         if (m_followUpListeningAfterWakeAck || conversationSessionShouldContinue()) {
             refreshConversationSession();
-            const int restartDelayMs = m_followUpListeningAfterWakeAck
+            int restartDelayMs = m_followUpListeningAfterWakeAck
                 ? followUpListeningDelayMs()
                 : conversationSessionRestartDelayMs();
+            if (m_listeningEngagementPolicy) {
+                restartDelayMs = std::max(restartDelayMs, m_listeningEngagementPolicy->thresholds().postTtsResidueGuardMs);
+            }
             if (!scheduleConversationSessionListening(restartDelayMs)) {
                 endConversationSession();
                 enterPostSpeechCooldown();
@@ -2930,6 +3032,7 @@ void AssistantController::interruptSpeechAndListen()
 
 void AssistantController::startWakeMonitor()
 {
+    const bool allowWhileSpeaking = m_ttsEngine->isSpeaking() || m_duplexState == DuplexState::TtsExclusive;
     if (!m_settings->wakeWordEnabled()) {
         m_wakeMonitorEnabled = false;
         m_wakeStartRequested = false;
@@ -2945,7 +3048,7 @@ void AssistantController::startWakeMonitor()
     m_lastWakeError.clear();
     updateStartupState();
     if (m_wakeWordEngine->isActive()) {
-        if (m_wakeWordEngine->isPaused() && canStartWakeMonitor()) {
+        if (m_wakeWordEngine->isPaused() && canStartWakeMonitor(allowWhileSpeaking)) {
             if (m_wakeWordEngine->usesExternalAudioInput()) {
                 m_activeInputCaptureId = static_cast<quint64>(QDateTime::currentMSecsSinceEpoch());
                 m_audioCaptureMode = AudioCaptureMode::WakeMonitor;
@@ -2956,7 +3059,7 @@ void AssistantController::startWakeMonitor()
         return;
     }
 
-    if (!canStartWakeMonitor()) {
+    if (!canStartWakeMonitor(allowWhileSpeaking)) {
         return;
     }
 
@@ -3303,11 +3406,52 @@ void AssistantController::bindWakeWordEngineSignals()
         clearSurfaceError(QStringLiteral("assistant"));
         updateStartupState();
     });
-    connect(m_wakeWordEngine, &WakeWordEngine::wakeWordDetected, this, [this]() {
+    const auto handleWakeDetection = [this](const QString &keyword) {
         const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+
+        const bool assistantSpeaking = m_ttsEngine->isSpeaking() || m_duplexState == DuplexState::TtsExclusive;
+        if (assistantSpeaking && m_listeningEngagementPolicy) {
+            const BargeInDecision bargeDecision = m_listeningEngagementPolicy->evaluateBargeInKeyword(keyword, true);
+            if (!bargeDecision.allow) {
+                if (m_loggingService) {
+                    m_loggingService->infoFor(
+                        QStringLiteral("follow_up_audit"),
+                        QStringLiteral("[barge_in_reject] keyword=%1 reason=%2 confidence=%3")
+                            .arg(keyword.trimmed().isEmpty() ? QStringLiteral("unknown") : keyword.trimmed(),
+                                 bargeDecision.reasonCode,
+                                 QString::number(bargeDecision.confidence, 'f', 3)));
+                }
+                return;
+            }
+
+            if (m_loggingService) {
+                m_loggingService->infoFor(
+                    QStringLiteral("follow_up_audit"),
+                    QStringLiteral("[barge_in_accept] keyword=%1 reason=%2 confidence=%3 stopIntent=%4")
+                        .arg(keyword.trimmed(),
+                             bargeDecision.reasonCode,
+                             QString::number(bargeDecision.confidence, 'f', 3),
+                             bargeDecision.stopIntent ? QStringLiteral("true") : QStringLiteral("false")));
+            }
+            interruptSpeechAndListen();
+            return;
+        }
+
         if (isMicrophoneBlocked() || nowMs < m_ignoreWakeUntilMs) {
             if (m_loggingService) {
                 m_loggingService->info(QStringLiteral("Wake trigger ignored while microphone gate is closed."));
+            }
+            return;
+        }
+
+        if (m_listeningEngagementPolicy
+            && !keyword.trimmed().isEmpty()
+            && m_listeningEngagementPolicy->isInterruptionKeyword(keyword)) {
+            if (m_loggingService) {
+                m_loggingService->infoFor(
+                    QStringLiteral("wake_engine"),
+                    QStringLiteral("Wake interruption keyword ignored outside assistant speech. keyword=\"%1\"")
+                        .arg(keyword.trimmed()));
             }
             return;
         }
@@ -3341,6 +3485,9 @@ void AssistantController::bindWakeWordEngineSignals()
             }
         }
         activateConversationSession();
+        if (m_listeningEngagementPolicy) {
+            m_listeningEngagementPolicy->openFollowUpWindow(nowMs);
+        }
         m_followUpListeningAfterWakeAck = true;
         m_lastPromptForAiLog = m_settings->wakeWordPhrase();
         if (m_loggingService) {
@@ -3351,6 +3498,13 @@ void AssistantController::bindWakeWordEngineSignals()
             m_localResponseEngine->wakeWordReady(buildLocalResponseContext()),
             QStringLiteral("Listening"),
             false);
+    };
+
+    connect(m_wakeWordEngine, &WakeWordEngine::wakeKeywordDetected, this, [handleWakeDetection](const QString &keyword) {
+        handleWakeDetection(keyword);
+    });
+    connect(m_wakeWordEngine, &WakeWordEngine::wakeWordDetected, this, [handleWakeDetection]() {
+        handleWakeDetection(QString());
     });
     connect(m_wakeWordEngine, &WakeWordEngine::errorOccurred, this, [this](const QString &message) {
         m_wakeEngineReady = false;
@@ -3460,7 +3614,18 @@ void AssistantController::setStatus(const QString &status)
 
 void AssistantController::setDuplexState(DuplexState state)
 {
+    if (m_duplexState == state) {
+        return;
+    }
+
+    const DuplexState previous = m_duplexState;
     m_duplexState = state;
+    if (m_loggingService) {
+        m_loggingService->infoFor(
+            QStringLiteral("follow_up_audit"),
+            QStringLiteral("[duplex_transition] from=%1 to=%2")
+                .arg(QString::number(static_cast<int>(previous)), QString::number(static_cast<int>(state))));
+    }
 }
 
 void AssistantController::invalidateWakeMonitorResume()
@@ -3487,16 +3652,22 @@ void AssistantController::clearActiveSpeechCapture()
 
 void AssistantController::beginTtsExclusiveMode()
 {
-    ignoreWakeTriggersFor(postSpeechWakeResumeDelayMs());
     clearActiveSpeechCapture();
     pauseWakeMonitor();
     setDuplexState(DuplexState::TtsExclusive);
+    if (m_listeningEngagementPolicy) {
+        m_listeningEngagementPolicy->setState(ListeningEngagementState::BargeInEligible);
+    }
+    resumeWakeMonitor(0);
 }
 
 void AssistantController::enterPostSpeechCooldown()
 {
     ignoreWakeTriggersFor(postSpeechWakeResumeDelayMs());
     setDuplexState(DuplexState::Cooldown);
+    if (m_listeningEngagementPolicy) {
+        m_listeningEngagementPolicy->setState(ListeningEngagementState::PostTtsResidueGuard);
+    }
 }
 
 bool AssistantController::isMicrophoneBlocked() const
@@ -3514,6 +3685,18 @@ void AssistantController::activateConversationSession()
 {
     m_conversationSessionActive = true;
     m_consecutiveSessionMisses = 0;
+    if (m_loggingService) {
+        m_loggingService->infoFor(
+            QStringLiteral("follow_up_audit"),
+            QStringLiteral("[follow_up_window_open] reason=conversation_session_activate durationMs=%1")
+                .arg(m_listeningEngagementPolicy
+                    ? m_listeningEngagementPolicy->thresholds().followUpWindowMs
+                    : 6000));
+    }
+    if (m_listeningEngagementPolicy) {
+        m_listeningEngagementPolicy->openFollowUpWindow(QDateTime::currentMSecsSinceEpoch());
+        m_listeningEngagementPolicy->setState(ListeningEngagementState::AwaitingFollowUp);
+    }
     refreshConversationSession();
 }
 
@@ -3528,10 +3711,19 @@ void AssistantController::refreshConversationSession()
 
 void AssistantController::endConversationSession()
 {
+    if (m_loggingService) {
+        m_loggingService->infoFor(
+            QStringLiteral("follow_up_audit"),
+            QStringLiteral("[follow_up_window_close] reason=conversation_session_end"));
+    }
     m_conversationSessionActive = false;
     m_consecutiveSessionMisses = 0;
     m_conversationSessionExpiresAtMs = 0;
     m_followUpListeningAfterWakeAck = false;
+    if (m_listeningEngagementPolicy) {
+        m_listeningEngagementPolicy->clearFollowUpWindow();
+        m_listeningEngagementPolicy->setState(ListeningEngagementState::IdlePassive);
+    }
     if (m_learningDataCollector) {
         m_learningDataCollector->runMaintenance();
     }
@@ -3618,11 +3810,14 @@ void AssistantController::resumeWakeMonitor(int delayMs)
         if (m_duplexState == DuplexState::Cooldown) {
             setDuplexState(DuplexState::Open);
         }
-        if (!canStartWakeMonitor()) {
+        const bool allowWhileSpeaking = m_ttsEngine->isSpeaking() || m_duplexState == DuplexState::TtsExclusive;
+        if (!canStartWakeMonitor(allowWhileSpeaking)) {
             return;
         }
 
-        setDuplexState(DuplexState::WakeOnly);
+        if (!allowWhileSpeaking) {
+            setDuplexState(DuplexState::WakeOnly);
+        }
         if (m_wakeWordEngine->isActive()) {
             if (m_wakeWordEngine->isPaused()) {
                 m_wakeWordEngine->resume();
@@ -3749,17 +3944,17 @@ void AssistantController::scheduleWakeMonitorRestart(int delayMs)
     resumeWakeMonitor(delayMs);
 }
 
-bool AssistantController::canStartWakeMonitor() const
+bool AssistantController::canStartWakeMonitor(bool allowWhileSpeaking) const
 {
 #if !defined(JARVIS_HAS_SHERPA_ONNX) || !JARVIS_HAS_SHERPA_ONNX
     return false;
 #else
+    const bool speakingBlocked = (!allowWhileSpeaking && (isMicrophoneBlocked() || m_ttsEngine->isSpeaking()));
     return m_wakeMonitorEnabled
         && m_settings->wakeWordEnabled()
         && m_currentState != AssistantState::Listening
-        && !isMicrophoneBlocked()
+        && !speakingBlocked
         && m_audioCaptureMode == AudioCaptureMode::None
-        && !m_ttsEngine->isSpeaking()
         && !resolveWakeEngineRuntimePath().isEmpty()
         && !resolveWakeEngineModelPath().isEmpty();
 #endif
@@ -4683,6 +4878,9 @@ bool AssistantController::startAudioCapture(AudioCaptureMode mode, bool announce
     }
     if (announceListening) {
         setDuplexState(DuplexState::Listening);
+        if (m_listeningEngagementPolicy) {
+            m_listeningEngagementPolicy->setState(ListeningEngagementState::UserSpeaking);
+        }
         setStatus(QStringLiteral("Listening"));
         emit listeningRequested();
     } else {
