@@ -10,6 +10,7 @@ private slots:
     void emptyTranscriptIgnored();
     void knownNonSpeechTokenIgnored();
     void knownArtifactIgnored();
+    void correctionPhrasesNotIgnoredAsArtifact();
     void ambiguousShortTokenIgnored();
     void wakePhraseNotAmbiguous();
     void stopPhraseNotAmbiguous();
@@ -46,6 +47,22 @@ void SpeechTranscriptGuardTests::knownArtifactIgnored()
     const SpeechTranscriptDecision decision = guard.evaluate(QStringLiteral("Thanks for watching"), context);
 
     QCOMPARE(decision.disposition, SpeechTranscriptDisposition::IgnoreSttArtifact);
+}
+
+void SpeechTranscriptGuardTests::correctionPhrasesNotIgnoredAsArtifact()
+{
+    SpeechTranscriptGuard guard;
+    SpeechTranscriptGuardContext context;
+    context.conversationSessionActive = true;
+
+    const SpeechTranscriptDecision decision1 = guard.evaluate(QStringLiteral("I mean open AI."), context);
+    QCOMPARE(decision1.disposition, SpeechTranscriptDisposition::Accept);
+
+    const SpeechTranscriptDecision decision2 = guard.evaluate(QStringLiteral("I meant open AI."), context);
+    QCOMPARE(decision2.disposition, SpeechTranscriptDisposition::Accept);
+
+    const SpeechTranscriptDecision decision3 = guard.evaluate(QStringLiteral("No, I told you. I modeled by Oben AI."), context);
+    QCOMPARE(decision3.disposition, SpeechTranscriptDisposition::Accept);
 }
 
 void SpeechTranscriptGuardTests::ambiguousShortTokenIgnored()

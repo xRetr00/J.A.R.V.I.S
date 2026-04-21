@@ -41,23 +41,21 @@ class TaskDispatcher;
 class SpeechRecognizer;
 class TtsEngine;
 class ToolWorker;
-class QTimer;
 class VisionIngestService;
 class WakeWordEngine;
 class WakeWordDataCapture;
 class VoicePipelineRuntime;
 class WorldStateCache;
 class AiRequestCoordinator;
-class ActionThreadTracker;
-struct ActionThreadSelectionResult;
 class AssistantBehaviorPolicy;
 class ExecutionNarrator;
 class InputRouter;
 class MemoryPolicyHandler;
 class ResponseFinalizer;
-class SpeechTranscriptGuard;
-class ListeningEngagementPolicy;
 class ToolCoordinator;
+namespace LearningData {
+class LearningDataCollector;
+}
 class TurnOrchestrationRuntime;
 namespace LearningData {
 class LearningDataCollector;
@@ -276,16 +274,13 @@ private:
                        bool allowFollowUpWakeDelay = false);
     void deliverLocalResponse(const QString &text, const QString &status, bool speak = true);
     void scheduleWakeMonitorRestart(int delayMs = 250);
-    bool canStartWakeMonitor(bool allowWhileSpeaking = false) const;
+    bool canStartWakeMonitor() const;
     void reconfigureGestureActionRouter();
     bool startAudioCapture(AudioCaptureMode mode, bool announceListening);
     void startConversationRequest(const QString &input);
     void startAgentConversationRequest(const QString &input, IntentType expectedIntent);
     void continueAgentConversation(const QList<AgentToolResult> &results);
     QList<AgentToolResult> executeAgentToolCalls(const QList<AgentToolCall> &toolCalls);
-    void startRequestProgressHeartbeat(RequestKind kind, quint64 requestId);
-    void stopRequestProgressHeartbeat();
-    void handleRequestProgressHeartbeat();
     void startCommandRequest(const QString &input);
     void handleVisionSnapshot(const VisionSnapshot &snapshot);
     QString buildDirectVisionResponse(const QString &input) const;
@@ -307,14 +302,9 @@ private:
     void dispatchBackgroundTasks(const QList<AgentTask> &tasks);
     void recordConnectorEvent(const ConnectorEvent &event);
     void recordTaskResult(const QJsonObject &resultObject);
-    void scheduleDeferredTaskResultDrain(int delayMs = 500);
-    void drainDeferredTaskResults();
     void setSurfaceError(const QString &source, const QString &primary, const QString &secondary = QString());
     void clearSurfaceError(const QString &source = QString());
     void startActionThreadCompletionRequest(const ActionThread &thread);
-    ActionThreadSelectionResult selectActionThreadContinuation(const QString &input,
-                                                               const InputRouteDecision &decision,
-                                                               qint64 nowMs) const;
     bool shouldContinueActionThread(const QString &input,
                                     const InputRouteDecision &decision,
                                     qint64 nowMs) const;
@@ -410,16 +400,12 @@ private:
     std::unique_ptr<AiRequestCoordinator> m_aiRequestCoordinator;
     std::unique_ptr<ActionThreadTracker> m_actionThreadTracker;
     std::unique_ptr<SpeechTranscriptGuard> m_speechTranscriptGuard;
-    std::unique_ptr<ListeningEngagementPolicy> m_listeningEngagementPolicy;
     std::unique_ptr<AssistantBehaviorPolicy> m_assistantBehaviorPolicy;
     std::unique_ptr<ExecutionNarrator> m_executionNarrator;
     std::unique_ptr<MemoryPolicyHandler> m_memoryPolicyHandler;
     std::unique_ptr<ToolCoordinator> m_toolCoordinator;
     std::unique_ptr<TurnOrchestrationRuntime> m_turnOrchestrationRuntime;
-    std::unique_ptr<LearningData::LearningDataCollector> m_learningDataCollector;
-    std::unique_ptr<WakeWordDataCapture> m_wakeWordDataCapture;
-    SkillStore *m_skillStore = nullptr;
-    AgentToolbox *m_agentToolbox = nullptr;
+  AgentToolbox *m_agentToolbox = nullptr;
     DeviceManager *m_deviceManager = nullptr;
     IntentEngine *m_intentEngine = nullptr;
     IntentDetector *m_backgroundIntentDetector = nullptr;
@@ -456,10 +442,6 @@ private:
     QString m_lastAgentInput;
     IntentType m_lastAgentIntent = IntentType::GENERAL_CHAT;
     ReasoningMode m_activeReasoningMode = ReasoningMode::Balanced;
-    QTimer *m_requestProgressHeartbeatTimer = nullptr;
-    RequestKind m_progressHeartbeatRequestKind = RequestKind::Conversation;
-    quint64 m_progressHeartbeatRequestId = 0;
-    int m_progressHeartbeatIndex = 0;
     bool m_activeAgentUsesResponses = false;
     ActionSession m_activeActionSession;
     bool m_hasPendingConfirmation = false;
@@ -467,6 +449,7 @@ private:
     InputRouteDecision m_pendingRouteDecision;
     QString m_pendingRouteInput;
     LocalIntent m_pendingLocalIntent = LocalIntent::Unknown;
+    std::optional<ActionThread> m_recentActionThread;
     QString m_previousAgentResponseId;
     int m_activeAgentIteration = 0;
     AgentCapabilitySet m_agentCapabilities;
@@ -491,8 +474,6 @@ private:
     AudioCaptureMode m_lastCompletedCaptureMode = AudioCaptureMode::None;
     bool m_wakeMonitorEnabled = false;
     bool m_followUpListeningAfterWakeAck = false;
-    qint64 m_lastWakeKeywordDetectedAtMs = 0;
-    QString m_lastWakeKeyword;
     bool m_conversationSessionActive = false;
     int m_consecutiveSessionMisses = 0;
     qint64 m_conversationSessionExpiresAtMs = 0;
@@ -505,9 +486,6 @@ private:
     bool m_wakeStartRequested = false;
     bool m_learningSessionStarted = false;
     bool m_lastInputFromVoice = false;
-    bool m_lastSpeechAttemptAccepted = false;
-    bool m_lastSpeechAttemptNearField = false;
-    float m_lastSpeechAttemptConfidence = 0.0f;
     QString m_lastWakeError;
     QString m_learningSessionId;
     QString m_learningSessionStartedAt;
@@ -533,9 +511,6 @@ private:
     QHash<QString, QStringList> m_lastPromptContextKeysByPurpose;
     QHash<QString, qint64> m_lastPromptContextChangedAtMsByPurpose;
     QHash<QString, int> m_promptContextStableCyclesByPurpose;
-    QList<QJsonObject> m_deferredTaskResultObjects;
-    bool m_deferredTaskResultDrainScheduled = false;
-    bool m_drainingDeferredTaskResult = false;
     std::unique_ptr<ResponseFinalizer> m_responseFinalizer;
     QThread m_toolWorkerThread;
     QThread m_gestureActionRouterThread;

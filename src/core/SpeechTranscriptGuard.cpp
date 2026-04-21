@@ -16,36 +16,40 @@ QString normalizeStageAnnotation(const QString &input)
     return normalized;
 }
 
-bool isLikelyNonSpeechTranscript(const QString &input)
+QString nonSpeechIgnoreReason(const QString &input)
 {
     const QString trimmed = input.trimmed();
     if (trimmed.isEmpty()) {
-        return true;
+        return QStringLiteral("non_speech.empty");
     }
 
     const bool bracketed = (trimmed.startsWith(QChar::fromLatin1('[')) && trimmed.endsWith(QChar::fromLatin1(']')))
         || (trimmed.startsWith(QChar::fromLatin1('(')) && trimmed.endsWith(QChar::fromLatin1(')')));
     if (!bracketed) {
-        return false;
+        return {};
     }
 
     const QString normalized = normalizeStageAnnotation(trimmed);
-    return normalized == QStringLiteral("musicplaying")
+    if (normalized == QStringLiteral("musicplaying")
         || normalized == QStringLiteral("applause")
         || normalized == QStringLiteral("laughter")
         || normalized == QStringLiteral("silence")
         || normalized == QStringLiteral("noise")
         || normalized == QStringLiteral("backgroundnoise")
-        || normalized == QStringLiteral("inaudible");
+        || normalized == QStringLiteral("inaudible")) {
+        return QStringLiteral("non_speech.stage_annotation");
+    }
+
+    return {};
 }
 
-bool isLikelySttArtifactTranscript(const QString &input)
+QString sttArtifactIgnoreReason(const QString &input)
 {
     QString normalized = input.toLower();
     normalized.replace(QRegularExpression(QStringLiteral("[^a-z0-9]+")), QStringLiteral(" "));
     normalized = normalized.simplified();
     if (normalized.isEmpty()) {
-        return true;
+        return QStringLiteral("stt_artifact.empty");
     }
 
     static const QStringList knownArtifacts = {
@@ -66,25 +70,25 @@ bool isLikelySttArtifactTranscript(const QString &input)
         const QString escaped = QRegularExpression::escape(phrase);
         const QString pattern = QStringLiteral("(^|\\s)%1(\\s|$)").arg(escaped).replace(QStringLiteral("\\ "), QStringLiteral("\\s+"));
         if (QRegularExpression(pattern).match(normalized).hasMatch()) {
-            return true;
+            return QStringLiteral("stt_artifact.known_phrase");
         }
     }
 
     const QStringList words = normalized.split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
-    if (QRegularExpression(QStringLiteral("\\b(?:www\\s+)?[a-z0-9]+\\s+(?:com|net|org|io|ai)\\b")).match(normalized).hasMatch()) {
-        return true;
+    if (QRegularExpression(QStringLiteral("\\b(?:www\\s+)?[a-z0-9]+\\s+(?:com|net|org|io)\\b")).match(normalized).hasMatch()) {
+        return QStringLiteral("stt_artifact.domain_like");
     }
     if (words.size() <= 3) {
         for (const QString &word : words) {
             if (word.startsWith(QStringLiteral("transcrib"))
                 || word.startsWith(QStringLiteral("subtitle"))
                 || word.startsWith(QStringLiteral("caption"))) {
-                return true;
+                return QStringLiteral("stt_artifact.keyword");
             }
         }
     }
 
-    return false;
+    return {};
 }
 
 QStringList transcriptWords(const QString &input)
@@ -248,14 +252,14 @@ bool isConversationStopPhrase(const QString &input)
     return false;
 }
 
-bool shouldIgnoreAmbiguousTranscript(const QString &transcript,
-                                     const SpeechTranscriptGuardContext &context,
-                                     bool wakePhraseDetected,
-                                     bool stopPhraseDetected)
+QString ambiguousIgnoreReason(const QString &transcript,
+                              const SpeechTranscriptGuardContext &context,
+                              bool wakePhraseDetected,
+                              bool stopPhraseDetected)
 {
     const QStringList words = transcriptWords(transcript);
     if (words.isEmpty()) {
-        return true;
+        return QStringLiteral("ambiguous.empty");
     }
 
     const QString joined = words.join(QStringLiteral(" "));
@@ -274,11 +278,11 @@ bool shouldIgnoreAmbiguousTranscript(const QString &transcript,
         QStringLiteral("it's a time")
     };
     if (ambiguousPhrases.contains(joined)) {
-        return true;
+        return QStringLiteral("ambiguous.phrase");
     }
 
     if (wakePhraseDetected || stopPhraseDetected) {
-        return false;
+        return {};
     }
 
     if (words.size() == 1) {
@@ -292,23 +296,23 @@ bool shouldIgnoreAmbiguousTranscript(const QString &transcript,
             QStringLiteral("start")
         };
         if (!allowSingleWordCommands.contains(token) && token.size() <= 3) {
-            return true;
+            return QStringLiteral("ambiguous.short_token");
         }
     }
 
     if (context.conversationSessionActive && !startsWithAllowedFollowUpWord(words)) {
         if (allWordsLowSignal(words)) {
-            return true;
+            return QStringLiteral("ambiguous.low_signal_follow_up");
         }
 
         if (words.size() <= 3
             && isLowSignalConversationToken(words.first())
             && allWordsLowSignal(words.mid(0, std::min<qsizetype>(words.size(), 3)))) {
-            return true;
+            return QStringLiteral("ambiguous.low_signal_prefix");
         }
     }
 
-    return false;
+    return {};
 }
 }
 
@@ -319,20 +323,25 @@ SpeechTranscriptDecision SpeechTranscriptGuard::evaluate(const QString &transcri
     decision.wakePhraseDetected = WakeWordDetector::isWakeWordDetected(transcript);
     decision.stopPhraseDetected = isConversationStopPhrase(transcript);
 
-    if (isLikelyNonSpeechTranscript(transcript)) {
+    if (const QString reason = nonSpeechIgnoreReason(transcript); !reason.isEmpty()) {
         decision.disposition = SpeechTranscriptDisposition::IgnoreNonSpeech;
+        decision.reasonCode = reason;
         return decision;
     }
-    if (isLikelySttArtifactTranscript(transcript)) {
+    if (const QString reason = sttArtifactIgnoreReason(transcript); !reason.isEmpty()) {
         decision.disposition = SpeechTranscriptDisposition::IgnoreSttArtifact;
+        decision.reasonCode = reason;
         return decision;
     }
-    if (shouldIgnoreAmbiguousTranscript(transcript, context, decision.wakePhraseDetected, decision.stopPhraseDetected)) {
+    if (const QString reason = ambiguousIgnoreReason(transcript, context, decision.wakePhraseDetected, decision.stopPhraseDetected);
+        !reason.isEmpty()) {
         decision.disposition = SpeechTranscriptDisposition::IgnoreAmbiguous;
+        decision.reasonCode = reason;
         return decision;
     }
 
     decision.disposition = SpeechTranscriptDisposition::Accept;
+    decision.reasonCode = QStringLiteral("accept");
     return decision;
 }
 

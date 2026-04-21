@@ -19,6 +19,7 @@ struct SpeechTranscriptDecision
     SpeechTranscriptDisposition disposition = SpeechTranscriptDisposition::Accept;
     bool wakePhraseDetected = false;
     bool stopPhraseDetected = false;
+    QString reasonCode;
 };
 
 class SpeechTranscriptGuard
