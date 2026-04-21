@@ -7,6 +7,7 @@
 #include "core/ActionThreadSelectionPolicy.h"
 #include "core/InputRouter.h"
 #include "core/ToolPermissionRegistry.h"
+#include "core/intent/TurnSignalExtractor.h"
 
 class AssistantBehaviorPolicyTests : public QObject
 {
@@ -33,6 +34,8 @@ private slots:
     void continuesResultAndInspectionFollowUpsAgainstRecentActionThread();
     void ignoresFreshRequestAgainstRecentActionThread();
     void rejectsFreshActionWithPronounAgainstRecentActionThread();
+    void doesNotShortCircuitSocialPrefixWhenRequestFollows();
+    void treatsOpenSourceQuestionAsConversationNotCommandExtraction();
     void selectionPolicyClarifiesAmbiguousRecentThreads();
     void selectionPolicyRetriesFailedAndAuditsCanceledThreads();
     void selectionPolicyTreatsWhatHappenedAsRecentTaskAudit();
@@ -503,6 +506,39 @@ void AssistantBehaviorPolicyTests::rejectsFreshActionWithPronounAgainstRecentAct
         decision,
         thread,
         QDateTime::currentMSecsSinceEpoch()));
+}
+
+void AssistantBehaviorPolicyTests::doesNotShortCircuitSocialPrefixWhenRequestFollows()
+{
+    AssistantBehaviorPolicy policy;
+    TurnSignalExtractor extractor;
+
+    InputRouterContext context;
+    context.aiAvailable = true;
+    context.agentEnabled = true;
+    context.localIntent = LocalIntent::Greeting;
+    context.hasV2Signals = true;
+    context.turnSignals = extractor.extract(QStringLiteral("hi explain this error"));
+
+    const InputRouteDecision decision = policy.decideRoute(context);
+    QVERIFY(decision.kind != InputRouteKind::LocalResponse);
+}
+
+void AssistantBehaviorPolicyTests::treatsOpenSourceQuestionAsConversationNotCommandExtraction()
+{
+    AssistantBehaviorPolicy policy;
+    TurnSignalExtractor extractor;
+
+    InputRouterContext context;
+    context.aiAvailable = true;
+    context.agentEnabled = true;
+    context.localIntent = LocalIntent::Command;
+    context.likelyCommand = true;
+    context.hasV2Signals = true;
+    context.turnSignals = extractor.extract(QStringLiteral("what does open source mean?"));
+
+    const InputRouteDecision decision = policy.decideRoute(context);
+    QCOMPARE(decision.kind, InputRouteKind::Conversation);
 }
 
 void AssistantBehaviorPolicyTests::selectionPolicyClarifiesAmbiguousRecentThreads()

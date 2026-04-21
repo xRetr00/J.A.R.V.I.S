@@ -443,6 +443,12 @@ bool isSpecificContinuationRequest(const QString &input)
 InputRouteDecision AssistantBehaviorPolicy::decideRoute(const InputRouterContext &context) const
 {
     InputRouteDecision decision;
+    const bool socialOnly = context.hasV2Signals
+        ? context.turnSignals.socialOnly
+        : (context.localIntent == LocalIntent::Greeting || context.localIntent == LocalIntent::SmallTalk);
+    const bool hasCommandCue = context.hasV2Signals
+        ? context.turnSignals.hasCommandCue
+        : (context.localIntent == LocalIntent::Command || context.likelyCommand);
 
     if (context.wakeOnly) {
         decision.kind = InputRouteKind::LocalResponse;
@@ -486,7 +492,7 @@ InputRouteDecision AssistantBehaviorPolicy::decideRoute(const InputRouterContext
         return decision;
     }
 
-    if (context.localIntent == LocalIntent::Greeting || context.localIntent == LocalIntent::SmallTalk) {
+    if (socialOnly) {
         decision.kind = InputRouteKind::LocalResponse;
         decision.status = QStringLiteral("Local response");
         return decision;
@@ -564,7 +570,7 @@ InputRouteDecision AssistantBehaviorPolicy::decideRoute(const InputRouterContext
         return decision;
     }
 
-    if (context.localIntent == LocalIntent::Command || context.likelyCommand) {
+    if (hasCommandCue) {
         decision.kind = InputRouteKind::CommandExtraction;
         return decision;
     }

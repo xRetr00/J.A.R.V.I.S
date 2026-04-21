@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/AssistantTypes.h"
+#include "core/intent/SmartIntentTypes.h"
 
 class AssistantBehaviorPolicy;
 
@@ -33,6 +34,8 @@ struct InputRouterContext {
     IntentType effectiveIntent = IntentType::GENERAL_CHAT;
     float effectiveIntentConfidence = 0.0f;
     bool explicitComputerControl = false;
+    bool hasV2Signals = false;
+    TurnSignals turnSignals;
 };
 
 class InputRouter

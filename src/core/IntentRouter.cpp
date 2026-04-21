@@ -86,7 +86,7 @@ LocalIntent IntentRouter::classify(const QString &input) const
     }
 
     for (const auto &keyword : m_commandKeywords) {
-        if (startsWithKeyword(lowered, keyword) || containsKeyword(lowered, keyword)) {
+        if (startsWithKeyword(lowered, keyword)) {
             return LocalIntent::Command;
         }
     }

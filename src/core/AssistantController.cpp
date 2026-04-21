@@ -47,6 +47,12 @@
 #include "core/StartupReadinessPolicy.h"
 #include "core/ToolCoordinator.h"
 #include "core/TurnOrchestrationRuntime.h"
+#include "core/intent/TurnSignalExtractor.h"
+#include "core/intent/TurnStateAnalyzer.h"
+#include "core/intent/UserGoalInferer.h"
+#include "core/intent/ExecutionIntentPlanner.h"
+#include "core/intent/RouteArbitrator.h"
+#include "core/intent/RoutingTraceEmitter.h"
 #include "behavior_tuning/CompiledContextPolicyTuningPromotionPolicy.h"
 #include "behavior_tuning/FeedbackSignalEventBuilder.h"
 #include "connectors/BrowserBookmarksMonitor.h"
@@ -1351,6 +1357,12 @@ AssistantController::AssistantController(
     m_executionNarrator = std::make_unique<ExecutionNarrator>();
     m_memoryPolicyHandler = std::make_unique<MemoryPolicyHandler>(m_identityProfileService, m_memoryStore);
     m_toolCoordinator = std::make_unique<ToolCoordinator>(m_loggingService, m_executionNarrator.get());
+    m_turnSignalExtractor = std::make_unique<TurnSignalExtractor>();
+    m_turnStateAnalyzer = std::make_unique<TurnStateAnalyzer>();
+    m_userGoalInferer = std::make_unique<UserGoalInferer>();
+    m_executionIntentPlanner = std::make_unique<ExecutionIntentPlanner>();
+    m_routeArbitrator = std::make_unique<RouteArbitrator>();
+    m_routingTraceEmitter = std::make_unique<RoutingTraceEmitter>();
     m_learningDataCollector = std::make_unique<LearningData::LearningDataCollector>(m_settings, m_loggingService);
     m_wakeWordDataCapture = std::make_unique<WakeWordDataCapture>(m_settings);
     m_skillStore = new SkillStore(this);
@@ -2197,6 +2209,11 @@ InputRouterContext AssistantController::buildInputRouteContext(const QString &ro
     }
 
     InputRouterContext routeContext;
+    const TurnSignals turnSignals = m_turnSignalExtractor
+        ? m_turnSignalExtractor->extract(routedInput)
+        : TurnSignals{};
+    routeContext.hasV2Signals = m_turnSignalExtractor != nullptr;
+    routeContext.turnSignals = turnSignals;
     routeContext.wakeOnly = wakeOnly;
     routeContext.shouldEndConversation = shouldEndConversation;
     routeContext.isTimeQuery = isTimeQuery;
@@ -2223,7 +2240,9 @@ InputRouterContext AssistantController::buildInputRouteContext(const QString &ro
     routeContext.freshnessSensitive = !visionRelevantQuery && !routeContext.desktopContextRecall && m_settings->agentEnabled() && isFreshnessSensitiveQuery(routedInput);
     routeContext.agentEnabled = m_settings->agentEnabled();
     routeContext.explicitAgentWorldQuery = isExplicitAgentWorldQuery(routedInput);
-    routeContext.likelyCommand = m_reasoningRouter->isLikelyCommand(routedInput);
+    routeContext.likelyCommand = routeContext.hasV2Signals
+        ? routeContext.turnSignals.hasCommandCue
+        : m_reasoningRouter->isLikelyCommand(routedInput);
     routeContext.effectiveIntent = effectiveIntent.type;
     routeContext.effectiveIntentConfidence = effectiveIntent.confidence;
     routeContext.explicitComputerControl = isExplicitComputerControlQuery(routedInput);
@@ -2234,7 +2253,8 @@ bool AssistantController::executeRouteDecision(const InputRouteDecision &decisio
                                                const QString &routedInput,
                                                LocalIntent localIntent,
                                                bool confirmationGranted,
-                                               qint64 nowMs)
+                                               qint64 nowMs,
+                                               QString *executedRoute)
 {
     if (m_loggingService) {
         m_loggingService->setRuntimeContext(
@@ -2385,11 +2405,17 @@ bool AssistantController::executeRouteDecision(const InputRouteDecision &decisio
                 ? m_executionNarrator->statusForSession(m_activeActionSession, QStringLiteral("Confirmation needed"))
                 : QStringLiteral("Confirmation needed"),
             true);
+        if (executedRoute != nullptr) {
+            *executedRoute = QStringLiteral("pending_confirmation");
+        }
         return true;
     }
 
     switch (decision.kind) {
     case InputRouteKind::LocalResponse: {
+        if (executedRoute != nullptr) {
+            *executedRoute = QStringLiteral("local_response");
+        }
         if (m_loggingService) {
             m_loggingService->infoFor(QStringLiteral("route_audit"), QStringLiteral("[route_outcome] resolved=local_response"));
         }
@@ -2422,6 +2448,9 @@ bool AssistantController::executeRouteDecision(const InputRouteDecision &decisio
         return true;
     }
     case InputRouteKind::AgentCapabilityError:
+        if (executedRoute != nullptr) {
+            *executedRoute = QStringLiteral("agent_capability_error");
+        }
         if (m_loggingService) {
             m_loggingService->warnFor(QStringLiteral("route_audit"), QStringLiteral("[route_outcome] resolved=agent_capability_error"));
         }
@@ -2435,6 +2464,11 @@ bool AssistantController::executeRouteDecision(const InputRouteDecision &decisio
         return true;
     case InputRouteKind::BackgroundTasks:
     case InputRouteKind::DeterministicTasks: {
+        if (executedRoute != nullptr) {
+            *executedRoute = decision.kind == InputRouteKind::DeterministicTasks
+                ? QStringLiteral("deterministic_tasks")
+                : QStringLiteral("background_tasks");
+        }
         if (m_loggingService) {
             m_loggingService->infoFor(
                 QStringLiteral("route_audit"),
@@ -2462,6 +2496,9 @@ bool AssistantController::executeRouteDecision(const InputRouteDecision &decisio
         return true;
     }
     case InputRouteKind::AgentConversation:
+        if (executedRoute != nullptr) {
+            *executedRoute = QStringLiteral("agent_conversation");
+        }
         if (m_loggingService) {
             m_loggingService->infoFor(QStringLiteral("route_audit"), QStringLiteral("[route_outcome] resolved=agent_conversation"));
         }
@@ -2473,6 +2510,9 @@ bool AssistantController::executeRouteDecision(const InputRouteDecision &decisio
         startAgentConversationRequest(routedInput, decision.intent);
         return true;
     case InputRouteKind::CommandExtraction:
+        if (executedRoute != nullptr) {
+            *executedRoute = QStringLiteral("command_extraction");
+        }
         if (m_loggingService) {
             m_loggingService->infoFor(QStringLiteral("route_audit"), QStringLiteral("[route_outcome] resolved=command_extraction"));
         }
@@ -2484,6 +2524,9 @@ bool AssistantController::executeRouteDecision(const InputRouteDecision &decisio
         startCommandRequest(routedInput);
         return true;
     case InputRouteKind::Conversation:
+        if (executedRoute != nullptr) {
+            *executedRoute = QStringLiteral("conversation");
+        }
         if (m_loggingService) {
             m_loggingService->infoFor(QStringLiteral("route_audit"), QStringLiteral("[route_outcome] resolved=conversation"));
         }
@@ -2625,7 +2668,86 @@ void AssistantController::submitText(const QString &text)
         deterministicTask,
         deterministicSpoken,
         nowMs);
-    const InputRouteDecision decision = m_inputRouter->decide(routeContext);
+    RoutingTrace routingTrace;
+    routingTrace.rawInput = trimmed;
+    routingTrace.normalizedInput = routeContext.turnSignals.normalizedInput;
+    routingTrace.turnSignals = routeContext.turnSignals;
+    routingTrace.legacySignals.localIntent = routeContext.localIntent;
+    routingTrace.legacySignals.likelyCommand = routeContext.likelyCommand;
+    routingTrace.legacySignals.hasDeterministicTask = routeContext.hasDeterministicTask;
+    routingTrace.legacySignals.explicitWebSearch = routeContext.explicitWebSearch;
+    routingTrace.legacySignals.likelyKnowledgeLookup = routeContext.likelyKnowledgeLookup;
+    routingTrace.legacySignals.freshnessSensitive = routeContext.freshnessSensitive;
+    routingTrace.legacySignals.desktopContextRecall = routeContext.desktopContextRecall;
+    routingTrace.legacySignals.explicitAgentWorldQuery = routeContext.explicitAgentWorldQuery;
+    routingTrace.legacySignals.explicitComputerControl = routeContext.explicitComputerControl;
+    routingTrace.intentSnapshot.mlIntent = mlIntent.type;
+    routingTrace.intentSnapshot.mlConfidence = mlIntent.confidence;
+    routingTrace.intentSnapshot.detectorIntent = detectedIntent.type;
+    routingTrace.intentSnapshot.detectorConfidence = detectedIntent.confidence;
+    routingTrace.intentSnapshot.effectiveIntent = effectiveIntent.type;
+    routingTrace.intentSnapshot.effectiveConfidence = effectiveIntent.confidence;
+    routingTrace.deterministicMatched = hasDeterministicTask;
+    routingTrace.deterministicTaskType = deterministicTask.type;
+
+    const bool hasUsableActionThread = m_actionThreadTracker
+        ? m_actionThreadTracker->isCurrentUsable(nowMs)
+        : false;
+    const bool hasAnyActionThread = m_actionThreadTracker
+        ? m_actionThreadTracker->hasCurrent()
+        : false;
+    if (m_turnStateAnalyzer) {
+        TurnStateInput turnStateInput;
+        turnStateInput.normalizedInput = routeContext.turnSignals.normalizedInput;
+        turnStateInput.turnSignals = routeContext.turnSignals;
+        turnStateInput.hasPendingConfirmation = m_hasPendingConfirmation;
+        turnStateInput.hasUsableActionThread = hasUsableActionThread;
+        turnStateInput.hasAnyActionThread = hasAnyActionThread;
+        routingTrace.turnState = m_turnStateAnalyzer->analyze(turnStateInput);
+    }
+    if (m_userGoalInferer) {
+        routingTrace.goals = m_userGoalInferer->infer(
+            routeContext.turnSignals,
+            routingTrace.turnState,
+            hasDeterministicTask);
+    }
+    if (m_executionIntentPlanner) {
+        routingTrace.candidates = m_executionIntentPlanner->plan(
+            routingTrace.goals,
+            routeContext.turnSignals,
+            hasDeterministicTask,
+            deterministicTask);
+    }
+
+    const InputRouteDecision policyDecision = m_inputRouter->decide(routeContext);
+    routingTrace.policyDecision = policyDecision;
+    if (m_routeArbitrator) {
+        routingTrace.arbitratorResult = m_routeArbitrator->arbitrate(
+            policyDecision,
+            routeContext.turnSignals,
+            routingTrace.turnState,
+            routingTrace.goals,
+            routingTrace.candidates,
+            hasDeterministicTask);
+    } else {
+        routingTrace.arbitratorResult.decision = policyDecision;
+    }
+
+    const bool useArbitratorAuthority =
+        routeContext.turnSignals.socialOnly
+        || (routeContext.turnSignals.hasCommandCue && routeContext.turnSignals.hasQuestionCue)
+        || (hasDeterministicTask && routeContext.turnSignals.hasGreeting);
+    InputRouteDecision decision = policyDecision;
+    if (useArbitratorAuthority) {
+        decision = routingTrace.arbitratorResult.decision;
+        routingTrace.usedArbitratorAuthority = true;
+        routingTrace.overridesApplied.push_back(QStringLiteral("authority.v2_controlled"));
+        routingTrace.reasonCodes.append(routingTrace.arbitratorResult.reasonCodes);
+    } else {
+        routingTrace.reasonCodes.push_back(QStringLiteral("authority.legacy_policy"));
+    }
+    routingTrace.finalDecision = decision;
+
     if (m_loggingService) {
         m_loggingService->infoFor(
             QStringLiteral("route_audit"),
@@ -2639,10 +2761,20 @@ void AssistantController::submitText(const QString &text)
                      intentTypeToString(decision.intent),
                      decision.status.simplified(),
                      QString::number(decision.tasks.size())));
+        if (routingTrace.arbitratorResult.decision.kind != policyDecision.kind) {
+            m_loggingService->infoFor(
+                QStringLiteral("route_audit"),
+                QStringLiteral("[route_shadow_compare] policy=%1 arbitrator=%2 promoted=%3")
+                    .arg(routeKindToString(policyDecision.kind),
+                         routeKindToString(routingTrace.arbitratorResult.decision.kind),
+                         routingTrace.usedArbitratorAuthority ? QStringLiteral("true") : QStringLiteral("false")));
+        }
     }
     if (shouldContinueActionThread(effectiveInput, decision, nowMs)) {
         m_lastPromptForAiLog = effectiveInput;
         const QString continuationInput = buildActionThreadContinuationInput(effectiveInput);
+        routingTrace.overridesApplied.push_back(QStringLiteral("override.action_thread_continuation"));
+        routingTrace.reasonCodes.push_back(QStringLiteral("continuation.override"));
         if (m_loggingService) {
             m_loggingService->infoFor(
                 QStringLiteral("follow_up_audit"),
@@ -2653,8 +2785,16 @@ void AssistantController::submitText(const QString &text)
                              : QStringLiteral("conversation")));
         }
         if (m_settings->agentEnabled() && availability.online && availability.modelAvailable) {
+            routingTrace.finalExecutedRoute = QStringLiteral("agent_conversation");
+            if (m_routingTraceEmitter) {
+                m_routingTraceEmitter->emitRouteFinal(m_loggingService, routingTrace);
+            }
             startAgentConversationRequest(continuationInput, IntentType::GENERAL_CHAT);
         } else {
+            routingTrace.finalExecutedRoute = QStringLiteral("conversation");
+            if (m_routingTraceEmitter) {
+                m_routingTraceEmitter->emitRouteFinal(m_loggingService, routingTrace);
+            }
             startConversationRequest(continuationInput);
         }
         return;
@@ -2673,14 +2813,29 @@ void AssistantController::submitText(const QString &text)
             break;
         }
     }
-    if (!executeRouteDecision(decision, routedInput, intent, false, nowMs)) {
+    QString executedRoute;
+    if (!executeRouteDecision(decision, routedInput, intent, false, nowMs, &executedRoute)) {
         if (m_loggingService) {
             m_loggingService->warnFor(
                 QStringLiteral("route_audit"),
                 QStringLiteral("[route_fallback] decision unresolved, defaulting to conversation input=%1")
                     .arg(userFacingPromptForLogging(routedInput).left(320)));
         }
+        routingTrace.overridesApplied.push_back(QStringLiteral("override.fallback_conversation"));
+        routingTrace.reasonCodes.push_back(QStringLiteral("route.fallback"));
+        routingTrace.finalExecutedRoute = QStringLiteral("conversation");
+        if (m_routingTraceEmitter) {
+            m_routingTraceEmitter->emitRouteFinal(m_loggingService, routingTrace);
+        }
         startConversationRequest(routedInput);
+    } else {
+        routingTrace.finalExecutedRoute = executedRoute.trimmed().isEmpty()
+            ? routeKindToString(decision.kind).toLower()
+            : executedRoute;
+        routingTrace.confirmationGateTriggered = routingTrace.finalExecutedRoute == QStringLiteral("pending_confirmation");
+        if (m_routingTraceEmitter) {
+            m_routingTraceEmitter->emitRouteFinal(m_loggingService, routingTrace);
+        }
     }
 }
 
@@ -6245,6 +6400,14 @@ bool AssistantController::handlePendingConfirmationInput(const QString &input)
         return false;
     }
 
+    RoutingTrace confirmationTrace;
+    confirmationTrace.rawInput = input;
+    confirmationTrace.normalizedInput = input.trimmed().toLower();
+    confirmationTrace.policyDecision = m_pendingRouteDecision;
+    confirmationTrace.finalDecision = m_pendingRouteDecision;
+    confirmationTrace.confirmationGateTriggered = true;
+    confirmationTrace.reasonCodes = {QStringLiteral("confirmation.pending_reply")};
+
     if (m_assistantBehaviorPolicy->isConfirmationReply(input, m_pendingActionSession)) {
         const ActionRiskPermissionEvaluation evaluation = ActionRiskPermissionService::evaluate(
             m_pendingActionSession.toolPlan,
@@ -6273,7 +6436,22 @@ bool AssistantController::handlePendingConfirmationInput(const QString &input)
             {},
             QStringLiteral("normal"));
         clearPendingConfirmation();
-        executeRouteDecision(pendingDecision, pendingInput, pendingLocalIntent, true, QDateTime::currentMSecsSinceEpoch());
+        QString executedRoute;
+        executeRouteDecision(
+            pendingDecision,
+            pendingInput,
+            pendingLocalIntent,
+            true,
+            QDateTime::currentMSecsSinceEpoch(),
+            &executedRoute);
+        confirmationTrace.confirmationOutcome = QStringLiteral("approved");
+        confirmationTrace.finalExecutedRoute = executedRoute.trimmed().isEmpty()
+            ? QStringLiteral("approved_no_route")
+            : executedRoute;
+        confirmationTrace.overridesApplied = {QStringLiteral("override.confirmation_approved")};
+        if (m_routingTraceEmitter) {
+            m_routingTraceEmitter->emitRouteFinal(m_loggingService, confirmationTrace);
+        }
         return true;
     }
 
@@ -6309,6 +6487,12 @@ bool AssistantController::handlePendingConfirmationInput(const QString &input)
                 : QStringLiteral("Okay, I won't run that action."),
             QStringLiteral("Action canceled"),
             true);
+        confirmationTrace.confirmationOutcome = QStringLiteral("rejected");
+        confirmationTrace.finalExecutedRoute = QStringLiteral("local_response");
+        confirmationTrace.overridesApplied = {QStringLiteral("override.confirmation_rejected")};
+        if (m_routingTraceEmitter) {
+            m_routingTraceEmitter->emitRouteFinal(m_loggingService, confirmationTrace);
+        }
         return true;
     }
 
@@ -6336,6 +6520,12 @@ bool AssistantController::handlePendingConfirmationInput(const QString &input)
         {},
         QStringLiteral("low"));
     clearPendingConfirmation();
+    confirmationTrace.confirmationOutcome = QStringLiteral("unrecognized");
+    confirmationTrace.finalExecutedRoute = QStringLiteral("none");
+    confirmationTrace.overridesApplied = {QStringLiteral("override.confirmation_unrecognized")};
+    if (m_routingTraceEmitter) {
+        m_routingTraceEmitter->emitRouteFinal(m_loggingService, confirmationTrace);
+    }
     return false;
 }
 

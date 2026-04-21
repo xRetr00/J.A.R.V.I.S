@@ -47,12 +47,20 @@ class WakeWordDataCapture;
 class VoicePipelineRuntime;
 class WorldStateCache;
 class AiRequestCoordinator;
+class ActionThreadTracker;
 class AssistantBehaviorPolicy;
 class ExecutionNarrator;
 class InputRouter;
 class MemoryPolicyHandler;
 class ResponseFinalizer;
+class SpeechTranscriptGuard;
 class ToolCoordinator;
+class TurnSignalExtractor;
+class TurnStateAnalyzer;
+class UserGoalInferer;
+class ExecutionIntentPlanner;
+class RouteArbitrator;
+class RoutingTraceEmitter;
 namespace LearningData {
 class LearningDataCollector;
 }
@@ -261,7 +269,8 @@ private:
                               const QString &routedInput,
                               LocalIntent localIntent,
                               bool confirmationGranted,
-                              qint64 nowMs);
+                              qint64 nowMs,
+                              QString *executedRoute = nullptr);
     bool shouldIgnoreAmbiguousTranscript(const QString &transcript) const;
     bool shouldEndConversationSession(const QString &input) const;
     void handleConversationSessionMiss(const QString &statusText);
@@ -404,8 +413,17 @@ private:
     std::unique_ptr<ExecutionNarrator> m_executionNarrator;
     std::unique_ptr<MemoryPolicyHandler> m_memoryPolicyHandler;
     std::unique_ptr<ToolCoordinator> m_toolCoordinator;
+    std::unique_ptr<TurnSignalExtractor> m_turnSignalExtractor;
+    std::unique_ptr<TurnStateAnalyzer> m_turnStateAnalyzer;
+    std::unique_ptr<UserGoalInferer> m_userGoalInferer;
+    std::unique_ptr<ExecutionIntentPlanner> m_executionIntentPlanner;
+    std::unique_ptr<RouteArbitrator> m_routeArbitrator;
+    std::unique_ptr<RoutingTraceEmitter> m_routingTraceEmitter;
     std::unique_ptr<TurnOrchestrationRuntime> m_turnOrchestrationRuntime;
+    std::unique_ptr<LearningData::LearningDataCollector> m_learningDataCollector;
+    std::unique_ptr<WakeWordDataCapture> m_wakeWordDataCapture;
   AgentToolbox *m_agentToolbox = nullptr;
+    SkillStore *m_skillStore = nullptr;
     DeviceManager *m_deviceManager = nullptr;
     IntentEngine *m_intentEngine = nullptr;
     IntentDetector *m_backgroundIntentDetector = nullptr;

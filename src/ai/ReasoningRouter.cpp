@@ -1,5 +1,7 @@
 #include "ai/ReasoningRouter.h"
 
+#include "core/intent/CommandCueMatcher.h"
+
 ReasoningRouter::ReasoningRouter(QObject *parent)
     : QObject(parent)
     , m_commandKeywords({
@@ -52,14 +54,7 @@ ReasoningMode ReasoningRouter::chooseMode(const QString &input, bool autoRouting
 
 bool ReasoningRouter::isLikelyCommand(const QString &input) const
 {
-    const auto lowered = input.toLower();
-    for (const auto &keyword : m_commandKeywords) {
-        if (lowered.startsWith(keyword) || lowered.contains(keyword)) {
-            return true;
-        }
-    }
-
-    return false;
+    return CommandCueMatcher::hasStructuredCommandCue(input);
 }
 
 bool ReasoningRouter::isDeepAnalysis(const QString &input) const
