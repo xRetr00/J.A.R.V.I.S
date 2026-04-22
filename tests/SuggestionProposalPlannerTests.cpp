@@ -25,6 +25,7 @@ private slots:
     void plansClipboardSuggestionWhenContextIsIdle();
     void suppressesPlannedSuggestionDuringFocusMode();
     void suppressesPlannedSuggestionDuringActiveCooldownSameThread();
+    void allowsTaskResultFollowUpDuringCooldown();
     void allowsThreadShiftToBreakPlannerCooldown();
 };
 
@@ -448,6 +449,35 @@ void SuggestionProposalPlannerTests::suppressesPlannedSuggestionDuringActiveCool
     QVERIFY(!plan.decision.allowed);
     QCOMPARE(plan.cooldownDecision.reasonCode, QStringLiteral("cooldown.low_novelty"));
     QVERIFY(plan.selectedSummary.isEmpty());
+}
+
+void SuggestionProposalPlannerTests::allowsTaskResultFollowUpDuringCooldown()
+{
+    const ProactiveSuggestionPlan plan = ProactiveSuggestionPlanner::plan({
+        .sourceKind = QStringLiteral("reply_result"),
+        .taskType = QStringLiteral("web_search"),
+        .resultSummary = QStringLiteral("Found several machine learning course results with source links."),
+        .sourceUrls = {QStringLiteral("https://example.com/course")},
+        .success = true,
+        .desktopContext = {
+            {QStringLiteral("taskId"), QStringLiteral("task_result")},
+            {QStringLiteral("threadId"), QStringLiteral("browser::research")},
+            {QStringLiteral("topic"), QStringLiteral("courses")},
+            {QStringLiteral("confidence"), 0.76}
+        },
+        .desktopContextAtMs = 1000,
+        .cooldownState = CooldownState{
+            .threadId = QStringLiteral("browser::research"),
+            .activeUntilEpochMs = 4000,
+            .lastTopic = QStringLiteral("courses")
+        },
+        .focusMode = FocusModeState{},
+        .nowMs = 1500
+    });
+
+    QVERIFY(plan.decision.allowed);
+    QCOMPARE(plan.cooldownDecision.reasonCode, QStringLiteral("cooldown.task_result_follow_up"));
+    QVERIFY(!plan.selectedSummary.isEmpty());
 }
 
 void SuggestionProposalPlannerTests::allowsThreadShiftToBreakPlannerCooldown()

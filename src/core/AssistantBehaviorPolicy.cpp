@@ -108,6 +108,65 @@ bool isSideEffectingTool(const QString &toolName)
     return riskScoreForTool(toolName) >= 50;
 }
 
+QString userRequestPortion(const QString &input)
+{
+    const QString marker = QStringLiteral("Current desktop context:");
+    const int markerIndex = input.indexOf(marker, 0, Qt::CaseInsensitive);
+    if (markerIndex >= 0) {
+        return input.left(markerIndex).trimmed();
+    }
+    return input.trimmed();
+}
+
+bool matchesPhrasePattern(const QString &input, const QString &pattern)
+{
+    return QRegularExpression(pattern, QRegularExpression::CaseInsensitiveOption).match(input).hasMatch();
+}
+
+bool looksLikeOpenSourceInfoQuery(const QString &input)
+{
+    return containsWholeWordOrPhrase(input, QStringLiteral("open source"));
+}
+
+bool isExplicitBrowserOpenRequest(const QString &input)
+{
+    if (looksLikeOpenSourceInfoQuery(input)) {
+        return false;
+    }
+    return matchesPhrasePattern(input,
+        QStringLiteral("(^|\\b)(open|launch|visit|go\\s+to)\\s+(the\\s+)?(browser|web\\s+page|website|site|url|youtube|google|github|http)"));
+}
+
+bool isExplicitAppOpenRequest(const QString &input)
+{
+    if (looksLikeOpenSourceInfoQuery(input)) {
+        return false;
+    }
+    return matchesPhrasePattern(input,
+        QStringLiteral("(^|\\b)(open|launch|start|run)\\s+([a-z0-9_ .-]+\\s+)?(app|application|program|settings|notepad|calculator|browser)\\b"));
+}
+
+bool isExplicitStateChangingRequest(const QString &input)
+{
+    const QString lowered = userRequestPortion(input).toLower();
+    if (isExplicitBrowserOpenRequest(lowered) || isExplicitAppOpenRequest(lowered)) {
+        return true;
+    }
+    return containsWholeWordOrPhraseAny(lowered, {
+        QStringLiteral("create"),
+        QStringLiteral("write"),
+        QStringLiteral("save"),
+        QStringLiteral("patch"),
+        QStringLiteral("edit"),
+        QStringLiteral("install"),
+        QStringLiteral("delete"),
+        QStringLiteral("remove"),
+        QStringLiteral("set a timer"),
+        QStringLiteral("remember"),
+        QStringLiteral("forget")
+    });
+}
+
 bool requiresGroundingTool(const QString &toolName)
 {
     return toolName == QStringLiteral("web_search")
@@ -149,23 +208,18 @@ int affordanceScoreForTool(const QString &input, IntentType intent, const AgentT
 {
     const QString toolName = tool.name;
     const QString lowered = input.toLower();
+    const QString userRequest = userRequestPortion(input).toLower();
+    const bool explicitStateChange = isExplicitStateChangingRequest(input);
+    if (isSideEffectingTool(toolName) && !explicitStateChange) {
+        return 0;
+    }
     const bool browserDirected = containsAny(lowered, {
         QStringLiteral("browser"),
         QStringLiteral("website"),
         QStringLiteral("web page"),
         QStringLiteral("url")
     });
-    const bool explicitActionRequest = containsAny(lowered, {
-        QStringLiteral("open "),
-        QStringLiteral("launch"),
-        QStringLiteral("create"),
-        QStringLiteral("write"),
-        QStringLiteral("make "),
-        QStringLiteral("save"),
-        QStringLiteral("patch"),
-        QStringLiteral("edit"),
-        QStringLiteral("set a timer")
-    });
+    const bool explicitActionRequest = explicitStateChange;
     int score = 0;
 
     switch (intent) {
@@ -203,7 +257,7 @@ int affordanceScoreForTool(const QString &input, IntentType intent, const AgentT
         }
     }
 
-    if (browserDirected || lowered.contains(QStringLiteral("open "))) {
+    if (isExplicitBrowserOpenRequest(userRequest)) {
         if (toolName == QStringLiteral("browser_open")) {
             score += 150;
         }
@@ -213,6 +267,8 @@ int affordanceScoreForTool(const QString &input, IntentType intent, const AgentT
         if (toolName == QStringLiteral("browser_fetch_text")) {
             score += 100;
         }
+    } else if (browserDirected && toolName == QStringLiteral("browser_fetch_text")) {
+        score += 100;
     }
 
     const bool appDirected = containsAny(lowered, {
@@ -220,7 +276,7 @@ int affordanceScoreForTool(const QString &input, IntentType intent, const AgentT
         QStringLiteral("application"),
         QStringLiteral("program"),
         QStringLiteral("open app")
-    }) || (!browserDirected && lowered.contains(QStringLiteral("launch")));
+    }) || (!browserDirected && containsWholeWordOrPhrase(userRequest, QStringLiteral("launch")));
     if (appDirected) {
         if (toolName == QStringLiteral("computer_open_app") || toolName == QStringLiteral("computer_list_apps")) {
             score += 130;
@@ -721,7 +777,7 @@ QList<AgentToolSpec> AssistantBehaviorPolicy::selectRelevantTools(const QString 
 {
     const ToolPlan plan = buildToolPlan(input, intent, availableTools);
     if (plan.orderedToolNames.isEmpty()) {
-        return availableTools;
+        return {};
     }
 
     QList<AgentToolSpec> selected;
@@ -735,7 +791,7 @@ QList<AgentToolSpec> AssistantBehaviorPolicy::selectRelevantTools(const QString 
         }
     }
 
-    return selected.isEmpty() ? availableTools : selected;
+    return selected;
 }
 
 TrustDecision AssistantBehaviorPolicy::assessTrust(const QString &input,
@@ -744,17 +800,7 @@ TrustDecision AssistantBehaviorPolicy::assessTrust(const QString &input,
                                                    const QVariantMap &desktopContext) const
 {
     const QString lowered = normalizedText(input);
-    const bool explicitActionVerb = containsAny(lowered,
-        {QStringLiteral("open"),
-         QStringLiteral("launch"),
-         QStringLiteral("write"),
-         QStringLiteral("create"),
-         QStringLiteral("save"),
-         QStringLiteral("install"),
-         QStringLiteral("delete"),
-         QStringLiteral("remove"),
-         QStringLiteral("set a timer"),
-         QStringLiteral("remember")});
+    const bool explicitActionVerb = isExplicitStateChangingRequest(lowered);
 
     TrustDecision trust;
     trust.highRisk = plan.sideEffecting;

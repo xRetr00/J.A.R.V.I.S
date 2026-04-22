@@ -1,0 +1,840 @@
+# Vaxil Companion Platform Rebuild
+
+## Summary
+Rebuild Vaxil into a Windows-first, local-first companion platform that combines `OpenJarvis-grade intelligence` with `Vaxil-grade embodiment`. The product target is a calm, overlay-first, JARVIS-like assistant for a single personal user that observes desktop context through permissioned multimodal sensing, remembers only what matters, suggests help at the right time, stays silent when it should, and gets better over time through bounded behavior tuning. The implementation uses a strangler refactor, vertical slices, capability packages, explicit contracts, a hard 500-line cap for authored files, and a behavioral event ledger as the main debugging surface.
+
+## Implementation Status 
+### Done In %
+- Estimated rebuild implementation completion: 100%.
+- Current status: core guardrails, desktop perception, cooldown/focus behavior, proactive planning, connector ingestion, context compilation, memory-backed policy state, feedback scoring, bounded tuning promotion seams, stronger browser/editor live metadata extraction, desktop-aware action policy, source-specific desktop context fallback adapters, normalized planner input enrichment, source-specific task-result policy, metadata-aware proactive proposal generation with source labels and presentation hints, proposal-evidence-aware ranking and novelty scoring, connector freshness/history-aware cooldown novelty, explicit proposal-evidence rendering in the debug timeline, proactive suggest/suppress/present scenario coverage, end-to-end connector planner/cooldown/presentation ledger reconstruction coverage, expanded multi-surface suppress/defer/present companion scenario coverage, action-oriented confirmation/risk/permission scenario coverage with trace reconstruction, mixed-context denied/canceled confirmation outcome coverage, proactive-to-action co-occurrence trace coverage, non-happy-path co-occurrence coverage for suppressed/deferred proposal paths plus denied/canceled action stops, compact co-occurrence matrix coverage across suppress/defer + denied/canceled branches, connector freshness/novelty-penalty + denied-action co-occurrence coverage, high-priority `break_cooldown` fast-path + permission/confirmation gating coverage, Focus Mode vs connector-urgency same-trace competition coverage, reason-code/action drift-guard coverage under thread/topic/app metadata variations, timeline-summary reconstructability checks for risk/permission/confirmation flows including non-happy-path traces, a dedicated risk/permission telemetry service, a registry-backed permission policy, confirmation outcome tracing, persisted user permission overrides, a registry-driven permission override settings editor, permission override scenario coverage, and debug timeline summaries for risk/permission decisions are implemented as working vertical slices. Remaining work is mostly production connector polish, deeper reasoning visibility, layered-memory hardening, and the later RL-lite layer.
+### Done
+- Foundation guardrails are in place: behavioral ledger runtime, isolated ledger/settings/cooldown tests, and file-cap enforcement.
+- Overlay embodiment now surfaces `Focus Mode` and `Private Mode` visibly.
+- Step 1 has started with a real desktop perception slice:
+  - active window polling
+  - clipboard change capture
+  - Vaxil tray-notification ingestion
+  - behavioral ledger events for `perception`, `context_thread`, and `cooldown`
+- A small, testable desktop context thread builder now produces `CompanionContextSnapshot` values and thread IDs for window, clipboard, and notification events.
+- The Settings trace surface now includes a live `Behavior Timeline` panel backed by the behavioral ledger so desktop context signals are inspectable in-app.
+- Desktop context is now assistant-visible:
+  - browser tabs and editor documents are classified separately
+  - the latest desktop context summary is retained by `AssistantController`
+  - prompt construction now injects recent desktop context into conversation and agent requests
+- Desktop context now also affects assistant selection behavior:
+  - memory retrieval queries are biased with fresh desktop context
+  - tool-plan and relevant-tool selection use the current desktop context when appropriate
+  - clipboard churn is quieter because private-mode and low-signal clipboard updates are suppressed earlier
+- Desktop context now emits selection telemetry and gates one proactive surface:
+  - `selection_context` ledger events explain when desktop context changed retrieval/tool selection
+  - background-task toasts are suppressed during Focus Mode or focused desktop work when the result is low-priority
+- Desktop context extraction and debug visibility are stronger:
+  - browser windows now capture page + site context more cleanly
+  - editor windows now capture file + workspace context more cleanly
+  - the Behavior Timeline panel now highlights `selection_context` and `ui_presentation` events instead of treating them as generic payload rows
+- Windows desktop context now has a safer UI Automation enrichment path:
+  - the active-window probe can enrich browser/editor context with sanitized focused-element metadata
+  - only safe hints are captured, such as page/site names, file names, and workspace names
+  - private mode still blocks that enrichment path
+- Proactive gating is now stronger:
+  - background-task toasts are still gated
+  - post-task spoken follow-ups and completion requests are now also gated during Focus Mode or focused desktop work
+  - the Behavior Timeline now makes those `ui_presentation` reasons easier to read
+- Retrieval and tool-selection reasoning is now more visible:
+  - `selection_context` events now capture memory-lane choices, tool-plan rationale, and exposed tool lists
+  - the Behavior Timeline summarizes those stages directly instead of showing only generic raw payloads
+- Enriched desktop metadata is now more trustworthy and inspectable:
+  - UIA metadata now carries explicit confidence and quality markers
+  - suppressed or unsafe metadata now leaves redaction markers instead of silently disappearing
+  - the Behavior Timeline shows confidence/redaction hints for perception and context-thread events
+- Future proactive suggestions now have first-pass gating:
+  - `nextStepHint` is now treated as an `action_proposal` instead of an unguarded follow-up
+  - final replies and completion prompts both run that proposal through a dedicated proactive suggestion gate
+  - every allow/suppress decision is logged in the behavioral ledger and rendered in the Behavior Timeline
+- Structured suggestion generation now exists before presentation:
+  - action-thread follow-ups are built as candidate proposals instead of one hard-coded next-step string
+  - proposal candidates are ranked against current desktop context and Focus Mode before one is selected
+  - the Behavior Timeline now shows `action_proposal` generation and ranking stages
+- The first non-action-thread proactive suggestion surface now exists:
+  - clipboard and notification context changes can generate proactive suggestion candidates
+  - those candidates are ranked, gated, and surfaced through overlay toasts
+  - proactive toast presentation is now traced in the behavioral ledger instead of happening invisibly
+- A first proactive planner layer now exists:
+  - desktop-context suggestions and task follow-ups both run through one planner pipeline
+  - generation, ranking, and gating are now centralized in a dedicated cognition package instead of being split across controller helpers
+  - the controller now consumes planner output and logs the resulting proposal stages, instead of owning the suggestion policy itself
+- The proactive planner is now novelty/cooldown-aware:
+  - active cooldown state now affects proposal ranking instead of only Focus Mode and desktop context
+  - planner outputs now carry confidence, novelty, cooldown decision, and next cooldown state
+  - the Behavior Timeline now shows cooldown/gate reasons plus confidence/novelty scores for proposal decisions
+- Proactive cooldown now persists across more presentation surfaces:
+  - background task toasts now obey active cooldown and thread-shift recovery rules
+  - reply-appended next-step hints now advance the shared proactive cooldown state when they are actually shown
+  - spoken follow-ups without a separate next-step hint now also advance the shared cooldown state
+  - cooldown presentation commits are now logged as first-class `cooldown` events
+- The proactive planner source set is broader:
+  - task-result suggestions can now surface through the proactive suggestion channel when stronger follow-up surfaces are not used
+  - connector-like task results such as schedule, inbox/message, and note-style tasks now generate dedicated proposal types
+  - richer task-result suggestions now run through the same planner/ranking/gating path instead of relying only on desktop-context and action-thread surfaces
+- The first payload-backed connector source now exists:
+  - planner inputs can now be derived from explicit task-result payload structure such as `events`, `messages`, `sources`, `noteId`, and `connectorKind`
+  - schedule, inbox, notes, and research-style results can now produce connector-backed suggestion signals instead of relying only on task-type names
+  - task-result fallback suggestions now prefer those explicit connector signals before generic task-type heuristics
+- The first typed connector event pathway now exists:
+  - task-result payloads are now promoted into explicit `ConnectorEvent` records instead of staying as ad hoc background-result heuristics
+  - `ToolCoordinator` now emits connector events as part of task-result handling, and `AssistantController` consumes them directly through the shared proactive planner path
+  - connector-event ingestion and presentation now appear in the behavioral ledger and the Behavior Timeline instead of being hidden behind generic task-result flow
+- The first live connector event stream now exists:
+  - `ToolWorker` now emits `ConnectorEvent` records directly from raw tool execution output before task results are flattened into generic `BackgroundTaskResult` payloads
+  - `TaskDispatcher` now relays those events as a central connector-event stream, and `AssistantController` consumes them through the same proactive planner path used for desktop context and follow-up suggestions
+  - task-result handling now carries live connector markers so the later fallback path does not duplicate already-streamed connector suggestions
+- The first dedicated external connector producer now exists:
+  - Vaxil now polls external JSON connector snapshots from its AppData `connectors` directory instead of relying only on tool/runtime execution
+  - schedule, inbox, notes, and research snapshot updates can now emit `ConnectorEvent` directly through a dedicated monitor path
+  - those external snapshot events now feed the same proactive planner path as desktop context and task follow-ups
+- The external connector producer path is now service-specific:
+  - generic “scan every JSON file” polling has been replaced with dedicated schedule, inbox, notes, and research poller specs
+  - each connector source now has its own snapshot file, freshness window, default priority, and producer identity
+  - snapshot-driven events now carry source-specific producer metadata instead of looking like one generic connector scan
+- The service-specific connector sources now support true local subscriptions:
+  - connector files are now watched directly with filesystem subscriptions, with directory-watch fallback for file creation and rotation
+  - timer polling now acts as a freshness sweep and safety fallback instead of being the only delivery mechanism
+  - local connector updates can now reach the proactive planner immediately instead of waiting for the poll interval
+- The first direct local connector source now exists:
+  - `notes` has been moved off the snapshot-file path and onto a real watched notes directory under Documents
+  - note updates now come from actual `.md` and `.txt` files instead of `notes.json`
+  - that direct notes source feeds the same connector-event and proactive-planner path as the other connector producers
+- The first direct browser-derived research source now exists:
+  - `research` has been moved off the snapshot-file path and onto real Chromium bookmark files watched under local browser profiles
+  - Edge, Chrome, and Brave bookmark updates now emit direct `ConnectorEvent` records instead of relying on `research.json`
+  - that direct research source feeds the same connector-event and proactive-planner path as desktop context, task follow-ups, notes, and the other connector producers
+- The first direct local schedule source now exists:
+  - `schedule` has been moved off the snapshot-file path and onto real watched `.ics` calendar files under Documents
+  - calendar updates now emit direct `ConnectorEvent` records instead of relying on `schedule.json`
+  - that direct schedule source feeds the same connector-event and proactive-planner path as notes, browser-derived research, desktop context, and task follow-ups
+- The first direct local inbox source now exists:
+  - `inbox` has been moved off the snapshot-file path and onto real watched maildrop files under Documents
+  - inbox updates now emit direct `ConnectorEvent` records from `.eml` and `.txt` messages instead of relying on `inbox.json`
+  - that direct inbox source feeds the same connector-event and proactive-planner path as schedule, notes, browser-derived research, desktop context, and task follow-ups
+- Connector-aware planner ranking is now deeper:
+  - proactive proposal ranking now consumes connector metadata instead of relying mostly on generic connector summaries
+  - source-specific freshness and affinity signals now influence ranking for inbox, schedule, notes, and research sources
+  - recent duplicate presentation keys now incur a planner-side penalty before presentation, instead of relying only on controller-level suppression
+- Connector history now feeds planner policy:
+  - recent connector-event history is now tracked across seen and presented suggestion sources instead of being inferred from one last presentation key
+  - planner ranking now uses short connector history for repeated-source and burst-style penalties before UI presentation
+  - connector-aware ranking has moved beyond single-event metadata into first-pass multi-event behavior
+- Connector history is now persisted across sessions:
+  - connector history state now survives app restarts instead of resetting with each process lifetime
+  - planner ranking can now apply first-pass repeated-source and presentation history penalties using persisted local state
+  - connector-aware planner policy now has a persistent local memory seam without waiting for the full layered-memory rewrite
+- Connector state now bridges into the broader memory layer:
+  - connector history persistence now flows through `MemoryStore` instead of a standalone tracker file
+  - connector-aware planner state now lives on the same local memory substrate as the rest of Vaxil’s stored context
+  - this creates a real bridge from reactive connector policy into the planned layered-memory architecture
+- Connector memory now participates in memory selection:
+  - connector state is now readable as normal `MemoryRecord` inputs instead of staying isolated inside the connector-history subsystem
+  - memory selection and memory-context assembly can now surface connector-aware context to the assistant through the existing memory-policy path
+  - connector state is no longer only planner-internal; it is now part of the broader memory/context bridge
+- Long-horizon connector summaries now have a dedicated compiler seam:
+  - connector state is now aggregated into `connector_summary_*` memory records instead of exposing only raw connector-history records
+  - memory selection now consumes those summaries through a dedicated connector context compiler before falling back to raw connector memory
+  - memory-context telemetry now distinguishes raw connector memory from compiled connector summaries, creating a cleaner bridge into the planned context-compiler architecture
+- Connector summary policy is now stronger:
+  - long-horizon connector summaries now include dominant source identity, tracked duration, and freshness labeling instead of only raw counts
+  - connector summary ranking now applies source-priority weighting and freshness decay, so schedule and inbox signals stay more important than stale low-priority research-style signals
+  - cross-session connector state now feeds richer summary selection behavior rather than only producing flat connector-history context
+- A broader selection-context compiler now exists:
+  - desktop context, compiled connector summaries, runtime memory, and normal memory selection are now merged through a dedicated compiler instead of being assembled by hand inside `AssistantController`
+  - memory-context telemetry now exposes compiled context blocks separately from selected memory lanes
+  - the assistant’s conversation, agent, and continuation flows now all use the same structured context-compilation path
+- The context compiler now feeds tool and prompt context too:
+  - compiled desktop summaries now drive selection input and no longer rely only on the raw desktop-summary string
+  - conversation, agent, and continuation tool planning now log against compiled desktop context
+  - prompt-facing desktop context now comes from the same compiled context path used for memory selection
+- Compiled-context deltas are now tracked over time:
+  - selection context now records added and removed compiled-context keys plus summary changes instead of only logging current compiled blocks
+  - `selection_context` telemetry now emits first-class `compiled_context_delta` events
+  - the Behavior Timeline can now show compiled-context changes over time instead of only lane counts and per-request snapshots
+- Prompt-context inclusion is now more selective and explainable:
+  - prompt-facing desktop context is now compiled as intent-aware prompt blocks instead of one flat desktop-summary string
+  - write/read/list/chat flows now include different prompt blocks such as document, workspace, site, topic, app, and thread based on relevance
+  - `selection_context` telemetry now emits `prompt_context` events so the Behavior Timeline can show which prompt blocks and reasons were included
+- Prompt-context selection is now time-aware:
+  - repeated stable desktop context now trims low-signal prompt blocks such as generic summary, app, and long-running thread markers instead of repeating them forever
+  - prompt selection now tracks per-purpose prompt stability across conversation, agent, and continuation flows
+  - `prompt_context` telemetry now shows suppressed prompt blocks and stability cycles so the trim behavior is inspectable in the Behavior Timeline
+- Compiled context now has a longer-horizon stability summary:
+  - repeated compiled context now accumulates per-purpose stability cycles and stable duration instead of only producing per-request deltas
+  - `selection_context` telemetry now emits `compiled_context_stability` events so cross-request context continuity is visible in the Behavior Timeline
+  - Vaxil now distinguishes fresh compiled context from stable multi-request context instead of treating every request as isolated
+- Compiled-context stability now feeds request memory:
+  - stable compiled-context summaries are now turned into real `MemoryRecord` inputs instead of staying telemetry-only
+  - conversation, agent, and continuation flows now inject that stability record into active request memory so the assistant can reason over longer-lived context continuity
+  - cross-request compiled-context state now has a first bridge into the broader memory/context path
+- Compiled-context history summaries are now richer than one stability record:
+  - cross-request stable context is now summarized across purposes with a global history record plus purpose-level history records
+  - request memory now receives those richer history summaries instead of only a single current-purpose stability record
+  - Vaxil now has a first multi-purpose compiled-context history seam inside the active request memory path
+- Compiled-context history now affects live decision-making:
+  - tool planning and relevant-tool selection now receive long-horizon compiled-context history as part of their selection input instead of seeing only the current request context
+  - proactive planner metadata now includes compiled-context history signals, and planner ranking can react to document, schedule, inbox, and research history affinity
+  - long-horizon compiled-context history now influences both selection policy and proactive suggestion policy, not just memory assembly
+- Compiled-context history now drives first-pass structural policy:
+  - long-horizon compiled-context history is now compiled into a dominant work mode such as document work, schedule coordination, inbox triage, or research analysis
+  - selection input and prompt context now receive explicit history-policy directives through the shared context compiler instead of relying only on appended history-summary strings
+  - proactive ranking now applies structural mode bonuses and defocus penalties, so long-horizon history can steer proposal choice more strongly than the earlier affinity-only path
+- Compiled-context history policy now persists through the memory layer:
+  - the evaluated dominant history mode is now stored in `MemoryStore` as structured local policy state instead of living only inside request-time helpers
+  - `MemoryPolicyHandler` now surfaces that persisted policy as normal memory, so broader memory selection can reuse it directly
+  - the compiled-history policy now has a shared local storage seam between context assembly and future layered-memory work
+- Broader context compilation and planner policy now prefer the memory-backed history mode:
+  - the shared selection-context compiler now reads persisted compiled-context policy directly through `MemoryPolicyHandler` before falling back to rebuilt request-time history
+  - proactive planning now prefers persisted history-policy metadata from memory before falling back to live recomputed history metadata
+  - the dominant long-horizon mode now has one shared local source for context compilation and planner steering instead of two mostly separate rebuild paths
+- The memory-backed history policy now has richer layered summaries:
+  - the persisted long-horizon mode now expands into summary, focus, and source-continuity records instead of only one dominant-mode record
+  - `MemoryPolicyHandler` now exposes those layered policy summaries as normal memory records
+  - the broader selection-context compiler now includes those summary records directly in compiled context, so richer long-horizon policy context is available beyond the single mode flag
+- Planner behavior now reacts to the richer policy layers directly:
+  - proactive ranking now reads compiled policy focus and source-continuity summaries, not just the dominant history mode
+  - inbox, schedule, research, and document-oriented proposals now receive direct focus/source bonuses and defocus penalties from memory-backed policy summaries
+  - long-horizon policy summaries now influence proposal ranking structurally instead of staying limited to first-pass planner metadata
+- Broader layered-memory synthesis now exists on top of the shared policy state:
+  - long-horizon policy state now expands into synthesized layered memory records such as summary, focus, and continuity records
+  - `MemoryPolicyHandler` now exposes those synthesized layered records in normal memory selection instead of leaving them as compiler-only helpers
+  - the broader selection-context compiler now carries those synthesized long-horizon records directly in compiled context, creating a stronger bridge from memory-backed policy into shared context assembly
+- Synthesized layered long-horizon records now steer live behavior directly:
+  - the selection-context compiler now injects layered focus and continuity directives into selection input, not only into passive compiled memory
+  - prompt-context compilation now includes layered long-horizon focus/continuity records as first-class prompt blocks
+  - proactive planner metadata now carries synthesized layered summary/keys so ranking can react to layered long-horizon continuity, not only the dominant mode and first-pass policy summaries
+- Stronger structural planner policy now uses synthesized layered records:
+  - layered long-horizon focus now adds both structural boosts and defocus penalties instead of only lightweight steering bonuses
+  - the proactive suggestion gate now suppresses medium-priority proposals that conflict with the active layered long-horizon mode, instead of only relying on Focus Mode and fresh desktop context
+  - synthesized layered continuity now influences both ranking and suppression decisions, making long-horizon mode a stronger behavioral constraint instead of passive metadata
+- Broader context-policy synthesis over time now exists:
+  - compiled-context policy state now persists a rolling local history instead of only the current dominant mode snapshot
+  - memory and compiler layers now receive evolution summaries such as policy evolution and recent transition records, not just the current policy state
+  - selection input, prompt context, and planner metadata now include those evolution summaries, so longer-horizon policy changes can influence context assembly beyond the latest snapshot
+- Policy evolution history now affects live behavior directly:
+  - sustained current-mode observations now add stronger structural ranking boosts and defocus penalties beyond the current snapshot-only path
+  - repeated mode shifts can now penalize or suppress mismatched medium-priority proposals instead of only being visible in summaries
+  - policy evolution has moved from passive context metadata into planner and gate behavior
+- Repeated transition patterns now produce reusable tuning signals:
+  - memory selection, compiled context, prompt context, and planner metadata now carry shared tuning records such as policy volatility and stability bias instead of relying only on hand-authored evolution rules
+  - ranking now reacts to those tuning signals with reusable stability boosts and volatility penalties, so repeated transition patterns influence behavior through a shared policy surface
+  - proactive suggestion suppression now uses the same tuning signals for elevated-volatility defocus cases instead of only the raw evolution summary path
+- Tuning signals now expose real planner knobs instead of only summary text:
+  - the shared tuning path now produces alignment, defocus, volatility, and suppression-threshold knobs alongside the tuning summaries
+  - ranking and suppression now read those numeric knobs directly, so repeated transition patterns can move planner behavior through configurable values rather than only fixed constants
+  - the tuning path has become a real planner-threshold seam that can be promoted into the later behavior-tuning framework
+- The tuning seam is now persisted as versioned behavior-tuning state:
+  - compiled-context policy tuning now persists current knob snapshots plus version history in the shared memory layer instead of only deriving knobs on read
+  - the runtime now prefers persisted tuning state when building tuning records and planner metadata, so ranking and suppression can follow promoted state directly
+  - rollback to the previous tuning snapshot is now supported through the same shared memory path, giving the later behavior-tuning framework a real bounded promotion/rollback seam
+- The first bounded behavior-tuning promotion slice now exists:
+  - a dedicated promotion policy now decides whether derived tuning candidates should be held, promoted, or rolled back instead of blindly syncing every newly-derived knob snapshot
+  - promoted tuning state now carries action/reason metadata through the shared memory/compiler/planner path, so versioned tuning is inspectable rather than opaque
+  - planner/gate behavior now follows promoted tuning state only, which makes the persisted versioned seam authoritative instead of treating derived tuning as live policy by default
+- Tuning promotions are now first-class behavior-tuning episodes:
+  - every promoted or rolled-back compiled-context tuning snapshot now writes a separate episode record with action, reason, mode, version transition, and active knob values
+  - those episode records are exposed through normal memory selection, compiled context, prompt context, and planner metadata instead of being hidden inside raw version history
+  - the behavior-tuning seam now has an audit trail that can later feed feedback scoring, offline evaluation, and safer promotion/rollback decisions
+- Proactive suggestion feedback signals now exist:
+  - proactive toast acceptance, dismissal, deferral, and expiry/ignore events now flow from QML into `AssistantController`
+  - those events are normalized as `FeedbackSignal` records and logged as `feedback_signal` behavior events for the behavioral ledger
+  - the behavior-tuning framework now has explicit user-facing feedback inputs for proactive suggestions instead of only inferred policy transitions
+- Proactive feedback signals now persist and aggregate across sessions:
+  - proactive feedback is written into shared memory history, capped for bounded local retention, instead of only being emitted to the ledger
+  - memory selection now exposes both aggregate feedback counts and recent feedback records through `MemoryPolicyHandler`
+  - the next tuning scorer has durable accepted/dismissed/deferred/ignored inputs to compare against tuning episodes and promoted policy versions
+- Tuning episodes are now scored against persisted feedback signals:
+  - each promoted/rolled-back tuning episode gets a deterministic feedback window from its creation time until the next episode
+  - accepted, dismissed, deferred, ignored, and expired signals now produce bounded support scores and supported/mixed/rejected/unscored outcomes
+  - tuning feedback score records are exposed through shared memory and memory selection, giving the next promotion gate visible evidence without changing autonomy rules yet
+- Feedback-aware bounded promotion gates now exist:
+  - the promotion policy now receives tuning feedback scores alongside candidate state, persisted state, and version history
+  - rejected feedback on the active promoted version triggers rollback only when rollback history exists; otherwise the policy holds instead of reinforcing a rejected version
+  - the runtime now passes current feedback scores into the same versioned promotion/rollback path, so feedback can influence behavior without bypassing bounded state or safety seams
+- Richer Windows desktop metadata now exists:
+  - browser and editor active-window contexts now carry explicit metadata class, document kind, source, site/workspace context, and editor language hints when safe
+  - UI Automation metadata now includes safe focused-control type, browser URL host/scheme, and document classification without storing long free-form text
+  - Private Mode now forces active-window perception into app-only redacted context, replacing document/window details with explicit `private_mode` redaction markers
+- The desktop context compiler is stronger:
+  - selection hints now include work mode, cleaned document/page name, site/workspace, metadata class, and editor language when available
+  - browser title cleanup now strips noisy browser shell suffixes and tab counters instead of treating them as page or site context
+  - noisy clipboard contexts such as non-text payloads or redacted previews are suppressed before they can bias memory selection
+- Richer desktop context now feeds more intelligence layers:
+  - proactive proposal ranking now uses browser/editor work-mode metadata to boost research/document help and defocus unrelated schedule/inbox suggestions
+  - `selection_context` telemetry now exposes metadata class, document/site/workspace context, language hints, and inferred desktop work mode
+  - the tool/prompt selection path now has richer ledger evidence for why desktop context affected a request
+- Live browser/editor extraction is less dependent on the focused control:
+  - the Windows UI Automation probe now scans a bounded active-window control tree for safe tab, document, edit, and pane candidates
+  - browser metadata can recover selected-tab/page and URL host signals from the window tree when focus is not on the address/content field
+  - editor metadata can recover file/workspace candidates from window-tree document and pane controls while preserving existing redaction and confidence markers
+- Desktop context now affects action policy:
+  - side-effecting actions in Private Mode now require explicit confirmation because current app details are intentionally redacted
+  - focused work modes such as coding, document work, and research now shape confirmation wording and trust-reason metadata
+  - low-risk background work during focused desktop activity can run with quieter progress behavior instead of adding unnecessary interruption
+- Risk and permission decisions are now ledger-visible:
+  - route execution now emits typed `risk_check` behavior events with risk level, confirmation requirement, desktop work mode, selected tools, and reason code
+  - route execution now emits typed `permission` behavior events with per-capability grants such as filesystem write, desktop automation, memory write, skill management, and network grounding
+  - pending-confirmation cases now appear as permission decisions with `pending_confirmation` scope instead of only appearing in text safety logs
+- Permission policy is now registry-backed:
+  - tool-to-capability permission rules now live in a dedicated `ToolPermissionRegistry` instead of inside the risk service
+  - permission decisions now carry a registry policy version so ledger events can identify which declared policy produced each grant
+  - filesystem, desktop automation, memory write, skill management, and network grounding grants are now declared centrally for easier upgrade and debugging
+- Confirmation outcomes are now ledger-visible:
+  - approved, rejected, and unrecognized confirmation replies now emit typed `confirmation` behavior events before pending state is cleared
+  - confirmation outcome events carry requested permissions, risk level, risk reason, action session ID, route kind, and registry policy version
+  - approved confirmations now connect to the follow-up route execution path, where risk and permission checks are emitted again with confirmation granted
+- User permission overrides now sit on top of the registry:
+  - capability-level override rules can allow, deny, or force confirmation for permissions declared by the central registry
+  - permission grants now preserve override scope and reason codes such as `permission.allowed_by_user_override` and `permission.denied_by_user_override`
+  - risk details now include override count so ledger reconstruction can distinguish registry-only decisions from user-overridden decisions
+- Permission decisions are easier to inspect in the debug timeline:
+  - `risk_check`, `permission`, and `confirmation` events now have dedicated colors and readable summaries instead of falling back to raw JSON
+  - timeline details now show risk level, confirmation requirement, permission count, and permission registry version
+  - permission rows summarize each capability grant as allowed or blocked with scope, making risk -> permission -> confirmation flow easier to follow
+- User permission overrides are now persisted and consumed by route execution:
+  - sanitized capability override rows are stored in `AppSettings` and exposed through `BackendFacade` plus `SettingsViewModel`
+  - route execution and pending-confirmation telemetry now pass persisted overrides into `ActionRiskPermissionService::evaluate`
+  - settings and behavior-policy tests cover override sanitization plus registry override application
+- Permission override management now has a safe settings surface:
+  - Settings includes a dedicated `PermissionOverridesPanel` with registry-provided capability choices and fixed decisions instead of raw variant editing
+  - users can add, remove, reset, clear, and save per-capability `confirm`, `allow`, or `deny` rules
+  - created, changed, and cleared override settings emit `permission` ledger events with previous/current counts and compact rule summaries
+- Permission override UI metadata is now registry-driven:
+  - `ToolPermissionRegistry` exposes capability labels, descriptions, and default scopes for settings surfaces
+  - `BackendFacade` and `SettingsViewModel` expose those registry capability options to QML
+  - override sanitization now rejects unregistered capability IDs before settings persistence
+- Permission override companion scenarios are now covered:
+  - allow overrides can bypass pending confirmation only for the declared capability
+  - deny overrides continue to block even after confirmation is granted
+  - confirm overrides force confirmation, then fall back to registry grants after approval
+  - cleared overrides return to registry defaults and pending-confirmation behavior
+  - ledger reconstruction verifies risk -> permission traces preserve override grants and reasons
+- Source-specific desktop context adapters now backstop UI Automation:
+  - browser title adapters fill missing page/site metadata for Chrome, Edge, Firefox, Brave, and Opera when UIA is incomplete
+  - editor title adapters fill missing document/workspace/language metadata for VS Code, Cursor, Windsurf, JetBrains editors, and Sublime Text
+  - active-window perception now merges source-adapter metadata after UIA without overriding higher-confidence UIA fields
+  - focused adapter tests cover browser fallback, UIA preservation, editor workspace fallback, and unknown-app suppression
+- Proactive suggestion generation now consumes source metadata directly:
+  - live desktop metadata can generate first-class editor-document and browser-page suggestions without depending on clipboard or notification task types
+  - connector metadata can generate schedule, inbox, notes, and research proposals even when the task type is generic
+  - planner inputs now pass source metadata into proposal generation before ranking, cooldown, and gate evaluation
+  - focused metadata-builder tests cover editor, browser, connector, and planner-forwarding paths
+- Metadata-aware proactive proposals are now more specific and debug-friendly:
+  - editor, browser, schedule, inbox, notes, and research proposals now derive titles and summaries from safe source labels such as document, site, event, sender, subject, and note title
+  - generated proposals now carry `proposalReasonCode`, `sourceLabel`, and `presentationKeyHint` arguments for dedupe, ranking, and Behavior Timeline reconstruction
+  - focused tests now verify metadata-derived titles, reason codes, source labels, and presentation-key hints
+- Cooldown, ranking, and planner telemetry now consume proposal evidence:
+  - proposal ranking now falls back to `presentationKeyHint` for duplicate suppression when the outer presentation key is generic or missing
+  - novelty scoring now lowers repeat suggestions using `presentationKeyHint` and gives a small novelty boost to fresh proposals with source labels or key hints
+  - gate decisions now copy `proposalReasonCode`, `sourceLabel`, and `presentationKeyHint` into decision details so the Behavior Timeline can reconstruct the evidence behind a suggestion
+  - focused tests now cover duplicate-key ranking, duplicate-key novelty reduction, and gate evidence propagation
+- Proposal evidence is now rendered explicitly in the debug timeline:
+  - `BehaviorTimelinePanel.qml` has been split under the file-cap by moving action-proposal summary formatting into `BehaviorTimelineProposalFormatter.qml`
+  - action proposal timeline rows now show source labels, presentation-key hints, and proposal reason codes directly in the summary/detail text
+  - the new formatter is registered in QML resources so the packaged app can load it
+- Planner inputs are now normalized before proposal generation:
+  - `ProactivePlannerInputEnricher` enriches desktop events, connector changes, and task-result style inputs with a shared `plannerInputClass`
+  - desktop context can now fill missing planner metadata such as task id, thread id, document, site, workspace, and language before proposal generation
+  - connector/task inputs now receive normalized source labels, presentation-key hints, freshness bands, source-url counts, and planner reason codes
+  - the proactive planner uses the enriched metadata for proposal building, ranking, and gate evaluation
+  - focused enricher tests cover desktop event enrichment, connector freshness/key enrichment, and planner consumption of enriched desktop metadata
+- The full proactive suggest/suppress/present loop now has focused scenario coverage:
+  - connector schedule updates are tested through proposal generation, ranking, gate allow, selected summary, presentation evidence, and cooldown presentation commit
+  - repeated connector updates are tested through duplicate presentation keys, active cooldown, low-novelty suppression, and empty selected summaries
+  - focused desktop editor work is tested as a non-critical proactive suggestion suppression path while preserving source-label evidence
+  - duplicate ranking now preserves the more specific `recent_duplicate_penalty` reason when active cooldown also applies
+- Live task-result changes now have source-specific policy:
+  - task-result inputs are classified into `failure_recovery`, `connector_task_result`, `research_task_result`, `document_task_result`, `generic_task_result`, or `low_signal_task_result`
+  - low-signal task results now carry a source-specific suppression reason so generic background completions do not become noisy proactive suggestions
+  - failure task results remain high-priority recovery candidates and bypass the low-signal suppression path
+  - planner/gate telemetry now carries `plannerInputClass` and `sourceSpecificPolicy` so task-result policy decisions are inspectable
+  - focused tests cover research classification, low-signal suppression, and failure-recovery allow behavior
+
+### In Progress
+- Step 1 is still partially complete. Desktop context now reaches prompt assembly, biases memory retrieval plus tool selection, gates first-pass next-step proposals, ranks structured follow-up candidates, triggers first-pass proactive suggestions from clipboard/notification context, runs task + desktop suggestions through a small planner layer, uses first-pass cooldown/novelty scoring there, persists proactive cooldown across multiple presentation surfaces, and now includes both a live connector event stream from the worker/runtime path and direct local sources for notes, schedule, inbox, and browser-derived research. The snapshot-backed connector source set is no longer the primary path, connector-aware ranking now uses first-pass freshness, dedupe, affinity, short history, persisted connector state through `MemoryStore`, compiled connector summaries, source-priority weighting, freshness decay, and a broader selection-context compiler that now also feeds tool and prompt context. Compiled-context deltas now exist, prompt-context inclusion is now rule-based, prompt trimming is now time-aware, compiled context now has a cross-request stability summary, that stability now feeds active request memory through richer multi-purpose history records, long-horizon compiled-context history now drives first-pass structural selection and planner policy, the resulting dominant history mode now persists through the shared memory layer, that memory-backed policy now expands into layered summary/focus/source records, proactive ranking now reacts to those richer policy layers directly, synthesized layered memory records now flow through both memory selection and compiled context, those layered records now also steer selection input, prompt context, and planner metadata directly, stronger structural planner policy now uses them for both ranking and suppression, policy evolution over time is now persisted and summarized beyond the current dominant snapshot, sustained shifts plus repeated transitions now affect ranking and suppression behavior directly, repeated transition patterns now produce reusable tuning signals that flow through shared memory/compiler/planner paths, those tuning signals now emit real numeric planner knobs for ranking penalties and suppression thresholds, that knob seam now persists as versioned tuning state with rollback support, a bounded promotion policy now decides when tuning state is actually promoted, held, or rolled back, promotion/rollback decisions now produce first-class tuning episodes, proactive suggestions now emit persisted aggregate feedback signals, tuning episodes now receive feedback-derived support scores, those scores now feed conservative promotion/rollback gates, active-window perception now carries richer browser/editor metadata with stricter Private Mode redaction, the desktop selection compiler now turns that metadata into cleaner work-mode hints while suppressing noisy clipboard churn, proactive ranking plus selection telemetry now consume those desktop work-mode signals directly, UI Automation now scans bounded active-window trees instead of relying only on focused-control ancestry, source-specific browser/editor adapters now backstop missing UIA context, first-pass action policy now uses desktop work mode for confirmation and quiet-progress decisions, route execution now emits first-class risk/permission ledger events, permission grants now come from a central registry, confirmation outcomes are now traceable against requested permissions, user permission overrides can adjust registry grants, the debug timeline now summarizes risk/permission/confirmation events clearly, persisted override settings now feed route execution, a registry-driven settings panel now edits those override rules, and companion scenario tests now cover override allow/deny/confirm/clear plus ledger reconstruction. The next practical gap is broader proactive suggestion generation beyond clipboard/notification and action-thread follow-ups.
+- That proactive generation gap is now narrower: source metadata can produce first-class editor, browser, and connector proposals. The next practical gap is better proposal specificity, cooldown/novelty quality, and UI/debug explanation for those richer proposal paths.
+- Proposal specificity now has a first pass through metadata-derived labels, reason codes, and presentation hints. The next practical gap is to make cooldown/novelty scoring and Behavior Timeline rendering use those hints more directly.
+- Cooldown/novelty now uses those hints directly at the planner level. The next practical gap is to split the near-cap Behavior Timeline QML and render source-label/key-hint evidence explicitly instead of relying only on raw payload details.
+- The Behavior Timeline panel is now split and proposal evidence is shown explicitly. The next practical gap is richer planner inputs from live task results, connector changes, and desktop events, plus deeper scenario coverage for the full suggest/suppress/present loop.
+- Planner input enrichment now normalizes desktop, connector, and task-result metadata before proposal generation. The next practical gap is deeper scenario coverage for the full suggest/suppress/present loop and more specialized source-specific policy for live task-result changes.
+- The full suggest/suppress/present loop now has focused scenario coverage. The next practical gap is more specialized source-specific policy for live task-result changes and broader end-to-end companion scenarios.
+- Live task-result source policy now suppresses low-signal completions while preserving failure recovery. The next practical gap is deeper cooldown/novelty scoring for connector-driven and richer task-result suggestions, plus broader end-to-end companion scenarios.
+- Connector-driven cooldown novelty now uses enriched planner metadata directly:
+  - fresh connector events increase novelty while older connector events reduce it
+  - repeated-source and connector-burst history now lower novelty before cooldown decisions
+  - cooldown decisions now carry explicit novelty reason codes for debugging
+  - focused scenario tests cover fresh-vs-older connector novelty and burst suppression
+  - the current learning-data test target is also buildable again without pulling the full app library
+- End-to-end connector proactive flow now has ledger reconstruction coverage:
+  - a focused scenario now covers connector ingest -> proposal select -> cooldown evaluate -> UI presentation with one shared `traceId`
+  - the scenario writes real behavior events into `BehavioralEventLedger` and asserts reconstruction through shared trace/thread IDs
+  - reconstruction verifies proposal IDs and novelty reason-code evidence survive into cooldown/UI payloads
+  - the proactive loop scenario target now links telemetry + SQLite dependencies directly so this path is exercised in CI
+- Broader multi-surface proactive scenario coverage now exists:
+  - a focused scenario now covers desktop-context suppression, low-signal task-result suppression, explicit cooldown defer policy, and connector-event presentation in one flow
+  - planner behavior is now asserted across co-occurring desktop/task-result/connector inputs instead of connector-only loops
+  - this closes the immediate gap for suppress/defer/present branch coverage in the companion scenario suite
+- Action-oriented multi-surface scenario coverage now includes confirmation/risk/permission gates:
+  - a focused scenario now covers confirmation-required action flow with pending permission checks, approval transition, and linked risk/permission/confirmation ledger events under one trace
+  - timeline-summary-facing fields are now asserted for risk, permission, and confirmation events so debug reconstruction does not depend on raw payload-only inspection
+- Mixed-context confirmation and co-occurrence scenarios now exist:
+  - denied and canceled confirmation outcomes are now covered under mixed desktop + connector context, with explicit trace reconstruction assertions
+  - a dedicated co-occurrence scenario now validates proactive proposal gating followed by risk/permission checks and confirmation approval in the same trace
+- Non-happy-path co-occurrence traces are now covered:
+  - a focused scenario now covers proactive suppression followed by risk/permission checks and a denied confirmation outcome in one shared trace
+  - a second focused scenario now covers proactive gating with pending permission checks followed by cancellation, so both stop paths are reconstructed end to end
+  - a defer-first (`confidence.low`) co-occurrence scenario now validates deferred proposal gating before a later denied action path in the same trace
+  - timeline-summary-facing fields are now asserted across these non-happy-path traces so reconstruction does not require raw payload-only inspection
+- Compact co-occurrence branch-matrix coverage now exists:
+  - matrix scenarios now assert `suppress/defer` entry paths crossed with `denied/canceled` outcomes under mixed desktop + connector context
+  - policy-regression coverage now asserts stable branch reason codes for suppression, defer, denied, and canceled paths
+- Co-occurrence fast/novelty policy edges are now covered:
+  - a focused scenario now combines connector freshness/novelty penalties with a later denied confirmation path in one trace
+  - a high-priority `break_cooldown` fast-path scenario now verifies permission + confirmation gating still runs and remains traceable
+- Focus-mode and policy-regression co-occurrence coverage now exists:
+  - focused scenarios now cover Focus Mode interaction for non-critical suppression, critical blocking, and critical-allowed fast-path behavior with action-gating outcomes
+  - policy-regression scenarios now assert stable reason-code/action behavior for novelty-penalty and `break_cooldown` paths under small metadata/score variations
+  - one same-trace scenario now verifies focus suppression competing with connector urgency and the later urgent gate path staying permission/confirmation-gated
+  - one regression scenario now locks suppression reason/action stability under small desktop-context metadata variations (`thread/topic/app`) to prevent drift
+- Timed Focus Mode expiry is now covered end-to-end in one trace:
+  - pre-expiry medium-priority suppression (`focus_mode.suppressed`) is recorded
+  - timed expiry transition is recorded as a dedicated `focus_mode` event
+  - post-expiry high-priority `break_cooldown` re-allow continues through permission + approved confirmation in the same trace
+- Mixed-priority connector burst policy is now covered in one trace:
+  - a burst-penalized ranked high-priority candidate is suppressed via `cooldown.low_novelty` with `novelty.connector_burst` evidence
+  - a later critical-priority candidate breaks cooldown and still passes through permission + confirmation ordering
+- Timed Focus Mode expiry now emits runtime telemetry from real settings/perception state changes:
+  - `DesktopPerceptionMonitor` now detects timed Focus Mode expiry on live monitor ticks and interaction events
+  - expired timed focus state is cleared in settings (`enabled=false`, `duration=0`, `until=0`) instead of lingering past expiry
+  - a first-class `focus_mode.timed_expired` behavior event is emitted through the focus-mode telemetry path
+- Timed Focus Mode expiry now has a focused runtime regression target:
+  - timed-expiry reconciliation is extracted into `FocusModeExpiryRuntime` so perception/settings expiry handling has a single owner
+  - dedicated tests lock the timed expiry reset path and `focus_mode.timed_expired` telemetry emission behavior
+- Live proactive proposal evidence now carries mixed-priority urgency + burst pressure signals:
+  - planner output now stamps selected proposal evidence with `urgencyBand` and `burstPressureBand`
+  - cooldown decision details now include urgency/burst bands plus connector burst counts for runtime trace reconstruction
+  - ranked proposal telemetry now surfaces urgency and burst pressure bands together for evidence parity with gated decisions
+- In-app Behavior Timeline summaries now show urgency and burst evidence:
+  - `action_proposal` summary cards now render urgency/burst signals directly, not only source/key/reason hints
+  - `ui_presentation` summary cards now include urgency/burst labels when those evidence fields are present
+  - mixed-priority planner reasoning is now visible in timeline summaries without raw payload drill-down
+- Behavior Timeline summaries now show suppression/defer causes for connector burst pressure:
+  - `action_proposal` summary cards now read novelty reason tags from cooldown decision details (for example `novelty.connector_burst`)
+  - connector burst counters (`seen/presented`) and short history counts now render in timeline summary text
+  - urgency/burst evidence now appears with novelty tags/counters so suppress/defer outcomes are explainable without payload drill-down
+- Behavior Timeline now shows cooldown gate-reason deltas across repeated proposals in-thread:
+  - gated `action_proposal` summaries now compare with the previous gated proposal in the same thread
+  - timeline summaries now show action transitions (for example `suppress -> allow`) and reason-code transitions when they change
+  - suppress/defer-to-allow evolution is visible directly in summary text without payload inspection
+- Behavior Timeline now shows confidence/novelty score deltas across repeated proposals in-thread:
+  - gated `action_proposal` summaries now compare confidence and novelty scores with the previous gated proposal in the same thread
+  - timeline summaries now show score trend direction (`up`/`down`) with signed delta values
+  - proposal scoring trend shifts are visible directly in summary text without payload inspection
+- Behavior Timeline now shows novelty-reason set deltas across repeated proposals in-thread:
+  - gated `action_proposal` summaries now compare novelty reason-tag sets with the previous gated proposal in the same thread
+  - timeline summaries now show added novelty tags (`novelty + ...`) and removed novelty tags (`novelty - ...`) when the set changes
+  - novelty-reason evolution is visible directly in summary text without payload inspection
+- Behavior Timeline now shows connector burst-count deltas across repeated proposals in-thread:
+  - gated `action_proposal` summaries now compare connector burst counts with the previous gated proposal in the same thread
+  - timeline summaries now show `burst seen`, `burst presented`, and `history seen` count transitions when values change
+  - connector burst-pressure trend changes are visible directly in summary text without payload inspection
+- Behavior Timeline now shows urgency/burst-band deltas across repeated proposals in-thread:
+  - gated `action_proposal` summaries now compare urgency and burst-pressure bands with the previous gated proposal in the same thread
+  - timeline summaries now show `urgency band ... -> ...` and `burst band ... -> ...` when band values change
+  - urgency and burst-band trend shifts are visible directly in summary text without payload inspection
+- Behavior Timeline now shows proposal-evidence source/key deltas across repeated proposals in-thread:
+  - gated `action_proposal` summaries now compare `sourceLabel` and `presentationKeyHint` with the previous gated proposal in the same thread
+  - timeline summaries now show `source ... -> ...` and `key ... -> ...` when those evidence values change
+  - proposal evidence drift is visible directly in summary text without payload inspection
+- Behavior Timeline now shows proposal-evidence reason-code deltas across repeated proposals in-thread:
+  - gated `action_proposal` summaries now compare `proposalReasonCode` with the previous gated proposal in the same thread
+  - timeline summaries now show `proposal reason ... -> ...` when the proposal evidence reason code changes
+  - proposal evidence rationale drift is visible directly in summary text without payload inspection
+- Behavior Timeline now shows ranked-proposal ordering deltas across repeated proposals in-thread:
+  - ranked `action_proposal` summaries now compare ordered `rankedTitles` with the previous ranked proposal event in the same thread
+  - timeline summaries now show top-candidate changes plus compact rank-order transitions when ordering changes
+  - ranked ordering drift is visible directly in summary text without payload inspection
+- Behavior Timeline now shows ranked-score deltas across repeated proposals in-thread:
+  - ranked `action_proposal` summaries now compare `rankedScores` with the previous ranked proposal event in the same thread
+  - timeline summaries now show top-score and top-gap deltas plus compact score-order transitions when scores change
+  - ranked score drift is visible directly in summary text without payload inspection
+- Behavior Timeline now shows generated-proposal count/title deltas across repeated proposal cycles in-thread:
+  - generated `action_proposal` summaries now compare `proposalCount` and proposal-title lists with the previous generated proposal event in the same thread
+  - timeline summaries now show `count ... -> ...` and compact title-list transitions when generated proposal sets change
+  - generated proposal drift is visible directly in summary text without payload inspection
+- Reasoning-visibility deltas are now surfaced directly in timeline summaries:
+  - selection-context timelines now show over-time deltas for prompt-context blocks, compiled-context added/removed counts, and memory-context active commitment count
+  - perception and context-thread timelines now show confidence deltas against the previous same-stage event in the same thread
+  - prompt-context stability cycle changes are now visible as explicit delta transitions instead of static snapshots
+
+### Next
+- Plan tracking for this rebuild slice is fully complete at 100%.
+
+## Core Architecture
+### Architecture rules
+- Enforce a hard 500-line limit for all authored `.cpp`, `.h`, `.py`, `.qml`, `.ts`, `.tsx` files; exclude generated/vendor code only.
+- No god files. Every feature must live in a small capability package with contracts, service layer, policy layer, telemetry hooks, registration, and tests.
+- Keep the app shippable during the refactor. Existing large classes become temporary integration facades only.
+- Keep storage, memory, telemetry, and perception local by default. Remote inference remains an explicit fallback seam, not a default behavior.
+
+### Top-level package layout
+- `kernel`: event bus, command bus, session manager, scheduler, capability registry, permission registry, config registry
+- `perception`: wake, speech ingress, active app/window, browser/editor context adapters, notifications, clipboard, UI Automation, OCR, optional screenshots, optional camera, gesture ingestion
+- `cognition`: context compiler, intent/routing helpers, tool exposure planner, summarizer, retrieval planner, cooldown engine, focus mode policy, proactive planner, risk engine
+- `memory`: profile, preferences, episodic records, active commitments, task graph, rolling summaries, retrieval index
+- `action`: desktop automation, browser control, task executors, connector actions, confirmation workflows, interruption handling
+- `embodiment`: tray, orb, overlay, suggestion cards, toasts, focus indicator, compact control surfaces, debug timeline UI
+- `connectors`: productivity + coding packages for calendar, email, tasks, notes, local files, browser context, repo/editor/log/shell context
+- `telemetry`: behavioral event ledger, NDJSON mirrors, query APIs, retention, export, debug reconstruction
+- `behavior_tuning`: feedback ingestion, trace scoring, offline evaluators, policy candidate generation, bounded adaptation, rollback
+- `integration`: temporary bridges from current `AssistantController`, `BackendFacade`, `PromptAdapter`, `ToolExecutionService`, and runtime workers into the new package system
+
+### Public contracts
+Create small domain-specific type files and stop relying on one large shared type surface. Required contracts:
+- `CompanionContextSnapshot`
+- `ContextThreadId`
+- `PerceptionEvent`
+- `BehaviorDecision`
+- `ActionProposal`
+- `ActionOutcome`
+- `RiskAssessment`
+- `PermissionGrant`
+- `FocusModeState`
+- `CooldownState`
+- `CriticalAlertPolicy`
+- `PromptAssembly`
+- `ToolExposurePlan`
+- `MemoryRecord`
+- `MemoryQuery`
+- `TaskRecord`
+- `TriggerRule`
+- `BehaviorTraceEvent`
+- `PolicySnapshot`
+- `FeedbackSignal`
+
+## Major Systems
+### 1. Embodied desktop companion
+- Preserve current Vaxil strengths as first-class packages: wake word, local STT/TTS, tray/orb/overlay workflow, optional camera/gesture interaction.
+- Add Windows-first desktop perception for:
+  - active app/process/window title
+  - browser/editor/document context where available
+  - notifications
+  - clipboard
+  - UI Automation metadata
+  - OCR on demand
+  - screenshot analysis only when necessary and separately permissioned
+- Sensing precedence:
+  - active app/window metadata first
+  - UIA/OCR second
+  - screenshots only when needed
+  - camera optional and separately permissioned
+- Add `Private Mode` that suppresses screenshot/OCR/camera perception even if the capability exists.
+- Keep overlay-first UX as the primary operating surface: suggestion cards, action progress, focus indicator, quick command surface, interruption-safe toasts.
+
+### 2. Smart Cooldown System
+- Add a dedicated `Cooldown Engine` in cognition; do not scatter cooldown logic across controller, UI, or worker code.
+- Cooldown is based on `semantic activity threads`, not raw time gaps or app-only sessions.
+- Context thread identity combines:
+  - app family
+  - inferred task
+  - topic/entity cluster
+  - recent direct user intent
+- Priority bands:
+  - `low`: never break cooldown
+  - `medium`: may surface only if cooldown is clear and confidence is high
+  - `high`: may break cooldown only with novelty + confidence
+  - `critical`: may bypass cooldown only if Focus Mode and critical-alert policy permit it
+- Cooldown resets only on meaningful context shifts, not every event.
+- Novelty uses a `context delta model` over:
+  - current thread state
+  - recent suggestions shown
+  - recent assistant actions
+  - active commitments already known
+- Emit explicit ledger events for every suppress, defer, allow, and break decision.
+
+### 3. Focus / Mute Mode
+- Add `Focus Mode` as a hard user-controlled companion state.
+- Default Focus Mode behavior:
+  - allow direct commands
+  - block proactive suggestions
+  - block non-critical interruptions
+  - optionally allow critical alerts only
+- Focus Mode supports:
+  - fixed duration
+  - indefinite/manual mode
+  - overlay indicator
+  - visible remaining time when timed
+  - silent or low-noise expiry behavior
+  - cooldown extension while active
+- Critical alerts allowed through Focus Mode are narrow by default:
+  - user-safety events
+  - imminent meetings/deadlines
+  - user-whitelisted urgent triggers
+- Focus Mode state must be consumed by proactive planning, prompt assembly, action policy, and notification surfaces.
+
+### 4. Smart Prompt System
+- Replace the current prompt-builder pattern with a `Context Compiler` pipeline.
+- The main LLM must see only:
+  - relevant memory
+  - active context thread
+  - compressed interaction history
+  - behavior rules currently in effect
+  - only the tools needed for this request
+- Use `heuristics first, helper models on demand`.
+- Helper services are separate tiny local packages:
+  - `intent helper`
+  - `embedding/retrieval helper`
+  - `tool exposure selector`
+  - `history summarizer`
+  - optional `topic/thread linker`
+- Keep helpers tiny and always-ready where feasible.
+- The compiler produces:
+  - `PromptAssembly`
+  - `ToolExposurePlan`
+  - `MemorySelectionSet`
+  - `BehaviorRulesSnapshot`
+- Every included memory/tool/rule/context block must have a reason code in telemetry.
+
+### 4A. Prompt/Orchestration Slimming
+- Vaxil must not solve runtime architecture gaps by stuffing more instructions, examples, tool descriptions, or policy rules into the main prompt.
+- Prompt growth is a failure mode. Missing behavior must first be handled by orchestration, deterministic policy, typed state, or focused helper components before adding prompt text.
+- Replace the all-in-one prompt pattern with:
+  - a minimal steering prompt
+  - dynamic per-turn prompt blocks
+  - typed `PromptTurnContext`
+  - prompt-budget and anti-bloat telemetry
+- The main LLM receives only:
+  - minimal identity
+  - current task/action-thread state
+  - selected memory
+  - verified evidence
+  - allowed tools for this turn
+  - active behavioral constraints that matter now
+  - a compact response contract
+- Move routing, continuation detection, memory selection, tool exposure, permission/risk checks, evidence quality, and action-loop state out of the prompt into runtime modules.
+- Add a thin `TurnOrchestrationRuntime` between user routing and main LLM request assembly.
+- `TurnOrchestrationRuntime` is a sequencer only. It preserves typed task/evidence state and delegates decisions to focused policy modules; it must not become a new manager or brain.
+- The runtime drives an `inspect -> decide -> tool-use -> verify -> continue` loop across conversation, agent, and continuation turns.
+- Preserve multi-step action thread state so follow-ups like `what did you see?`, `from the result`, `open the first one`, and `what have you done?` continue the active task when appropriate.
+- Helper-layer rule:
+  - use deterministic heuristics first
+  - add small focused helpers only for retrieval, intent/continuation classification, tool routing, compact history summarization, or topic/linking when tests show rules are insufficient
+  - optional small local LM support is allowed only for narrow helper tasks and must not be required for the base architecture
+- The LLM remains the reasoning brain, but state, routing, memory, permissions, tool discipline, and evidence handling belong to surrounding system modules.
+
+### 5. Layered memory and personal context
+- Replace the lightweight memory layer with separate stores for:
+  - `profile`
+  - `preferences`
+  - `episodic`
+  - `active_commitments`
+  - `task_graph`
+  - `summaries`
+  - `retrieval index`
+- Retrieval policy:
+  - sparse/exact retrieval first
+  - embeddings for semantic recall
+  - summarization only when needed
+- Add phase-1 connectors for productivity + coding:
+  - calendar, email, tasks, notes, local files
+  - browser context
+  - repo/editor/log/shell context
+- Connector ingestion writes typed records through ingestion contracts; no connector writes directly to free-form memory blobs.
+
+### 6. Proactive intelligence and action policy
+- Add a `Proactive Planner` driven by:
+  - schedule triggers
+  - context triggers
+  - active commitments
+  - connector updates
+  - perception changes
+- Planner outputs:
+  - silent memory updates
+  - suggestion proposals
+  - confirmation-needed action proposals
+  - suppressed proposals with explanation
+- Default autonomy is `permissioned proactive`:
+  - suggestions allowed when policy permits
+  - actions require risk + permission checks
+  - medium/high-risk actions require confirmation unless explicitly whitelisted
+- Add per-capability permissions for:
+  - microphone
+  - vision/camera
+  - screenshot/OCR
+  - notifications
+  - clipboard
+  - automation
+  - connectors
+  - memory classes
+
+### 7. Behavioral event ledger and debugability
+- Make the `Behavioral Event Ledger` the debugging source of truth.
+- Primary storage: SQLite.
+- Secondary mirror: NDJSON append-only files.
+- Every event must carry:
+  - `event_id`
+  - `session_id`
+  - `trace_id`
+  - `thread_id`
+  - `capability_id`
+  - `actor`
+  - `stage`
+  - `timestamp`
+  - `reason_code`
+- Required event families:
+  - perception
+  - context-thread changes
+  - prompt assembly
+  - memory reads/writes
+  - cooldown decisions
+  - focus-mode transitions
+  - tool exposure decisions
+  - risk checks
+  - action proposals
+  - confirmations
+  - executions
+  - outcomes/failures
+  - UI presentation
+  - feedback signals
+  - policy adaptation
+- Add an in-app debug surface with:
+  - session timeline
+  - decision graph
+  - drill-down from any suggestion or action back to perception, memory, prompt, risk, and permission inputs
+- Use tiered retention:
+  - recent raw detail kept in full
+  - older traces compacted into summaries
+  - raw NDJSON export per session available locally
+
+### 8. Behavior tuning framework
+- Add a first-class `behavior_tuning` subsystem.
+- Start with `trace tuning first`, not RL-lite first.
+- Use `implicit + explicit hybrid feedback`:
+  - explicit ratings
+  - accept/dismiss/defer signals
+  - interruption signals
+  - confirmations/rejections
+  - follow-through and abandonment patterns
+- Allow only `bounded policy adaptation`:
+  - threshold tuning
+  - ranking weights
+  - prompt compression knobs
+  - retrieval weighting
+  - tool exposure preferences
+  - model/router preferences
+- Do not automatically tune:
+  - permission model
+  - confirmation rules
+  - critical-alert policy
+  - hard safety boundaries
+  - Focus Mode guarantees
+- Add:
+  - trace scorer
+  - feature extractor
+  - offline evaluator
+  - policy candidate generator
+  - policy promotion gate
+  - rollback manager
+  - policy version store
+- `RL-lite` is phase-later and narrow:
+  - contextual bandits or reward-weighted ranking only
+  - optimize suggestion timing, ranking, and tool exposure
+  - never directly optimize unrestricted autonomy
+  - always gated by offline evaluation and rollback support
+
+## Delivery Plan
+1. Add architecture guardrails: file-cap CI, package template, contract split, and dependency-boundary checks.
+2. Build the behavioral event ledger, NDJSON mirroring, telemetry query API, and minimal debug timeline shell.
+3. Split `AssistantTypes` and extract thin orchestrators from `AssistantController`, `BackendFacade`, `PromptAdapter`, and `ToolExecutionService`.
+4. Ship the first vertical slice:
+   active app/window + notifications + clipboard sensing, context thread builder, Smart Cooldown, Focus Mode, overlay suggestion surface, full telemetry.
+5. Replace the current memory core with layered stores, retrieval index, active commitments, and summary generation.
+6. Add the Smart Prompt System: context compiler, helper services, tool exposure planner, and prompt reason-code telemetry.
+7. Prompt/Orchestration Slimming: `TurnOrchestrationRuntime`, typed prompt blocks, prompt-budget tests, and anti-bloat telemetry.
+8. Add the proactive planner, risk engine, permission service, and quiet/interruptibility policies.
+9. Add phase-1 productivity + coding connectors and bind them into memory and proactive planning.
+10. Add the behavior tuning framework with feedback ingestion, trace scoring, offline evaluators, and bounded policy promotion.
+11. Add narrow RL-lite only after the companion scenario suite and telemetry are stable.
+
+## Test Plan
+- Architecture tests:
+  - file-cap enforcement
+  - package boundary checks
+  - contract serialization and compatibility
+- Perception tests:
+  - active app/window ingestion
+  - notification and clipboard capture
+  - UIA/OCR fallback ordering
+  - screenshot gating
+  - private-mode suppression
+- Cooldown tests:
+  - semantic thread grouping
+  - novelty detection
+  - low/medium/high/critical suppression rules
+  - context-shift reset rules
+- Focus Mode tests:
+  - timed and indefinite behavior
+  - command passthrough
+  - critical-alert filtering
+  - overlay state correctness
+- Prompt tests:
+  - relevant memory selection
+  - tool exposure selection
+  - summarization triggers
+  - behavior-rule injection
+  - reason-code emission
+  - minimal prompt assembly
+  - selected-tool-only prompt exposure
+  - evidence-preserving continuation prompts
+  - one-shot failure prevention
+  - prompt budget and static-example allowlist regression coverage
+- Turn orchestration tests:
+  - continuation after tool actions
+  - same-task follow-up handling
+  - unrelated fresh requests do not attach to stale action threads
+  - evidence-aware action loops
+  - low-signal tool evidence blocks grounded final-answer state
+- Memory tests:
+  - layer isolation
+  - retrieval quality
+  - active commitment continuity
+  - summary compaction
+- Action and safety tests:
+  - permission denial
+  - confirmation gating
+  - interruption handling
+  - proactive suggestion vs action separation
+- Behavior tuning tests:
+  - feedback ingestion correctness
+  - trace scoring stability
+  - policy candidate acceptance/rejection
+  - rollback and version restore
+  - bounded adaptation enforcement
+- Companion scenario suite:
+  - coding-session assistance
+  - meeting/deadline reminder
+  - browser research help
+  - notification triage
+  - “activate focus mode for 1 hour”
+  - wake -> understand -> suggest -> confirm -> act -> explain
+- Telemetry acceptance:
+  - every proactive suggestion is reconstructible
+  - every action is traceable to context, permission, and risk inputs
+  - every cooldown and Focus Mode decision has an explicit reason
+  - every promoted policy version is attributable to feedback and offline evaluation
+
+## Assumptions and Defaults
+- Windows is the primary shipping target; Linux/macOS are deferred behind future adapters.
+- Single-user personal assistant is the core product.
+- Overlay-first companion remains the primary interface.
+- Persona is calm JARVIS-like.
+- Local-first with explicit remote fallback seams.
+- Smart Cooldown, Focus Mode, Smart Prompt System, Behavioral Event Ledger, and Behavior Tuning Framework are mandatory core systems.
+- Critical alerts are intentionally narrow by default.
+- Helper models are tiny, local, and always-ready where feasible.
+- RL-lite is intentionally delayed and narrowly scoped until the base system is stable and measurable.

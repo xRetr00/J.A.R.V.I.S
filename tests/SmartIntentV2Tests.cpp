@@ -21,6 +21,7 @@ private slots:
     void detectsConfirmationReplyState();
     void infersPrimaryAndSecondaryGoals();
     void plansDeterministicCandidateFromSocialPrefixCommand();
+    void deterministicCandidateCarriesTaskPayload();
     void arbitratesCommandVsInfoConflictToConversation();
     void arbitratesContinuationAsPriorityRoute();
     void resolvesContextReferenceToExecutionTask();
@@ -105,6 +106,26 @@ void SmartIntentV2Tests::plansDeterministicCandidateFromSocialPrefixCommand()
 
     QVERIFY(!candidates.isEmpty());
     QCOMPARE(candidates.first().route.kind, InputRouteKind::DeterministicTasks);
+}
+
+void SmartIntentV2Tests::deterministicCandidateCarriesTaskPayload()
+{
+    TurnSignalExtractor extractor;
+    UserGoalInferer inferer;
+    ExecutionIntentPlanner planner;
+
+    const TurnSignals extracted = extractor.extract(QStringLiteral("open youtube"));
+    TurnState state;
+    TurnGoalSet goals = inferer.infer(extracted, state, true);
+    AgentTask deterministicTask;
+    deterministicTask.type = QStringLiteral("browser_open");
+    deterministicTask.args.insert(QStringLiteral("url"), QStringLiteral("https://www.youtube.com"));
+
+    const QList<ExecutionIntentCandidate> candidates = planner.plan(goals, extracted, true, deterministicTask);
+    QVERIFY(!candidates.isEmpty());
+    QCOMPARE(candidates.first().route.kind, InputRouteKind::DeterministicTasks);
+    QCOMPARE(candidates.first().tasks.size(), 1);
+    QCOMPARE(candidates.first().route.tasks.size(), 1);
 }
 
 void SmartIntentV2Tests::arbitratesCommandVsInfoConflictToConversation()

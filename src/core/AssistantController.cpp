@@ -3107,6 +3107,8 @@ void AssistantController::submitText(const QString &text)
             if (candidate.route.kind == decision.kind) {
                 if (!candidate.route.tasks.isEmpty()) {
                     decision.tasks = candidate.route.tasks;
+                } else if (!candidate.tasks.isEmpty()) {
+                    decision.tasks = candidate.tasks;
                 }
                 if (decision.message.trimmed().isEmpty()) {
                     decision.message = candidate.route.message;
@@ -5507,13 +5509,16 @@ void AssistantController::startAgentConversationRequest(const QString &input, In
         turnPlan = m_turnOrchestrationRuntime->buildPlan(runtimeInput);
     }
 
+    const QList<AgentToolSpec> requestTools = m_turnOrchestrationRuntime
+        ? turnPlan.selectedTools
+        : relevantTools;
     const AgentRequestContext requestContext{
         .modelId = modelId,
         .input = input,
         .intent = expectedIntent,
         .memory = memoryContext,
         .skills = m_skillStore->listSkills(),
-        .tools = relevantTools,
+        .tools = requestTools,
         .identity = m_identityProfileService->identity(),
         .userProfile = m_identityProfileService->userProfile(),
         .workspaceRoot = QDir::currentPath(),
@@ -5670,6 +5675,9 @@ void AssistantController::continueAgentConversation(const QList<AgentToolResult>
         turnPlan = m_turnOrchestrationRuntime->buildPlan(runtimeInput);
     }
 
+    const QList<AgentToolSpec> requestTools = m_turnOrchestrationRuntime
+        ? turnPlan.selectedTools
+        : relevantTools;
     const AgentRequestContext requestContext{
         .modelId = modelId,
         .input = m_lastAgentInput,
@@ -5677,7 +5685,7 @@ void AssistantController::continueAgentConversation(const QList<AgentToolResult>
         .intent = m_lastAgentIntent,
         .memory = memoryContext,
         .skills = m_skillStore->listSkills(),
-        .tools = relevantTools,
+        .tools = requestTools,
         .toolResults = results,
         .identity = m_identityProfileService->identity(),
         .userProfile = m_identityProfileService->userProfile(),

@@ -36,6 +36,8 @@ private slots:
     void rejectsFreshActionWithPronounAgainstRecentActionThread();
     void doesNotShortCircuitSocialPrefixWhenRequestFollows();
     void treatsOpenSourceQuestionAsConversationNotCommandExtraction();
+    void keepsOpenSourceInfoQueryReadOnlyTools();
+    void doesNotRequireConfirmationForReadOnlyDesktopQuestion();
     void selectionPolicyClarifiesAmbiguousRecentThreads();
     void selectionPolicyRetriesFailedAndAuditsCanceledThreads();
     void selectionPolicyTreatsWhatHappenedAsRecentTaskAudit();
@@ -678,6 +680,59 @@ void AssistantBehaviorPolicyTests::selectionPolicyBlocksPrivateReferentialContex
     const ActionThreadSelectionResult result = ActionThreadSelectionPolicy::select(input);
     QCOMPARE(result.kind, ActionThreadSelectionKind::PrivateContextBlocked);
     QVERIFY(!result.userMessage.isEmpty());
+}
+
+void AssistantBehaviorPolicyTests::keepsOpenSourceInfoQueryReadOnlyTools()
+{
+    AssistantBehaviorPolicy policy;
+    const QList<AgentToolSpec> selected = policy.selectRelevantTools(
+        QStringLiteral("what does open source mean?"),
+        IntentType::GENERAL_CHAT,
+        {
+            {QStringLiteral("web_search"), {}, {}},
+            {QStringLiteral("memory_search"), {}, {}},
+            {QStringLiteral("browser_open"), {}, {}},
+            {QStringLiteral("computer_open_url"), {}, {}},
+            {QStringLiteral("file_read"), {}, {}}
+        });
+
+    QStringList selectedNames;
+    for (const AgentToolSpec &tool : selected) {
+        selectedNames.push_back(tool.name);
+    }
+
+    QVERIFY(selectedNames.contains(QStringLiteral("web_search")));
+    QVERIFY(selectedNames.contains(QStringLiteral("memory_search")));
+    QVERIFY(!selectedNames.contains(QStringLiteral("browser_open")));
+    QVERIFY(!selectedNames.contains(QStringLiteral("computer_open_url")));
+}
+
+void AssistantBehaviorPolicyTests::doesNotRequireConfirmationForReadOnlyDesktopQuestion()
+{
+    AssistantBehaviorPolicy policy;
+    const QString input = QStringLiteral("Do you know what window I opened on the desktop right now?"
+                                         "\n\nCurrent desktop context: App: vscode; task=clipboard; topic=what_s_going_on");
+    const ToolPlan plan = policy.buildToolPlan(
+        input,
+        IntentType::GENERAL_CHAT,
+        {
+            {QStringLiteral("web_search"), {}, {}},
+            {QStringLiteral("dir_list"), {}, {}},
+            {QStringLiteral("file_read"), {}, {}},
+            {QStringLiteral("computer_list_apps"), {}, {}},
+            {QStringLiteral("computer_open_app"), {}, {}}
+        });
+
+    InputRouteDecision decision;
+    decision.kind = InputRouteKind::AgentConversation;
+    const TrustDecision trust = policy.assessTrust(
+        QStringLiteral("Do you know what window I opened on the desktop right now?"),
+        decision,
+        plan);
+
+    QVERIFY(!plan.sideEffecting);
+    QVERIFY(!plan.orderedToolNames.contains(QStringLiteral("computer_open_app")));
+    QVERIFY(!trust.requiresConfirmation);
 }
 
 void AssistantBehaviorPolicyTests::narrowsExplicitCreateAndBrowserToolsForGeneralChat()

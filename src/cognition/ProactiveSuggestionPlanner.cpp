@@ -183,6 +183,36 @@ BehaviorDecision combineDecisions(const BehaviorDecision &cooldownDecision,
     decision.details.insert(QStringLiteral("cooldownReasonCode"), cooldownDecision.reasonCode);
     return decision;
 }
+
+bool isTaskResultFollowUp(const ProactiveSuggestionPlanner::Input &input,
+                          const QVariantMap &plannerMetadata)
+{
+    const QString sourceKind = input.sourceKind.trimmed();
+    const QString sourcePolicy = plannerMetadata.value(QStringLiteral("sourceSpecificPolicy")).toString().trimmed();
+    return sourceKind == QStringLiteral("reply_result")
+        || sourceKind == QStringLiteral("task_result")
+        || sourceKind == QStringLiteral("task_result_surface")
+        || sourcePolicy == QStringLiteral("research_task_result")
+        || sourcePolicy == QStringLiteral("connector_task_result")
+        || sourcePolicy == QStringLiteral("document_task_result");
+}
+
+bool canBreakCooldownForTaskResult(const ProactiveSuggestionPlanner::Input &input,
+                                   const QVariantMap &plannerMetadata,
+                                   const ProactiveSuggestionPlan &plan)
+{
+    if (!input.success || input.focusMode.enabled || !isTaskResultFollowUp(input, plannerMetadata)) {
+        return false;
+    }
+    if (plan.confidenceScore < 0.55 || plan.selectedProposal.summary.trimmed().isEmpty()) {
+        return false;
+    }
+    const QString sourcePolicy = plannerMetadata.value(QStringLiteral("sourceSpecificPolicy")).toString().trimmed();
+    return sourcePolicy == QStringLiteral("research_task_result")
+        || sourcePolicy == QStringLiteral("connector_task_result")
+        || sourcePolicy == QStringLiteral("document_task_result")
+        || !input.sourceUrls.isEmpty();
+}
 }
 
 ProactiveSuggestionPlan ProactiveSuggestionPlanner::plan(const Input &input)
@@ -279,6 +309,17 @@ ProactiveSuggestionPlan ProactiveSuggestionPlanner::plan(const Input &input)
                                          plannerMetadata.value(QStringLiteral("connectorKindRecentSeenCount")));
     plan.cooldownDecision.details.insert(QStringLiteral("connectorKindRecentPresentedCount"),
                                          plannerMetadata.value(QStringLiteral("connectorKindRecentPresentedCount")));
+    if (!plan.cooldownDecision.allowed
+        && (plan.cooldownDecision.reasonCode == QStringLiteral("cooldown.low_novelty")
+            || plan.cooldownDecision.reasonCode == QStringLiteral("cooldown.active"))
+        && canBreakCooldownForTaskResult(input, plannerMetadata, plan)) {
+        const QString originalReason = plan.cooldownDecision.reasonCode;
+        plan.cooldownDecision.allowed = true;
+        plan.cooldownDecision.action = QStringLiteral("break_cooldown");
+        plan.cooldownDecision.reasonCode = QStringLiteral("cooldown.task_result_follow_up");
+        plan.cooldownDecision.score = std::max(plan.cooldownDecision.score, plan.confidenceScore);
+        plan.cooldownDecision.details.insert(QStringLiteral("originalCooldownReason"), originalReason);
+    }
     plan.nextCooldownState = cooldownEngine.advanceState({
         .context = plan.context,
         .state = input.cooldownState,

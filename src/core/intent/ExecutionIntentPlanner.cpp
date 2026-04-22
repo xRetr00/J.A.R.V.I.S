@@ -61,6 +61,8 @@ QList<ExecutionIntentCandidate> ExecutionIntentPlanner::plan(const TurnGoalSet &
             0.01f);
         if (hasDeterministicTask && !deterministicTask.type.trimmed().isEmpty()) {
             deterministic.tasks = {deterministicTask};
+            deterministic.route.tasks = deterministic.tasks;
+            deterministic.route.status = QStringLiteral("Background task queued");
         }
         candidates.push_back(deterministic);
     }

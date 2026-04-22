@@ -109,6 +109,9 @@ RouteArbitrationResult RouteArbitrator::arbitrate(const InputRouteDecision &poli
     if (hasDeterministicTask) {
         if (const std::optional<ExecutionIntentCandidate> deterministic = findCandidate(InputRouteKind::DeterministicTasks)) {
             result.decision = deterministic->route;
+            if (result.decision.tasks.isEmpty() && !deterministic->tasks.isEmpty()) {
+                result.decision.tasks = deterministic->tasks;
+            }
             result.confidence = deterministic->score;
             result.reasonCodes = deterministic->reasonCodes;
         } else {
@@ -196,6 +199,9 @@ RouteArbitrationResult RouteArbitrator::arbitrate(const InputRouteDecision &poli
             }
         }
         result.decision = selected.route;
+        if (result.decision.tasks.isEmpty() && !selected.tasks.isEmpty()) {
+            result.decision.tasks = selected.tasks;
+        }
         result.confidence = std::max(0.0f, selected.score - selected.confidencePenalty);
         result.reasonCodes = selected.reasonCodes;
     }
