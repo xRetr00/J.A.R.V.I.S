@@ -71,6 +71,8 @@ QJsonObject RoutingTraceEmitter::buildRouteFinalPayload(const RoutingTrace &trac
     payload.insert(QStringLiteral("normalized_input"), trace.normalizedInput);
     payload.insert(QStringLiteral("deterministic_matched"), trace.deterministicMatched);
     payload.insert(QStringLiteral("deterministic_task_type"), trace.deterministicTaskType);
+    payload.insert(QStringLiteral("deterministic_task_payload_present"), trace.deterministicTaskPayloadPresent);
+    payload.insert(QStringLiteral("deterministic_task_payload_lost_reason"), trace.deterministicTaskPayloadLostReason);
     payload.insert(QStringLiteral("ambiguity_score"), trace.ambiguityScore);
     payload.insert(QStringLiteral("advisor_mode"), advisorModeToString(trace.advisorMode));
     payload.insert(QStringLiteral("used_arbitrator_authority"), trace.usedArbitratorAuthority);
@@ -87,7 +89,11 @@ QJsonObject RoutingTraceEmitter::buildRouteFinalPayload(const RoutingTrace &trac
     payload.insert(QStringLiteral("tool_loop_breaker_reason"), trace.toolLoopBreakerReason);
     payload.insert(QStringLiteral("failed_tool_attempt_count"), trace.failedToolAttemptCount);
     payload.insert(QStringLiteral("same_family_attempt_count"), trace.sameFamilyAttemptCount);
+    payload.insert(QStringLiteral("consecutive_failure_count"), trace.consecutiveFailureCount);
+    payload.insert(QStringLiteral("last_tool_success"), trace.lastToolSuccess);
     payload.insert(QStringLiteral("graceful_fallback_reason"), trace.gracefulFallbackReason);
+    payload.insert(QStringLiteral("backend_failure_detected"), trace.backendFailureDetected);
+    payload.insert(QStringLiteral("fallback_reason"), trace.fallbackReason);
     payload.insert(QStringLiteral("confirmation_gate_triggered"), trace.confirmationGateTriggered);
     payload.insert(QStringLiteral("confirmation_outcome"), trace.confirmationOutcome);
     payload.insert(QStringLiteral("reason_codes"), stringsToArray(trace.reasonCodes));

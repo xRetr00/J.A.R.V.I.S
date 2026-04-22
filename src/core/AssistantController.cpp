@@ -2068,13 +2068,30 @@ void AssistantController::initialize()
             const QString errorGroup = m_aiRequestCoordinator->errorGroupFor(errorText);
             refreshConversationSession();
             setSurfaceError(QStringLiteral("assistant"), compactSurfaceText(errorText));
-            deliverLocalResponse(
-                m_localResponseEngine->respondToError(
+            const QString lastPrompt = m_lastPromptForAiLog.trimmed();
+            const bool terminalPrompt = !lastPrompt.isEmpty() && shouldEndConversationSession(lastPrompt);
+            const QString fallbackResponse = terminalPrompt
+                ? QString()
+                : m_localResponseEngine->respondToError(
                     errorGroup,
                     buildLocalResponseContext(),
-                    m_activeActionSession.responseMode),
-                errorText,
-                true);
+                    m_activeActionSession.responseMode);
+            if (m_loggingService) {
+                m_loggingService->infoFor(
+                    QStringLiteral("route_audit"),
+                    QStringLiteral("[backend_failure] backend_failure_detected=true error_group=%1 fallback_reason=%2 terminal_prompt=%3")
+                        .arg(errorGroup,
+                             terminalPrompt ? QStringLiteral("fallback.silent_terminal_error") : QStringLiteral("fallback.local_error_response"),
+                             terminalPrompt ? QStringLiteral("true") : QStringLiteral("false")));
+            }
+            if (terminalPrompt) {
+                endConversationSession();
+                setStatus(QStringLiteral("Conversation ended"));
+                emit idleRequested();
+                scheduleWakeMonitorRestart();
+            } else {
+                deliverLocalResponse(fallbackResponse, errorText, true);
+            }
         }
     });
 
@@ -2701,6 +2718,7 @@ void AssistantController::submitText(const QString &text)
     routingTrace.intentSnapshot.effectiveConfidence = effectiveIntent.confidence;
     routingTrace.deterministicMatched = hasDeterministicTask;
     routingTrace.deterministicTaskType = deterministicTask.type;
+    routingTrace.deterministicTaskPayloadPresent = hasDeterministicTask && !deterministicTask.type.trimmed().isEmpty();
 
     const bool hasUsableActionThread = m_actionThreadTracker
         ? m_actionThreadTracker->isCurrentUsable(nowMs)
@@ -3122,25 +3140,42 @@ void AssistantController::submitText(const QString &text)
     }
 
     InputRouteDecision decision = routingTrace.arbitratorResult.decision;
-    if (!decision.tasks.isEmpty()) {
-        // keep tasks emitted by arbitrator route candidate
-    } else {
+    if (decision.tasks.isEmpty()) {
         for (const ExecutionIntentCandidate &candidate : routingTrace.candidates) {
-            if (candidate.route.kind == decision.kind) {
-                if (!candidate.route.tasks.isEmpty()) {
-                    decision.tasks = candidate.route.tasks;
-                } else if (!candidate.tasks.isEmpty()) {
-                    decision.tasks = candidate.tasks;
-                }
-                if (decision.message.trimmed().isEmpty()) {
-                    decision.message = candidate.route.message;
-                }
-                if (decision.status.trimmed().isEmpty()) {
-                    decision.status = candidate.route.status;
-                }
+            if (candidate.route.kind != decision.kind) {
+                continue;
+            }
+            if (!candidate.route.tasks.isEmpty()) {
+                decision.tasks = candidate.route.tasks;
+                break;
+            }
+            if (!candidate.tasks.isEmpty()) {
+                decision.tasks = candidate.tasks;
                 break;
             }
         }
+    }
+    for (const ExecutionIntentCandidate &candidate : routingTrace.candidates) {
+        if (candidate.route.kind != decision.kind) {
+            continue;
+        }
+        if (decision.message.trimmed().isEmpty()) {
+            decision.message = candidate.route.message;
+        }
+        if (decision.status.trimmed().isEmpty()) {
+            decision.status = candidate.route.status;
+        }
+    }
+    if (decision.kind == InputRouteKind::DeterministicTasks
+        && decision.tasks.isEmpty()
+        && hasDeterministicTask
+        && !deterministicTask.type.trimmed().isEmpty()) {
+        decision.tasks = {deterministicTask};
+        routingTrace.reasonCodes.push_back(QStringLiteral("deterministic.payload_restored_from_match"));
+    }
+    routingTrace.deterministicTaskPayloadPresent = hasDeterministicTask && !decision.tasks.isEmpty();
+    if (hasDeterministicTask && decision.tasks.isEmpty()) {
+        routingTrace.deterministicTaskPayloadLostReason = QStringLiteral("deterministic.task_payload_missing_after_arbitration");
     }
 
     if (decision.kind == InputRouteKind::None) {
@@ -5609,18 +5644,22 @@ void AssistantController::continueAgentConversation(const QList<AgentToolResult>
                 });
             m_loggingService->infoFor(
                 QStringLiteral("tool_audit"),
-                QStringLiteral("[technical_guard] tool_loop_breaker_triggered=true reason=%1 failed_tool_attempt_count=%2 same_family_attempt_count=%3 budget_enforcement_enabled=%4 graceful_fallback_reason=%5")
+                QStringLiteral("[technical_guard] tool_loop_breaker_triggered=true reason=%1 failed_tool_attempt_count=%2 same_family_attempt_count=%3 consecutive_failure_count=%4 last_tool_success=%5 budget_enforcement_enabled=%6 graceful_fallback_reason=%7")
                     .arg(loopDecision.reasonCode,
                          QString::number(loopDecision.failedToolAttemptCount),
                          QString::number(loopDecision.sameFamilyAttemptCount),
+                         QString::number(loopDecision.consecutiveFailureCount),
+                         loopDecision.lastToolSuccess ? QStringLiteral("true") : QStringLiteral("false"),
                          (m_settings != nullptr && m_settings->budgetEnforcementDisabled()) ? QStringLiteral("false") : QStringLiteral("true"),
                          QStringLiteral("fallback.clarify_after_tool_loop")));
             m_loggingService->infoFor(
                 QStringLiteral("route_audit"),
-                QStringLiteral("[technical_guard] technical_guard_triggered=true tool_loop_breaker_triggered=true tool_loop_breaker_reason=%1 failed_tool_attempt_count=%2 same_family_attempt_count=%3 budget_enforcement_enabled=%4 graceful_fallback_reason=%5")
+                QStringLiteral("[technical_guard] technical_guard_triggered=true tool_loop_breaker_triggered=true tool_loop_breaker_reason=%1 failed_tool_attempt_count=%2 same_family_attempt_count=%3 consecutive_failure_count=%4 last_tool_success=%5 budget_enforcement_enabled=%6 graceful_fallback_reason=%7")
                     .arg(loopDecision.reasonCode,
                          QString::number(loopDecision.failedToolAttemptCount),
                          QString::number(loopDecision.sameFamilyAttemptCount),
+                         QString::number(loopDecision.consecutiveFailureCount),
+                         loopDecision.lastToolSuccess ? QStringLiteral("true") : QStringLiteral("false"),
                          (m_settings != nullptr && m_settings->budgetEnforcementDisabled()) ? QStringLiteral("false") : QStringLiteral("true"),
                          QStringLiteral("fallback.clarify_after_tool_loop")));
         }

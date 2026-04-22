@@ -64,6 +64,14 @@ RouteArbitrationResult RouteArbitrator::arbitrate(const InputRouteDecision &poli
         }
         return std::nullopt;
     };
+    auto findCandidateByReason = [&candidates](const QString &reasonCode) -> std::optional<ExecutionIntentCandidate> {
+        for (const ExecutionIntentCandidate &candidate : candidates) {
+            if (candidate.reasonCodes.contains(reasonCode)) {
+                return candidate;
+            }
+        }
+        return std::nullopt;
+    };
 
     const float effectiveAmbiguity = std::clamp(ambiguityScore + advisorSuggestion.ambiguityBoost, 0.0f, 1.0f);
     const float effectiveConfidence = std::clamp(confidence.finalConfidence, 0.0f, 1.0f);
@@ -100,6 +108,23 @@ RouteArbitrationResult RouteArbitrator::arbitrate(const InputRouteDecision &poli
         && (bestBackendCandidate->score >= 0.7f);
     const bool backendClearlyNeeded = backendClearlyNeededByAdvisor || backendClearlyNeededByCandidate;
     const bool shouldAskClarification = highAmbiguity && belowMediumConfidence && !backendClearlyNeeded;
+    const bool terminalIntent = findCandidateByReason(QStringLiteral("candidate.end_conversation")).has_value()
+        || turnSignals.matchedCues.contains(QStringLiteral("stop"))
+        || turnSignals.normalizedInput.contains(QStringLiteral("never mind"))
+        || turnSignals.normalizedInput.contains(QStringLiteral("nevermind"))
+        || turnSignals.normalizedInput.contains(QStringLiteral("quit"));
+    const bool socialQuestionOnly =
+        !terminalIntent
+        && (turnSignals.hasGreeting || turnSignals.hasSmallTalk)
+        && turnSignals.hasQuestionCue
+        && !turnSignals.hasCommandCue
+        && !turnSignals.hasDeterministicCue
+        && !turnSignals.hasContextReference
+        && !turnSignals.hasContinuationCue
+        && (turnSignals.matchedCues.contains(QStringLiteral("how are you"))
+            || turnSignals.matchedCues.contains(QStringLiteral("what's up"))
+            || turnSignals.matchedCues.contains(QStringLiteral("whats up"))
+            || turnSignals.matchedCues.contains(QStringLiteral("how's it going")));
     const bool shouldBackendAssist = (backendClearlyNeeded && (belowMediumConfidence || highAmbiguity))
         || (effectiveConfidence < thresholds.lowConfidence && !highAmbiguity)
         || (effectiveConfidence < thresholds.mediumConfidence
@@ -119,6 +144,31 @@ RouteArbitrationResult RouteArbitrator::arbitrate(const InputRouteDecision &poli
             result.confidence = 0.95f;
             result.reasonCodes = {QStringLiteral("arbitrator.deterministic_priority")};
         }
+    } else if (terminalIntent) {
+        if (const std::optional<ExecutionIntentCandidate> terminal = findCandidateByReason(QStringLiteral("candidate.end_conversation"))) {
+            result.decision = terminal->route;
+            result.confidence = terminal->score;
+            result.reasonCodes = terminal->reasonCodes;
+        } else {
+            result.decision.kind = InputRouteKind::LocalResponse;
+            result.decision.status = QStringLiteral("Conversation ended");
+            result.confidence = 0.96f;
+            result.reasonCodes = {QStringLiteral("arbitrator.terminal_local_response")};
+        }
+        result.reasonCodes.push_back(QStringLiteral("override.blocked.backend_for_terminal"));
+    } else if (socialQuestionOnly) {
+        if (const std::optional<ExecutionIntentCandidate> local = findCandidate(InputRouteKind::LocalResponse)) {
+            result.decision = local->route;
+            result.confidence = local->score;
+            result.reasonCodes = local->reasonCodes;
+        } else {
+            result.decision.kind = InputRouteKind::LocalResponse;
+            result.decision.status = QStringLiteral("Local response");
+            result.decision.message = QStringLiteral("I am doing well. How can I help?");
+            result.confidence = 0.9f;
+            result.reasonCodes = {QStringLiteral("arbitrator.social_question_local_response")};
+        }
+        result.reasonCodes.push_back(QStringLiteral("override.blocked.backend_for_social"));
     } else if (shouldAskClarification) {
         if (const std::optional<ExecutionIntentCandidate> clarify = findCandidate(InputRouteKind::LocalResponse)) {
             result.decision = clarify->route;

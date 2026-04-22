@@ -228,7 +228,7 @@ QString LocalResponseEngine::chooseVariant(const QString &group)
 {
     const auto variants = m_responses.value(group);
     if (variants.isEmpty()) {
-        return QStringLiteral("I am ready.");
+        return QStringLiteral("I couldn't complete that request. Please try again.");
     }
 
     if (variants.size() == 1) {

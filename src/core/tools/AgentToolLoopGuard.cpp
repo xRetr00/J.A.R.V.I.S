@@ -5,11 +5,6 @@
 #include "core/tools/ToolResultEvidencePolicy.h"
 
 namespace {
-bool resultFailedOrLowSignal(const AgentToolResult &result)
-{
-    return !result.success || ToolResultEvidencePolicy::assess(result).lowSignal;
-}
-
 QString stopMessageForReason(const QString &reasonCode)
 {
     if (reasonCode == QStringLiteral("tool_loop.same_family_repeated_low_signal")) {
@@ -40,7 +35,6 @@ AgentToolLoopGuardDecision AgentToolLoopGuard::evaluateResults(
         return decision;
     }
 
-    bool allLatestLowSignalOrFailed = true;
     int latestSameFamilyCount = 0;
     for (const AgentToolResult &result : results) {
         ++state->totalToolCalls;
@@ -49,19 +43,34 @@ AgentToolLoopGuardDecision AgentToolLoopGuard::evaluateResults(
         state->sameFamilyAttemptCount = std::max(state->sameFamilyAttemptCount, latestSameFamilyCount);
 
         const ToolResultEvidenceAssessment assessment = ToolResultEvidencePolicy::assess(result);
+        const bool failedOrLowSignal = !result.success || assessment.lowSignal;
         if (!result.success) {
             ++state->failedToolAttempts;
         }
         if (assessment.lowSignal) {
             ++state->lowSignalAttempts;
         }
-        if (result.success && !assessment.lowSignal) {
-            allLatestLowSignalOrFailed = false;
+        if (failedOrLowSignal) {
+            ++state->consecutiveFailureCount;
+            if (state->lastFailureFamily == family) {
+                ++state->consecutiveSameFamilyFailureCount;
+            } else {
+                state->consecutiveSameFamilyFailureCount = 1;
+                state->lastFailureFamily = family;
+            }
+            state->lastToolSuccess = false;
+        } else {
+            state->consecutiveFailureCount = 0;
+            state->consecutiveSameFamilyFailureCount = 0;
+            state->lastFailureFamily.clear();
+            state->lastToolSuccess = true;
         }
     }
 
     decision.failedToolAttemptCount = state->failedToolAttempts;
     decision.sameFamilyAttemptCount = state->sameFamilyAttemptCount;
+    decision.consecutiveFailureCount = state->consecutiveFailureCount;
+    decision.lastToolSuccess = state->lastToolSuccess;
 
     if (state->totalToolCalls >= config.maxToolCallsPerTurn) {
         decision.stop = true;
@@ -72,7 +81,7 @@ AgentToolLoopGuardDecision AgentToolLoopGuard::evaluateResults(
     } else if (state->lowSignalAttempts >= config.maxLowSignalToolResultsPerTurn) {
         decision.stop = true;
         decision.reasonCode = QStringLiteral("tool_loop.low_signal_attempts");
-    } else if (allLatestLowSignalOrFailed && latestSameFamilyCount >= config.maxSameFamilyAttemptsPerTurn) {
+    } else if (state->consecutiveSameFamilyFailureCount >= config.maxSameFamilyAttemptsPerTurn) {
         decision.stop = true;
         decision.reasonCode = QStringLiteral("tool_loop.same_family_repeated_low_signal");
     }

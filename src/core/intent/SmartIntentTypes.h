@@ -184,6 +184,8 @@ struct RoutingTrace {
     IntentInferenceSnapshot intentSnapshot;
     bool deterministicMatched = false;
     QString deterministicTaskType;
+    bool deterministicTaskPayloadPresent = false;
+    QString deterministicTaskPayloadLostReason;
     float ambiguityScore = 0.0f;
     IntentConfidence intentConfidence;
     IntentAdvisorMode advisorMode = IntentAdvisorMode::Heuristic;
@@ -208,7 +210,11 @@ struct RoutingTrace {
     QString toolLoopBreakerReason;
     int failedToolAttemptCount = 0;
     int sameFamilyAttemptCount = 0;
+    int consecutiveFailureCount = 0;
+    bool lastToolSuccess = false;
     QString gracefulFallbackReason;
+    bool backendFailureDetected = false;
+    QString fallbackReason;
     QStringList overridesApplied;
     QStringList reasonCodes;
 };

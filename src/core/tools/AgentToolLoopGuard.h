@@ -20,6 +20,10 @@ struct AgentToolLoopGuardState
     int failedToolAttempts = 0;
     int lowSignalAttempts = 0;
     int sameFamilyAttemptCount = 0;
+    int consecutiveFailureCount = 0;
+    int consecutiveSameFamilyFailureCount = 0;
+    QString lastFailureFamily;
+    bool lastToolSuccess = false;
     QHash<QString, int> familyAttempts;
 };
 
@@ -30,6 +34,8 @@ struct AgentToolLoopGuardDecision
     QString userMessage;
     int failedToolAttemptCount = 0;
     int sameFamilyAttemptCount = 0;
+    int consecutiveFailureCount = 0;
+    bool lastToolSuccess = false;
     QStringList reasonCodes;
 };
 

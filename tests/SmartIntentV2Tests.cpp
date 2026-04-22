@@ -23,6 +23,8 @@ private slots:
     void plansDeterministicCandidateFromSocialPrefixCommand();
     void deterministicCandidateCarriesTaskPayload();
     void arbitratesCommandVsInfoConflictToConversation();
+    void blocksBackendForTerminalIntent();
+    void blocksBackendForSocialQuestion();
     void arbitratesContinuationAsPriorityRoute();
     void resolvesContextReferenceToExecutionTask();
     void prefersClarificationAtHighAmbiguity();
@@ -158,6 +160,90 @@ void SmartIntentV2Tests::arbitratesCommandVsInfoConflictToConversation()
         false);
 
     QCOMPARE(result.decision.kind, InputRouteKind::Conversation);
+}
+
+void SmartIntentV2Tests::blocksBackendForTerminalIntent()
+{
+    RouteArbitrator arbitrator;
+    TurnSignals turnSignals;
+    turnSignals.normalizedInput = QStringLiteral("never mind");
+    turnSignals.matchedCues = {QStringLiteral("stop")};
+    TurnState state;
+    TurnGoalSet goals;
+    goals.primaryGoal.kind = UserGoalKind::Unknown;
+    QList<ExecutionIntentCandidate> candidates;
+
+    ExecutionIntentCandidate terminal;
+    terminal.kind = ExecutionIntentKind::LocalResponse;
+    terminal.route.kind = InputRouteKind::LocalResponse;
+    terminal.route.status = QStringLiteral("Conversation ended");
+    terminal.score = 1.0f;
+    terminal.reasonCodes = {QStringLiteral("candidate.end_conversation")};
+    candidates.push_back(terminal);
+
+    ExecutionIntentCandidate backend;
+    backend.kind = ExecutionIntentKind::BackendReasoning;
+    backend.route.kind = InputRouteKind::Conversation;
+    backend.score = 0.8f;
+    backend.requiresBackend = true;
+    backend.backendPriority = 90;
+    backend.reasonCodes = {QStringLiteral("candidate.backend")};
+    candidates.push_back(backend);
+
+    InputRouteDecision policyDecision;
+    policyDecision.kind = InputRouteKind::Conversation;
+    const RouteArbitrationResult result = arbitrator.arbitrate(
+        policyDecision,
+        turnSignals,
+        state,
+        goals,
+        candidates,
+        IntentConfidence{.signalConfidence = 0.4f, .goalConfidence = 0.4f, .executionConfidence = 0.6f, .finalConfidence = 0.45f},
+        0.4f,
+        IntentAdvisorSuggestion{.available = false, .backendNecessity = 0.9f},
+        false);
+
+    QCOMPARE(result.decision.kind, InputRouteKind::LocalResponse);
+    QVERIFY(result.reasonCodes.contains(QStringLiteral("override.blocked.backend_for_terminal")));
+}
+
+void SmartIntentV2Tests::blocksBackendForSocialQuestion()
+{
+    RouteArbitrator arbitrator;
+    TurnSignals turnSignals;
+    turnSignals.hasGreeting = true;
+    turnSignals.hasSmallTalk = true;
+    turnSignals.hasQuestionCue = true;
+    turnSignals.matchedCues = {QStringLiteral("hello"), QStringLiteral("how are you")};
+    TurnState state;
+    TurnGoalSet goals;
+    goals.primaryGoal.kind = UserGoalKind::InfoQuery;
+    QList<ExecutionIntentCandidate> candidates;
+
+    ExecutionIntentCandidate backend;
+    backend.kind = ExecutionIntentKind::BackendReasoning;
+    backend.route.kind = InputRouteKind::Conversation;
+    backend.score = 0.84f;
+    backend.requiresBackend = true;
+    backend.backendPriority = 90;
+    backend.reasonCodes = {QStringLiteral("candidate.backend")};
+    candidates.push_back(backend);
+
+    InputRouteDecision policyDecision;
+    policyDecision.kind = InputRouteKind::Conversation;
+    const RouteArbitrationResult result = arbitrator.arbitrate(
+        policyDecision,
+        turnSignals,
+        state,
+        goals,
+        candidates,
+        IntentConfidence{.signalConfidence = 0.7f, .goalConfidence = 0.62f, .executionConfidence = 0.6f, .finalConfidence = 0.61f},
+        0.3f,
+        IntentAdvisorSuggestion{.available = false, .backendNecessity = 0.85f},
+        false);
+
+    QCOMPARE(result.decision.kind, InputRouteKind::LocalResponse);
+    QVERIFY(result.reasonCodes.contains(QStringLiteral("override.blocked.backend_for_social")));
 }
 
 void SmartIntentV2Tests::arbitratesContinuationAsPriorityRoute()
@@ -442,6 +528,7 @@ void SmartIntentV2Tests::buildsRouteFinalTracePayload()
     trace.turnState.isNewTurn = true;
     trace.turnState.reasonCodes = {QStringLiteral("turn_state.new_turn")};
     trace.ambiguityScore = 0.62f;
+    trace.deterministicTaskPayloadPresent = true;
     trace.intentConfidence = IntentConfidence{.signalConfidence = 0.54f, .goalConfidence = 0.48f, .executionConfidence = 0.41f, .finalConfidence = 0.46f};
     trace.advisorSuggestion = IntentAdvisorSuggestion{.available = false, .ambiguityBoost = 0.2f, .continuationLikelihood = 0.1f, .backendNecessity = 0.7f};
     trace.policyDecision.kind = InputRouteKind::CommandExtraction;
@@ -457,6 +544,7 @@ void SmartIntentV2Tests::buildsRouteFinalTracePayload()
     QVERIFY(payload.contains(QStringLiteral("intent_confidence")));
     QVERIFY(payload.contains(QStringLiteral("advisor_suggestion")));
     QVERIFY(payload.contains(QStringLiteral("ambiguity_score")));
+    QVERIFY(payload.contains(QStringLiteral("deterministic_task_payload_present")));
     QVERIFY(payload.contains(QStringLiteral("turn_signals")));
     QVERIFY(payload.contains(QStringLiteral("policy_decision")));
     QVERIFY(payload.contains(QStringLiteral("final_decision")));

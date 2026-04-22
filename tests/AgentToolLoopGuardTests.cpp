@@ -23,6 +23,7 @@ private slots:
     void doesNotStopAfterUsefulResult();
     void stopsAfterRepeatedFailedTools();
     void stopsAfterRepeatedLowSignalSameFamily();
+    void doesNotStopAfterSuccessThenSingleFailure();
     void classifiesToolFamilies();
 };
 
@@ -69,6 +70,31 @@ void AgentToolLoopGuardTests::stopsAfterRepeatedLowSignalSameFamily()
     QVERIFY(decision.stop);
     QCOMPARE(decision.reasonCode, QStringLiteral("tool_loop.same_family_repeated_low_signal"));
     QCOMPARE(decision.sameFamilyAttemptCount, 2);
+}
+
+void AgentToolLoopGuardTests::doesNotStopAfterSuccessThenSingleFailure()
+{
+    AgentToolLoopGuardState state;
+    AgentToolLoopGuardConfig config;
+    config.maxSameFamilyAttemptsPerTurn = 2;
+    config.maxLowSignalToolResultsPerTurn = 10;
+    config.maxFailedToolCallsPerTurn = 5;
+
+    const AgentToolLoopGuardDecision first = AgentToolLoopGuard::evaluateResults(
+        {makeResult(QStringLiteral("computer_open_url"), true, QStringLiteral("opened target url"))},
+        &state,
+        config);
+    QVERIFY(!first.stop);
+    QCOMPARE(state.consecutiveFailureCount, 0);
+    QVERIFY(state.lastToolSuccess);
+
+    const AgentToolLoopGuardDecision second = AgentToolLoopGuard::evaluateResults(
+        {makeResult(QStringLiteral("web_fetch"), false)},
+        &state,
+        config);
+    QVERIFY(!second.stop);
+    QCOMPARE(second.consecutiveFailureCount, 1);
+    QVERIFY(!second.lastToolSuccess);
 }
 
 void AgentToolLoopGuardTests::classifiesToolFamilies()
