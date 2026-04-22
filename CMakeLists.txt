@@ -373,10 +373,12 @@ set(JARVIS_SOURCES
     src/tts/PiperTtsEngine.cpp
     src/tts/QwenTtsEngine.cpp
     src/tts/SelectableTtsEngine.cpp
+    src/tts/SpokenTextShaper.cpp
     src/tts/SpeechPunctuationShaper.cpp
     src/tts/SpeechPreparationPipeline.cpp
     src/tts/SpeechTextNormalizer.cpp
     src/tts/TechnicalTokenSpeechFormatter.cpp
+    src/tts/TtsVoiceProfilePolicy.cpp
     src/tts/TtsEngineFactory.cpp
     src/tts/UtteranceDedupeGuard.cpp
     src/tts/WorkerTtsEngine.cpp
@@ -555,10 +557,12 @@ set(JARVIS_HEADERS
     src/tts/PiperTtsEngine.h
     src/tts/QwenTtsEngine.h
     src/tts/SelectableTtsEngine.h
+    src/tts/SpokenTextShaper.h
     src/tts/SpeechPunctuationShaper.h
     src/tts/SpeechPreparationPipeline.h
     src/tts/SpeechTextNormalizer.h
     src/tts/TechnicalTokenSpeechFormatter.h
+    src/tts/TtsVoiceProfilePolicy.h
     src/tts/TtsEngineFactory.h
     src/tts/UtteranceDedupeGuard.h
     src/tts/WorkerTtsEngine.h

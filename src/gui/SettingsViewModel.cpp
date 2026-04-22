@@ -252,6 +252,46 @@ double SettingsViewModel::voicePitch() const
     return m_backend ? m_backend->voicePitch() : 1.0;
 }
 
+double SettingsViewModel::piperNoiseScale() const
+{
+    return m_backend ? m_backend->piperNoiseScale() : 0.67;
+}
+
+double SettingsViewModel::piperNoiseW() const
+{
+    return m_backend ? m_backend->piperNoiseW() : 0.80;
+}
+
+double SettingsViewModel::piperSentenceSilence() const
+{
+    return m_backend ? m_backend->piperSentenceSilence() : 0.06;
+}
+
+QString SettingsViewModel::ttsPostProcessMode() const
+{
+    return m_backend ? m_backend->ttsPostProcessMode() : QStringLiteral("light");
+}
+
+QStringList SettingsViewModel::ttsPostProcessModes() const
+{
+    return m_backend ? m_backend->ttsPostProcessModes() : QStringList{QStringLiteral("off"), QStringLiteral("light"), QStringLiteral("presence"), QStringLiteral("legacy")};
+}
+
+QStringList SettingsViewModel::ttsVoiceProfileNames() const
+{
+    return m_backend ? m_backend->ttsVoiceProfileNames() : QStringList();
+}
+
+QStringList SettingsViewModel::ttsVoiceProfileIds() const
+{
+    return m_backend ? m_backend->ttsVoiceProfileIds() : QStringList();
+}
+
+QString SettingsViewModel::ttsVoiceProfileId() const
+{
+    return m_backend ? m_backend->ttsVoiceProfileId() : QStringLiteral("balanced");
+}
+
 double SettingsViewModel::micSensitivity() const
 {
     return m_backend ? m_backend->micSensitivity() : 0.02;
@@ -548,6 +588,13 @@ void SettingsViewModel::setSelectedVoicePresetId(const QString &voiceId)
     }
 }
 
+void SettingsViewModel::setTtsVoiceProfileId(const QString &profileId)
+{
+    if (m_backend) {
+        m_backend->setTtsVoiceProfileId(profileId);
+    }
+}
+
 void SettingsViewModel::setWakeEngineKind(const QString &kind)
 {
     if (m_backend) {
@@ -641,6 +688,11 @@ void SettingsViewModel::saveSettings(const QString &endpoint,
                                      const QString &ffmpegPath,
                                      double voiceSpeed,
                                      double voicePitch,
+                                     double piperNoiseScale,
+                                     double piperNoiseW,
+                                     double piperSentenceSilence,
+                                     const QString &ttsPostProcessMode,
+                                     const QString &ttsVoiceProfileId,
                                      double micSensitivity,
                                      const QString &audioInputDeviceId,
                                      const QString &audioOutputDeviceId,
@@ -673,6 +725,11 @@ void SettingsViewModel::saveSettings(const QString &endpoint,
                                 ffmpegPath,
                                 voiceSpeed,
                                 voicePitch,
+                                piperNoiseScale,
+                                piperNoiseW,
+                                piperSentenceSilence,
+                                ttsPostProcessMode,
+                                ttsVoiceProfileId,
                                 micSensitivity,
                                 audioInputDeviceId,
                                 audioOutputDeviceId,

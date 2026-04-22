@@ -14,6 +14,8 @@
 #include <QFile>
 #include <QMediaDevices>
 #include <QProcess>
+#include <QElapsedTimer>
+#include <QDateTime>
 #include <QRegularExpression>
 #include <QProcessEnvironment>
 #include <QStandardPaths>
@@ -572,6 +574,15 @@ PiperTtsEngine::PiperTtsEngine(AppSettings *settings,
             return;
         }
 
+        if (m_loggingService) {
+            m_loggingService->infoFor(
+                QStringLiteral("tts"),
+                QStringLiteral("[tts_timing] synthesisMs=%1 ffmpegMs=%2 totalMs=%3 postMode=%4")
+                    .arg(QString::number(result.synthesisMs),
+                         QString::number(result.ffmpegMs),
+                         QString::number(result.totalMs),
+                         result.postProcessMode));
+        }
         playFile(result.outputFile);
     });
 
@@ -633,10 +644,11 @@ void PiperTtsEngine::speakText(const QString &text, const TtsUtteranceContext &c
     if (m_loggingService) {
         m_loggingService->infoFor(
             QStringLiteral("tts"),
-            QStringLiteral("[tts_pipeline] rawChars=%1 normalizedChars=%2 shapedChars=%3 finalChars=%4 class=%5 source=%6 turn=%7 target=%8")
+            QStringLiteral("[tts_pipeline] rawChars=%1 normalizedChars=%2 punctuationChars=%3 speechChars=%4 finalChars=%5 class=%6 source=%7 turn=%8 target=%9")
                 .arg(QString::number(trace.rawInputText.size()),
                      QString::number(trace.normalizedText.size()),
                      QString::number(trace.punctuationShapedText.size()),
+                     QString::number(trace.speechShapedText.size()),
                      QString::number(prepared.size()),
                      context.utteranceClass,
                      context.source,
@@ -651,6 +663,9 @@ void PiperTtsEngine::speakText(const QString &text, const TtsUtteranceContext &c
         m_loggingService->infoFor(
             QStringLiteral("tts"),
             QStringLiteral("[tts_text_shaped] %1").arg(clipForTtsLog(trace.punctuationShapedText)));
+        m_loggingService->infoFor(
+            QStringLiteral("tts"),
+            QStringLiteral("[tts_text_spoken] %1").arg(clipForTtsLog(trace.speechShapedText)));
         m_loggingService->infoFor(
             QStringLiteral("tts"),
             QStringLiteral("[tts_pause_hints] %1").arg(trace.pauseHintSummary));
@@ -701,6 +716,7 @@ void PiperTtsEngine::clear()
     m_activeGeneration = 0;
     m_pendingTexts.clear();
     m_processing = false;
+    m_activeRequestStartMs = 0;
     if (m_loggingService) {
         m_loggingService->infoFor(QStringLiteral("tts"), QStringLiteral("[tts_clear] queue_cleared=true"));
     }
@@ -717,6 +733,7 @@ void PiperTtsEngine::processNext()
     if (m_pendingTexts.isEmpty()) {
         m_processing = false;
         m_activeGeneration = 0;
+        m_activeRequestStartMs = 0;
         if (m_loggingService) {
             m_loggingService->infoFor(QStringLiteral("tts"), QStringLiteral("[tts_queue] drained=true"));
         }
@@ -727,15 +744,17 @@ void PiperTtsEngine::processNext()
     if (m_settings->piperExecutable().isEmpty() || m_settings->piperVoiceModel().isEmpty()) {
         m_pendingTexts.clear();
         m_processing = false;
+        m_activeRequestStartMs = 0;
         emit playbackFailed(QStringLiteral("Piper executable or voice model is not configured"));
         return;
     }
 
     m_processing = true;
-    emit playbackStarted();
     const QString sentence = m_pendingTexts.dequeue();
     const quint64 generation = ++m_generationCounter;
     m_activeGeneration = generation;
+    m_activeRequestStartMs = QDateTime::currentMSecsSinceEpoch();
+    m_playbackStartedEmitted = false;
     if (m_loggingService) {
         m_loggingService->infoFor(
             QStringLiteral("tts"),
@@ -753,6 +772,8 @@ TtsSynthesisResult PiperTtsEngine::synthesizeAndProcess(const QString &sentence,
 {
     TtsSynthesisResult result;
     result.generation = generation;
+    QElapsedTimer totalTimer;
+    totalTimer.start();
 
     const QString piperExecutable = m_settings != nullptr ? m_settings->piperExecutable().trimmed() : QString{};
     const QString voiceModelPath = m_settings != nullptr ? m_settings->piperVoiceModel().trimmed() : QString{};
@@ -793,12 +814,17 @@ TtsSynthesisResult PiperTtsEngine::synthesizeAndProcess(const QString &sentence,
     const QString processedPath = tempRoot + QStringLiteral("/vaxil_tts_%1_processed.wav").arg(token);
 
     {
+        QElapsedTimer synthesisTimer;
+        synthesisTimer.start();
         QProcess process;
         QStringList piperArgs{
             QStringLiteral("--model"), voiceModelPath,
             QStringLiteral("--output_file"), rawPath,
             QStringLiteral("--length_scale"), QString::number(1.0 / std::max(0.1, m_settings->voiceSpeed()), 'f', 3)
         };
+        piperArgs << QStringLiteral("--noise_scale") << QString::number(m_settings->piperNoiseScale(), 'f', 3);
+        piperArgs << QStringLiteral("--noise_w") << QString::number(m_settings->piperNoiseW(), 'f', 3);
+        piperArgs << QStringLiteral("--sentence_silence") << QString::number(m_settings->piperSentenceSilence(), 'f', 3);
 
         const QStringList configCandidates = {
             voiceModelPath + QStringLiteral(".json"),
@@ -845,30 +871,65 @@ TtsSynthesisResult PiperTtsEngine::synthesizeAndProcess(const QString &sentence,
                     QStringLiteral("tts"),
                     QStringLiteral("[tts_synthesis_failed] generation=%1 reason=process_error detail=%2")
                         .arg(QString::number(generation), clipForTtsLog(result.errorText, 400)));
-            }
+                }
             return result;
         }
+        result.synthesisMs = synthesisTimer.elapsed();
     }
 
-    if (m_settings->ffmpegExecutable().isEmpty()) {
+    result.postProcessMode = m_settings != nullptr ? m_settings->ttsPostProcessMode() : QStringLiteral("light");
+    if (m_settings->ffmpegExecutable().isEmpty() || result.postProcessMode == QStringLiteral("off")) {
         result.outputFile = rawPath;
+        result.totalMs = totalTimer.elapsed();
         return result;
     }
 
-    const QString filter = QStringLiteral(
-                               "asetrate=22050*%1,"
-                               "aresample=22050,"
-                               "volume=1.4,"
-                               "highpass=f=65,"
-                               "lowpass=f=7600,"
-                               "equalizer=f=240:t=q:w=1.0:g=0.7,"
-                               "equalizer=f=3200:t=q:w=1.2:g=-1.5,"
-                               "equalizer=f=5400:t=q:w=1.0:g=-0.7,"
-                               "aecho=0.78:0.26:24:0.05,"
-                               "acompressor=threshold=-20dB:ratio=2.4:attack=12:release=160:makeup=2,"
-                               "alimiter=limit=0.92")
-                               .arg(QString::number(m_settings->voicePitch(), 'f', 2));
+    QString mode = result.postProcessMode;
+    if (mode.isEmpty()) {
+        mode = QStringLiteral("light");
+    }
 
+    QString filter;
+    if (mode == QStringLiteral("presence")) {
+        filter = QStringLiteral(
+            "asetrate=22050*%1,"
+            "aresample=22050,"
+            "highpass=f=60,"
+            "lowpass=f=8200,"
+            "equalizer=f=230:t=q:w=1.0:g=0.6,"
+            "equalizer=f=3200:t=q:w=1.0:g=0.9,"
+            "acompressor=threshold=-20dB:ratio=2.0:attack=10:release=140:makeup=1.2,"
+            "alimiter=limit=0.93")
+            .arg(QString::number(m_settings->voicePitch(), 'f', 2));
+    } else if (mode == QStringLiteral("legacy")) {
+        filter = QStringLiteral(
+            "asetrate=22050*%1,"
+            "aresample=22050,"
+            "volume=1.4,"
+            "highpass=f=65,"
+            "lowpass=f=7600,"
+            "equalizer=f=240:t=q:w=1.0:g=0.7,"
+            "equalizer=f=3200:t=q:w=1.2:g=-1.5,"
+            "equalizer=f=5400:t=q:w=1.0:g=-0.7,"
+            "aecho=0.78:0.26:24:0.05,"
+            "acompressor=threshold=-20dB:ratio=2.4:attack=12:release=160:makeup=2,"
+            "alimiter=limit=0.92")
+            .arg(QString::number(m_settings->voicePitch(), 'f', 2));
+    } else {
+        mode = QStringLiteral("light");
+        filter = QStringLiteral(
+            "asetrate=22050*%1,"
+            "aresample=22050,"
+            "highpass=f=55,"
+            "lowpass=f=8600,"
+            "acompressor=threshold=-20dB:ratio=1.7:attack=10:release=120:makeup=0.8,"
+            "alimiter=limit=0.95")
+            .arg(QString::number(m_settings->voicePitch(), 'f', 2));
+    }
+    result.postProcessMode = mode;
+
+    QElapsedTimer ffmpegTimer;
+    ffmpegTimer.start();
     QProcess process;
     process.start(m_settings->ffmpegExecutable(), {
         QStringLiteral("-y"),
@@ -881,14 +942,20 @@ TtsSynthesisResult PiperTtsEngine::synthesizeAndProcess(const QString &sentence,
         process.kill();
         process.waitForFinished(1000);
         result.outputFile = rawPath;
+        result.ffmpegMs = ffmpegTimer.elapsed();
+        result.totalMs = totalTimer.elapsed();
         return result;
     }
     if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
         result.outputFile = rawPath;
+        result.ffmpegMs = ffmpegTimer.elapsed();
+        result.totalMs = totalTimer.elapsed();
         return result;
     }
 
+    result.ffmpegMs = ffmpegTimer.elapsed();
     result.outputFile = processedPath;
+    result.totalMs = totalTimer.elapsed();
     return result;
 }
 
@@ -954,7 +1021,16 @@ void PiperTtsEngine::playFile(const QString &path)
             }
             m_loggingService->infoFor(QStringLiteral("tts"), QStringLiteral("[tts_state] %1").arg(stateText));
         }
-        if (state == QAudio::IdleState) {
+        if (state == QAudio::ActiveState && !m_playbackStartedEmitted) {
+            m_playbackStartedEmitted = true;
+            if (m_loggingService && m_activeRequestStartMs > 0) {
+                const qint64 ttfaMs = std::max<qint64>(0, QDateTime::currentMSecsSinceEpoch() - m_activeRequestStartMs);
+                m_loggingService->infoFor(
+                    QStringLiteral("tts"),
+                    QStringLiteral("[tts_timing] timeToFirstAudioMs=%1").arg(QString::number(ttfaMs)));
+            }
+            emit playbackStarted();
+        } else if (state == QAudio::IdleState) {
             stopPlayback();
             processNext();
         } else if (state == QAudio::StoppedState && m_audioSink != nullptr && m_audioSink->error() != QAudio::NoError) {
@@ -980,6 +1056,7 @@ void PiperTtsEngine::stopPlayback()
     if (m_farEndTimer) {
         m_farEndTimer->stop();
     }
+    m_playbackStartedEmitted = false;
     m_lastFarEndOffset = 0;
     m_playbackFormat = QAudioFormat();
     QAudioSink *audioSink = m_audioSink;

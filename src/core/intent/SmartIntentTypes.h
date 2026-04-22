@@ -195,6 +195,11 @@ struct RoutingTrace {
     bool confirmationGateTriggered = false;
     QString confirmationOutcome;
     QString finalExecutedRoute;
+    QString toolSelectionReason;
+    QString toolSuppressionReason;
+    int toolsAvailableCount = 0;
+    QString clarificationTriggerReason;
+    float ambiguityThresholdUsed = 0.0f;
     QStringList overridesApplied;
     QStringList reasonCodes;
 };

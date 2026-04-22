@@ -109,6 +109,11 @@ void IntentIntelligenceTuningTests::emitsAdvisorModeAndEvaluationInTrace()
     trace.advisorEvaluation.adjustedBackendPreference = 0.71f;
     trace.advisorEvaluation.backendPreferenceChanged = true;
     trace.advisorEvaluation.reasonCodes = {QStringLiteral("advisor_eval.shadow_compare_enabled")};
+    trace.toolSelectionReason = QStringLiteral("selection.backend_info_or_action_tools_enabled");
+    trace.toolSuppressionReason = QStringLiteral("suppression.none");
+    trace.toolsAvailableCount = 12;
+    trace.clarificationTriggerReason = QStringLiteral("clarification.high_ambiguity_low_confidence");
+    trace.ambiguityThresholdUsed = 0.6f;
     trace.finalExecutedRoute = QStringLiteral("conversation");
 
     RoutingTraceEmitter emitter;
@@ -118,6 +123,10 @@ void IntentIntelligenceTuningTests::emitsAdvisorModeAndEvaluationInTrace()
     const QJsonObject advisorEval = payload.value(QStringLiteral("advisor_evaluation")).toObject();
     QVERIFY(advisorEval.value(QStringLiteral("ambiguity_preference_changed")).toBool());
     QVERIFY(advisorEval.value(QStringLiteral("backend_preference_changed")).toBool());
+    QCOMPARE(payload.value(QStringLiteral("tool_selection_reason")).toString(),
+             QStringLiteral("selection.backend_info_or_action_tools_enabled"));
+    QCOMPARE(payload.value(QStringLiteral("tools_available_count")).toInt(), 12);
+    QVERIFY(qAbs(payload.value(QStringLiteral("ambiguity_threshold_used")).toDouble() - 0.6) < 0.001);
 }
 
 void IntentIntelligenceTuningTests::thresholdConfigExposesStableDefaults()

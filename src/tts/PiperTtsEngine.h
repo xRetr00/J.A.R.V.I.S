@@ -16,6 +16,10 @@ struct TtsSynthesisResult
     QString outputFile;
     QString errorText;
     quint64 generation = 0;
+    qint64 synthesisMs = 0;
+    qint64 ffmpegMs = 0;
+    qint64 totalMs = 0;
+    QString postProcessMode;
 };
 
 class AppSettings;
@@ -59,5 +63,7 @@ private:
     qint64 m_lastFarEndOffset = 0;
     quint64 m_generationCounter = 0;
     quint64 m_activeGeneration = 0;
+    qint64 m_activeRequestStartMs = 0;
+    bool m_playbackStartedEmitted = false;
     std::unique_ptr<SpeechPreparationPipeline> m_speechPreparationPipeline;
 };

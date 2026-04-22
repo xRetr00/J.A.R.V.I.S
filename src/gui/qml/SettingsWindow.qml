@@ -77,6 +77,9 @@ Window {
         ffmpegPathField.text = settingsVm.ffmpegExecutable
         speedSlider.value = settingsVm.voiceSpeed
         pitchSlider.value = settingsVm.voicePitch
+        noiseScaleSlider.value = settingsVm.piperNoiseScale
+        noiseWSlider.value = settingsVm.piperNoiseW
+        sentenceSilenceSlider.value = settingsVm.piperSentenceSilence
         vadSlider.value = settingsVm.vadSensitivity
         micSlider.value = settingsVm.micSensitivity
         aecCheck.checked = settingsVm.aecEnabled
@@ -133,6 +136,10 @@ Window {
 
         const voicePresetIndex = settingsVm.voicePresetIds.indexOf(settingsVm.selectedVoicePresetId)
         voicePresetCombo.currentIndex = voicePresetIndex >= 0 ? voicePresetIndex : 0
+        const profileIndex = settingsVm.ttsVoiceProfileIds.indexOf(settingsVm.ttsVoiceProfileId)
+        ttsProfileCombo.currentIndex = profileIndex >= 0 ? profileIndex : 1
+        const postProcessIndex = settingsVm.ttsPostProcessModes.indexOf(settingsVm.ttsPostProcessMode)
+        postProcessCombo.currentIndex = postProcessIndex >= 0 ? postProcessIndex : 1
 
         const intentModelIndex = settingsVm.intentModelPresetIds.indexOf(settingsVm.selectedIntentModelId)
         intentModelCombo.currentIndex = intentModelIndex >= 0 ? intentModelIndex : 0
@@ -951,6 +958,26 @@ Window {
                         wrapMode: Text.Wrap
                     }
 
+                    Text { text: "Voice profile"; color: "#c9def3"; font.pixelSize: 13 }
+                    ComboBox {
+                        id: ttsProfileCombo
+                        Layout.fillWidth: true
+                        model: settingsVm.ttsVoiceProfileNames
+                        onActivated: {
+                            if (currentIndex >= 0 && currentIndex < settingsVm.ttsVoiceProfileIds.length) {
+                                settingsVm.setTtsVoiceProfileId(settingsVm.ttsVoiceProfileIds[currentIndex])
+                                settingsWindow.syncFieldsFromBackend()
+                            }
+                        }
+                    }
+
+                    Text { text: "Post-process mode"; color: "#c9def3"; font.pixelSize: 13 }
+                    ComboBox {
+                        id: postProcessCombo
+                        Layout.fillWidth: true
+                        model: settingsVm.ttsPostProcessModes
+                    }
+
                     Text { text: "Qwen3-TTS CLI executable"; color: "#c9def3"; font.pixelSize: 13 }
                     TextField { id: qwenTtsPathField; Layout.fillWidth: true; text: settingsVm.qwenTtsExecutable }
                     RowLayout {
@@ -1044,13 +1071,70 @@ Window {
                         ColumnLayout {
                             Layout.fillWidth: true
                             Text { text: "Voice speed"; color: "#c9def3"; font.pixelSize: 13 }
-                            Slider { id: speedSlider; Layout.fillWidth: true; from: 0.7; to: 1.5; value: settingsVm.voiceSpeed }
+                            Slider {
+                                id: speedSlider
+                                Layout.fillWidth: true
+                                from: 0.85
+                                to: 1.20
+                                value: settingsVm.voiceSpeed
+                                onMoved: settingsVm.setTtsVoiceProfileId("custom")
+                            }
                         }
 
                         ColumnLayout {
                             Layout.fillWidth: true
                             Text { text: "Voice pitch"; color: "#c9def3"; font.pixelSize: 13 }
-                            Slider { id: pitchSlider; Layout.fillWidth: true; from: 0.8; to: 1.2; value: settingsVm.voicePitch }
+                            Slider {
+                                id: pitchSlider
+                                Layout.fillWidth: true
+                                from: 0.95
+                                to: 1.05
+                                value: settingsVm.voicePitch
+                                onMoved: settingsVm.setTtsVoiceProfileId("custom")
+                            }
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Text { text: "Piper noise scale"; color: "#c9def3"; font.pixelSize: 13 }
+                            Slider {
+                                id: noiseScaleSlider
+                                Layout.fillWidth: true
+                                from: 0.2
+                                to: 1.2
+                                value: settingsVm.piperNoiseScale
+                                onMoved: settingsVm.setTtsVoiceProfileId("custom")
+                            }
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Text { text: "Piper noise_w"; color: "#c9def3"; font.pixelSize: 13 }
+                            Slider {
+                                id: noiseWSlider
+                                Layout.fillWidth: true
+                                from: 0.2
+                                to: 1.2
+                                value: settingsVm.piperNoiseW
+                                onMoved: settingsVm.setTtsVoiceProfileId("custom")
+                            }
+                        }
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        Text { text: "Sentence silence (seconds)"; color: "#c9def3"; font.pixelSize: 13 }
+                        Slider {
+                            id: sentenceSilenceSlider
+                            Layout.fillWidth: true
+                            from: 0.0
+                            to: 0.35
+                            value: settingsVm.piperSentenceSilence
+                            onMoved: settingsVm.setTtsVoiceProfileId("custom")
                         }
                     }
                 }
@@ -1294,6 +1378,11 @@ Window {
                                         ffmpegPathField.text,
                                         speedSlider.value,
                                         pitchSlider.value,
+                                        noiseScaleSlider.value,
+                                        noiseWSlider.value,
+                                        sentenceSilenceSlider.value,
+                                        postProcessCombo.currentIndex >= 0 ? settingsVm.ttsPostProcessModes[postProcessCombo.currentIndex] : "light",
+                                        ttsProfileCombo.currentIndex >= 0 ? settingsVm.ttsVoiceProfileIds[ttsProfileCombo.currentIndex] : "custom",
                                         micSlider.value,
                                         inputDeviceCombo.currentIndex >= 0 ? settingsVm.audioInputDeviceIds[inputDeviceCombo.currentIndex] : "",
                                         outputDeviceCombo.currentIndex >= 0 ? settingsVm.audioOutputDeviceIds[outputDeviceCombo.currentIndex] : "",

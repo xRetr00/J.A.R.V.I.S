@@ -4,6 +4,7 @@
 
 #include "tts/SpeechPunctuationShaper.h"
 #include "tts/SpeechTextNormalizer.h"
+#include "tts/SpokenTextShaper.h"
 #include "tts/TtsEngine.h"
 #include "tts/UtteranceDedupeGuard.h"
 
@@ -12,6 +13,7 @@ struct SpeechPreparationTrace
     QString rawInputText;
     QString normalizedText;
     QString punctuationShapedText;
+    QString speechShapedText;
     QString pauseHintSummary;
     QString finalSpokenText;
     bool emptyAfterPreparation = false;
@@ -36,5 +38,6 @@ private:
 
     SpeechTextNormalizer m_normalizer;
     SpeechPunctuationShaper m_punctuationShaper;
+    SpokenTextShaper m_spokenTextShaper;
     UtteranceDedupeGuard m_dedupeGuard;
 };

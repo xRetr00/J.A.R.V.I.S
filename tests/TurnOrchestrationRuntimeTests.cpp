@@ -59,6 +59,7 @@ private slots:
     void lowSignalEvidenceBlocksGroundedState();
     void promptTaskStateClipsRecursiveThreadEnvelope();
     void privateModeSuppressesDesktopContextMemory();
+    void backendRouteGetsMinimalToolsWhenSelectionEmpty();
 };
 
 void TurnOrchestrationRuntimeTests::sameTaskFollowUpContinuesThreadState()
@@ -275,6 +276,37 @@ void TurnOrchestrationRuntimeTests::privateModeSuppressesDesktopContextMemory()
     QCOMPARE(plan.selectedMemory.activeCommitments.size(), 0);
     QCOMPARE(plan.selectedMemory.profile.size(), 1);
     QVERIFY(plan.promptContext.desktopContext.isEmpty());
+}
+
+void TurnOrchestrationRuntimeTests::backendRouteGetsMinimalToolsWhenSelectionEmpty()
+{
+    TurnOrchestrationRuntime runtime(nullptr);
+
+    InputRouteDecision route;
+    route.kind = InputRouteKind::Conversation;
+    route.intent = IntentType::GENERAL_CHAT;
+
+    TurnRuntimeInput input;
+    input.rawUserInput = QStringLiteral("why is startup slow today?");
+    input.effectiveInput = input.rawUserInput;
+    input.routeDecision = route;
+    input.intent = IntentType::GENERAL_CHAT;
+    input.identity = identity();
+    input.userProfile = userProfile();
+    input.availableTools = {
+        tool(QStringLiteral("web_search")),
+        tool(QStringLiteral("memory_search")),
+        tool(QStringLiteral("file_read"))
+    };
+    input.currentTimeMs = QDateTime::currentMSecsSinceEpoch();
+
+    const TurnRuntimePlan plan = runtime.buildPlan(input);
+    QVERIFY(!plan.selectedTools.isEmpty());
+    QStringList selected;
+    for (const AgentToolSpec &spec : plan.selectedTools) {
+        selected.push_back(spec.name);
+    }
+    QVERIFY(selected.contains(QStringLiteral("web_search")));
 }
 
 QTEST_APPLESS_MAIN(TurnOrchestrationRuntimeTests)

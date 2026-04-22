@@ -39,6 +39,7 @@
 #include "settings/AppSettings.h"
 #include "settings/IdentityProfileService.h"
 #include "tools/ToolManager.h"
+#include "tts/TtsVoiceProfilePolicy.h"
 
 namespace {
 struct PiperVoicePreset {
@@ -46,6 +47,7 @@ struct PiperVoicePreset {
     QString label;
     QString modelUrl;
     QString configUrl;
+    bool recommended = false;
 };
 
 struct WhisperModelPreset {
@@ -176,39 +178,80 @@ const QList<PiperVoicePreset> &voicePresets()
     static const QList<PiperVoicePreset> presets{
         {
             QStringLiteral("en_GB-alba-medium"),
-            QStringLiteral("Alba Medium  |  UK  |  Calm recommended"),
-            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/alba/medium/en_GB-alba-medium.onnx?download=true"),
-            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/alba/medium/en_GB-alba-medium.onnx.json?download=true")
+            QStringLiteral("Alba Medium  |  UK  |  Calm"),
+            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/alba/medium/en_GB-alba-medium.onnx?download=true"),
+            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/alba/medium/en_GB-alba-medium.onnx.json?download=true"),
+            false
         },
         {
             QStringLiteral("en_GB-alan-medium"),
             QStringLiteral("Alan Medium  |  UK  |  Neutral male"),
-            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/alan/medium/en_GB-alan-medium.onnx?download=true"),
-            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/alan/medium/en_GB-alan-medium.onnx.json?download=true")
+            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/alan/medium/en_GB-alan-medium.onnx?download=true"),
+            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/alan/medium/en_GB-alan-medium.onnx.json?download=true"),
+            false
+        },
+        {
+            QStringLiteral("en_GB-cori-high"),
+            QStringLiteral("Cori High  |  UK  |  Recommended quality"),
+            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/cori/high/en_GB-cori-high.onnx?download=true"),
+            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/cori/high/en_GB-cori-high.onnx.json?download=true"),
+            true
         },
         {
             QStringLiteral("en_GB-northern_english_male-medium"),
             QStringLiteral("Northern English Male  |  UK  |  Deep tone"),
-            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/northern_english_male/medium/en_GB-northern_english_male-medium.onnx?download=true"),
-            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/northern_english_male/medium/en_GB-northern_english_male-medium.onnx.json?download=true")
+            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/northern_english_male/medium/en_GB-northern_english_male-medium.onnx?download=true"),
+            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/northern_english_male/medium/en_GB-northern_english_male-medium.onnx.json?download=true"),
+            false
         },
         {
             QStringLiteral("en_GB-semaine-medium"),
             QStringLiteral("Semaine Medium  |  UK  |  Controlled female"),
-            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/semaine/medium/en_GB-semaine-medium.onnx?download=true"),
-            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/semaine/medium/en_GB-semaine-medium.onnx.json?download=true")
+            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/semaine/medium/en_GB-semaine-medium.onnx?download=true"),
+            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/semaine/medium/en_GB-semaine-medium.onnx.json?download=true"),
+            false
         },
         {
             QStringLiteral("en_US-ryan-medium"),
             QStringLiteral("Ryan Medium  |  US  |  Neutral male"),
-            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/ryan/medium/en_US-ryan-medium.onnx?download=true"),
-            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/ryan/medium/en_US-ryan-medium.onnx.json?download=true")
+            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/medium/en_US-ryan-medium.onnx?download=true"),
+            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/medium/en_US-ryan-medium.onnx.json?download=true"),
+            false
+        },
+        {
+            QStringLiteral("en_US-ryan-high"),
+            QStringLiteral("Ryan High  |  US  |  Recommended quality"),
+            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/high/en_US-ryan-high.onnx?download=true"),
+            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/high/en_US-ryan-high.onnx.json?download=true"),
+            true
         },
         {
             QStringLiteral("en_US-lessac-medium"),
             QStringLiteral("Lessac Medium  |  US  |  Clear neutral"),
-            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium/en_US-lessac-medium.onnx?download=true"),
-            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json?download=true")
+            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx?download=true"),
+            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json?download=true"),
+            false
+        },
+        {
+            QStringLiteral("en_US-lessac-high"),
+            QStringLiteral("Lessac High  |  US  |  Recommended quality"),
+            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/high/en_US-lessac-high.onnx?download=true"),
+            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/high/en_US-lessac-high.onnx.json?download=true"),
+            true
+        },
+        {
+            QStringLiteral("en_US-libritts-high"),
+            QStringLiteral("LibriTTS High  |  US  |  Recommended quality"),
+            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts/high/en_US-libritts-high.onnx?download=true"),
+            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts/high/en_US-libritts-high.onnx.json?download=true"),
+            true
+        },
+        {
+            QStringLiteral("en_US-ljspeech-high"),
+            QStringLiteral("LJSpeech High  |  US  |  Expressive female"),
+            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ljspeech/high/en_US-ljspeech-high.onnx?download=true"),
+            QStringLiteral("https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ljspeech/high/en_US-ljspeech-high.onnx.json?download=true"),
+            true
         }
     };
 
@@ -1259,8 +1302,24 @@ QString BackendFacade::selectedModel() const { return m_assistantController->sel
 QStringList BackendFacade::voicePresetNames() const
 {
     QStringList values;
+    const QString currentPath = QFileInfo(m_settings->piperVoiceModel()).fileName().toLower();
+    const QString appDataRoot = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    const QString voiceRoot = piperVoicesRoot(appDataRoot);
     for (const PiperVoicePreset &preset : voicePresets()) {
-        values.push_back(preset.label);
+        QString label = preset.label;
+        const QString installedPath = voiceRoot + QStringLiteral("/") + preset.id + QStringLiteral(".onnx");
+        const bool installed = QFileInfo::exists(installedPath);
+        if (preset.recommended) {
+            label += QStringLiteral("  [Recommended]");
+        }
+        if (installed) {
+            label += QStringLiteral("  [Installed]");
+        }
+        if (!currentPath.isEmpty()
+            && currentPath.compare(preset.id + QStringLiteral(".onnx"), Qt::CaseInsensitive) == 0) {
+            label = QStringLiteral("Current  |  ") + label;
+        }
+        values.push_back(label);
     }
     return values;
 }
@@ -1357,6 +1416,28 @@ int BackendFacade::wakeTriggerCooldownMs() const { return m_settings->wakeTrigge
 QString BackendFacade::ffmpegExecutable() const { return m_settings->ffmpegExecutable(); }
 double BackendFacade::voiceSpeed() const { return m_settings->voiceSpeed(); }
 double BackendFacade::voicePitch() const { return m_settings->voicePitch(); }
+double BackendFacade::piperNoiseScale() const { return m_settings->piperNoiseScale(); }
+double BackendFacade::piperNoiseW() const { return m_settings->piperNoiseW(); }
+double BackendFacade::piperSentenceSilence() const { return m_settings->piperSentenceSilence(); }
+QString BackendFacade::ttsPostProcessMode() const { return m_settings->ttsPostProcessMode(); }
+QStringList BackendFacade::ttsPostProcessModes() const
+{
+    return {
+        QStringLiteral("off"),
+        QStringLiteral("light"),
+        QStringLiteral("presence"),
+        QStringLiteral("legacy")
+    };
+}
+QStringList BackendFacade::ttsVoiceProfileNames() const
+{
+    return TtsVoiceProfiles::profileDisplayNames();
+}
+QStringList BackendFacade::ttsVoiceProfileIds() const
+{
+    return TtsVoiceProfiles::profileIds();
+}
+QString BackendFacade::ttsVoiceProfileId() const { return m_settings->ttsVoiceProfileId(); }
 double BackendFacade::micSensitivity() const { return m_settings->micSensitivity(); }
 QStringList BackendFacade::audioInputDeviceNames() const
 {
@@ -1749,6 +1830,21 @@ void BackendFacade::setSelectedVoicePresetId(const QString &voiceId)
     emit settingsChanged();
 }
 
+void BackendFacade::setTtsVoiceProfileId(const QString &profileId)
+{
+    const QString normalizedProfile = TtsVoiceProfiles::normalizeProfileId(profileId);
+    if (normalizedProfile != QStringLiteral("custom")) {
+        if (!TtsVoiceProfiles::applyProfile(normalizedProfile, m_settings)) {
+            m_settings->setTtsVoiceProfileId(QStringLiteral("balanced"));
+        }
+    } else {
+        m_settings->setTtsVoiceProfileId(QStringLiteral("custom"));
+    }
+
+    m_settings->save();
+    emit settingsChanged();
+}
+
 void BackendFacade::refreshAudioDevices()
 {
     emit audioDevicesChanged();
@@ -1782,6 +1878,11 @@ void BackendFacade::saveSettings(
     const QString &ffmpegPath,
     double voiceSpeed,
     double voicePitch,
+    double piperNoiseScale,
+    double piperNoiseW,
+    double piperSentenceSilence,
+    const QString &ttsPostProcessMode,
+    const QString &ttsVoiceProfileId,
     double micSensitivity,
     const QString &audioInputDeviceId,
     const QString &audioOutputDeviceId,
@@ -1797,6 +1898,23 @@ void BackendFacade::saveSettings(
     m_settings->setQwenTtsModelDir(qwenTtsModelDir);
     m_settings->setQwenTtsLanguage(qwenTtsLanguage);
     m_settings->setQwenTtsThreads(qwenTtsThreads);
+    m_settings->setVoiceSpeed(voiceSpeed);
+    m_settings->setVoicePitch(voicePitch);
+    m_settings->setPiperNoiseScale(piperNoiseScale);
+    m_settings->setPiperNoiseW(piperNoiseW);
+    m_settings->setPiperSentenceSilence(piperSentenceSilence);
+    m_settings->setTtsPostProcessMode(ttsPostProcessMode);
+    const QString explicitProfile = TtsVoiceProfiles::normalizeProfileId(ttsVoiceProfileId);
+    const QString inferredProfile = TtsVoiceProfiles::detectClosestProfileId(
+        m_settings->voiceSpeed(),
+        m_settings->voicePitch(),
+        m_settings->piperNoiseScale(),
+        m_settings->piperNoiseW(),
+        m_settings->piperSentenceSilence(),
+        m_settings->ttsPostProcessMode());
+    m_settings->setTtsVoiceProfileId(explicitProfile == QStringLiteral("custom")
+        ? QStringLiteral("custom")
+        : inferredProfile);
 
     m_assistantController->saveSettings(
         providerKind,
@@ -1814,8 +1932,8 @@ void BackendFacade::saveSettings(
         piperPath,
         voicePath,
         ffmpegPath,
-        voiceSpeed,
-        voicePitch,
+        m_settings->voiceSpeed(),
+        m_settings->voicePitch(),
         micSensitivity,
         audioInputDeviceId,
         audioOutputDeviceId,
@@ -2060,12 +2178,17 @@ bool BackendFacade::completeInitialSetup(
         resolvedPiper,
         resolvedVoiceModel,
         resolvedFfmpeg,
-        0.89,
-        0.93,
+        0.95,
+        1.00,
         0.02,
         audioInputDeviceId,
         audioOutputDeviceId,
         clickThrough);
+    m_settings->setPiperNoiseScale(0.67);
+    m_settings->setPiperNoiseW(0.80);
+    m_settings->setPiperSentenceSilence(0.06);
+    m_settings->setTtsPostProcessMode(QStringLiteral("light"));
+    m_settings->setTtsVoiceProfileId(QStringLiteral("balanced"));
 
     m_overlayController->setClickThrough(clickThrough);
     m_settings->setInitialSetupCompleted(true);
@@ -2186,12 +2309,17 @@ bool BackendFacade::runSetupScenario(
         resolvedPiper,
         resolvedVoiceModel,
         resolvedFfmpeg,
-        0.89,
-        0.93,
+        0.95,
+        1.00,
         0.02,
         audioInputDeviceId,
         audioOutputDeviceId,
         clickThrough);
+    m_settings->setPiperNoiseScale(0.67);
+    m_settings->setPiperNoiseW(0.80);
+    m_settings->setPiperSentenceSilence(0.06);
+    m_settings->setTtsPostProcessMode(QStringLiteral("light"));
+    m_settings->setTtsVoiceProfileId(QStringLiteral("balanced"));
 
     QString testPrompt;
     QString status;

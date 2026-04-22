@@ -195,6 +195,21 @@ public:
     double voicePitch() const;
     void setVoicePitch(double pitch);
 
+    double piperNoiseScale() const;
+    void setPiperNoiseScale(double value);
+
+    double piperNoiseW() const;
+    void setPiperNoiseW(double value);
+
+    double piperSentenceSilence() const;
+    void setPiperSentenceSilence(double value);
+
+    QString ttsPostProcessMode() const;
+    void setTtsPostProcessMode(const QString &mode);
+
+    QString ttsVoiceProfileId() const;
+    void setTtsVoiceProfileId(const QString &profileId);
+
     double micSensitivity() const;
     void setMicSensitivity(double sensitivity);
 
@@ -336,8 +351,13 @@ private:
     QString m_qwenTtsLanguage = QStringLiteral("en");
     int m_qwenTtsThreads = 4;
     int m_ttsDedupeWindowMs = 7000;
-    double m_voiceSpeed = 0.89;
-    double m_voicePitch = 0.93;
+    double m_voiceSpeed = 0.95;
+    double m_voicePitch = 1.00;
+    double m_piperNoiseScale = 0.67;
+    double m_piperNoiseW = 0.80;
+    double m_piperSentenceSilence = 0.06;
+    QString m_ttsPostProcessMode = QStringLiteral("light");
+    QString m_ttsVoiceProfileId = QStringLiteral("balanced");
     double m_micSensitivity = 0.02;
     QString m_selectedAudioInputDeviceId;
     QString m_selectedAudioOutputDeviceId;

@@ -29,6 +29,7 @@ private slots:
 
     void pipelineIsDeterministic();
     void pipelinePreservesTechnicalFormattingAfterShaping();
+    void pipelineShapesLongAssistantReplyIntoSpeakableSummary();
 };
 
 void TtsSpeechPreparationTests::dedupeSuppressesExactWithinWindow()
@@ -198,6 +199,27 @@ void TtsSpeechPreparationTests::pipelinePreservesTechnicalFormattingAfterShaping
     QVERIFY(trace.finalSpokenText.contains(QStringLiteral("readme dot M D")));
     QVERIFY(trace.finalSpokenText.contains(QStringLiteral("Prompt Adapter dot C plus plus")));
     QVERIFY(!trace.finalSpokenText.contains(QStringLiteral(". Md")));
+}
+
+void TtsSpeechPreparationTests::pipelineShapesLongAssistantReplyIntoSpeakableSummary()
+{
+    SpeechPreparationPipeline pipeline(7000);
+    TtsUtteranceContext context;
+    context.utteranceClass = QStringLiteral("assistant_reply");
+    context.source = QStringLiteral("finalizer");
+    context.turnId = QStringLiteral("turn-1");
+    context.semanticTarget = QStringLiteral("goal");
+
+    const QString input =
+        QStringLiteral("1. First, I checked the workspace and validated all required files. "
+                       "2. Second, I prepared a detailed explanation of every option and every fallback. "
+                       "3. Third, I added additional notes and caveats that are useful on screen.");
+
+    const auto trace = pipeline.prepare(input, context, 1000);
+    QVERIFY(trace.dedupeDecision.admitted);
+    QVERIFY(trace.finalSpokenText.size() <= 280);
+    QVERIFY(trace.finalSpokenText.contains(QStringLiteral("The rest is on screen.")));
+    QVERIFY(!trace.finalSpokenText.contains(QStringLiteral("1.")));
 }
 
 QTEST_APPLESS_MAIN(TtsSpeechPreparationTests)

@@ -3023,7 +3023,6 @@ void AssistantController::submitText(const QString &text)
     InputRouteDecision policyDecision;
     if (m_assistantBehaviorPolicy) {
         policyDecision = m_assistantBehaviorPolicy->decideRoute(routeContext);
-        routingTrace.reasonCodes.push_back(QStringLiteral("authority.legacy_policy_fallback_ready"));
     }
     routingTrace.policyDecision = policyDecision;
 
@@ -3042,6 +3041,7 @@ void AssistantController::submitText(const QString &text)
     }
 
     const IntentTuningThresholds &thresholds = IntentTuningConfig::thresholds();
+    routingTrace.ambiguityThresholdUsed = thresholds.highAmbiguity;
     routingTrace.advisorMode = IntentTuningConfig::advisorModeFromEnvironment();
     routingTrace.advisorEvaluation.baseAmbiguity = routingTrace.ambiguityScore;
     routingTrace.advisorEvaluation.adjustedAmbiguity = routingTrace.ambiguityScore;
@@ -3131,6 +3131,31 @@ void AssistantController::submitText(const QString &text)
         }
     }
     routingTrace.finalDecision = decision;
+    const QList<AgentToolSpec> availableTools = m_agentToolbox ? m_agentToolbox->builtInTools() : QList<AgentToolSpec>{};
+    routingTrace.toolsAvailableCount = availableTools.size();
+    const bool routeNeedsBackendTools = decision.kind == InputRouteKind::Conversation
+        || decision.kind == InputRouteKind::AgentConversation
+        || decision.kind == InputRouteKind::CommandExtraction;
+    const bool infoOrActionIntent = routeContext.turnSignals.hasQuestionCue
+        || routeContext.turnSignals.hasCommandCue
+        || routeContext.turnSignals.hasDeterministicCue
+        || routingTrace.goals.primaryGoal.kind == UserGoalKind::InfoQuery
+        || routingTrace.goals.primaryGoal.kind == UserGoalKind::CommandRequest
+        || routingTrace.goals.primaryGoal.kind == UserGoalKind::DeterministicAction;
+    if (!routeNeedsBackendTools) {
+        routingTrace.toolSuppressionReason = QStringLiteral("suppression.backend_not_required");
+    } else if (routingTrace.toolsAvailableCount == 0) {
+        routingTrace.toolSuppressionReason = QStringLiteral("suppression.no_tools_available");
+    } else if (infoOrActionIntent) {
+        routingTrace.toolSelectionReason = QStringLiteral("selection.backend_info_or_action_tools_enabled");
+    } else {
+        routingTrace.toolSelectionReason = QStringLiteral("selection.backend_default_tools_enabled");
+    }
+    if (routingTrace.arbitratorResult.reasonCodes.contains(QStringLiteral("arbitrator.ask_clarification"))) {
+        routingTrace.clarificationTriggerReason = QStringLiteral("clarification.high_ambiguity_low_confidence");
+    } else if (routingTrace.arbitratorResult.reasonCodes.contains(QStringLiteral("arbitrator.high_ambiguity_backend_needed"))) {
+        routingTrace.clarificationTriggerReason = QStringLiteral("clarification.skipped_backend_clearly_needed");
+    }
 
     if (m_loggingService) {
         m_loggingService->infoFor(
@@ -5153,6 +5178,7 @@ void AssistantController::startConversationRequest(const QString &input)
 {
     const ReasoningMode mode = m_aiRequestCoordinator->chooseReasoningMode(input);
     m_activeReasoningMode = mode;
+    const QList<AgentToolSpec> availableTools = m_agentToolbox ? m_agentToolbox->builtInTools() : QList<AgentToolSpec>{};
     const QString modelId = m_aiRequestCoordinator->resolveModelId(availableModelIds());
     if (modelId.isEmpty()) {
         setStatus(QStringLiteral("No local AI backend model selected"));
@@ -5185,7 +5211,7 @@ void AssistantController::startConversationRequest(const QString &input)
         const ToolPlan plan = m_assistantBehaviorPolicy->buildToolPlan(
             selectionInput,
             IntentType::GENERAL_CHAT,
-            m_agentToolbox ? m_agentToolbox->builtInTools() : QList<AgentToolSpec>{});
+            availableTools);
         if (m_loggingService) {
             m_loggingService->logBehaviorEvent(SelectionTelemetryBuilder::toolPlanEvent(
                 QStringLiteral("conversation"),
@@ -5255,6 +5281,9 @@ void AssistantController::startConversationRequest(const QString &input)
         InputRouteDecision routeDecision;
         routeDecision.kind = InputRouteKind::Conversation;
         routeDecision.intent = IntentType::GENERAL_CHAT;
+        const QList<AgentToolSpec> relevantTools = m_assistantBehaviorPolicy
+            ? m_assistantBehaviorPolicy->selectRelevantTools(selectionInput, IntentType::GENERAL_CHAT, availableTools)
+            : m_promptAdapter->getRelevantTools(input, IntentType::GENERAL_CHAT, availableTools);
 
         TurnRuntimeInput runtimeInput;
         runtimeInput.rawUserInput = input;
@@ -5267,6 +5296,8 @@ void AssistantController::startConversationRequest(const QString &input)
         runtimeInput.selectedMemory = memoryContext;
         runtimeInput.identity = m_identityProfileService->identity();
         runtimeInput.userProfile = m_identityProfileService->userProfile();
+        runtimeInput.availableTools = availableTools;
+        runtimeInput.preselectedTools = relevantTools;
         runtimeInput.workspaceRoot = QDir::currentPath();
         runtimeInput.visionContext = assistantPromptContext;
         runtimeInput.currentTimeMs = QDateTime::currentMSecsSinceEpoch();

@@ -9,17 +9,17 @@
   {
     "name": "greeting_plus_request",
     "input": "hi explain open source licensing",
-    "expectedFinalRoute": "Conversation"
+    "expectedFinalRoute": "AgentConversation"
   },
   {
     "name": "smalltalk_plus_question",
     "input": "thanks, why is this slow?",
-    "expectedFinalRoute": "Conversation"
+    "expectedFinalRoute": "AgentConversation"
   },
   {
     "name": "command_vs_info_phrase",
     "input": "what does open source mean?",
-    "expectedFinalRoute": "Conversation"
+    "expectedFinalRoute": "AgentConversation"
   },
   {
     "name": "continuation_missing_context",
@@ -50,7 +50,7 @@
     "name": "low_confidence_to_backend",
     "input": "compare this and tell me what to do next",
     "confidenceOverride": 0.34,
-    "expectedFinalRoute": "Conversation",
+    "expectedFinalRoute": "AgentConversation",
     "expectedBackendEscalation": true
   },
   {

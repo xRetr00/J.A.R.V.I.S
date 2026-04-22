@@ -29,6 +29,7 @@ private slots:
     void routesLowConfidenceToBackendAssist();
     void routesHighConfidenceStrongSignalToLocalCandidate();
     void handlesContinuationAmbiguityWithClarification();
+    void keepsBackendWhenAmbiguityHighButBackendClearlyNeeded();
     void summarizesRoutingTracePatterns();
     void buildsRouteFinalTracePayload();
 };
@@ -345,6 +346,43 @@ void SmartIntentV2Tests::handlesContinuationAmbiguityWithClarification()
 
     QCOMPARE(result.decision.kind, InputRouteKind::LocalResponse);
     QVERIFY(result.reasonCodes.contains(QStringLiteral("arbitrator.ask_clarification")));
+}
+
+void SmartIntentV2Tests::keepsBackendWhenAmbiguityHighButBackendClearlyNeeded()
+{
+    RouteArbitrator arbitrator;
+    TurnSignals turnSignals;
+    turnSignals.hasQuestionCue = true;
+    TurnState state;
+    TurnGoalSet goals;
+    goals.primaryGoal.kind = UserGoalKind::InfoQuery;
+    QList<ExecutionIntentCandidate> candidates;
+
+    ExecutionIntentCandidate backend;
+    backend.kind = ExecutionIntentKind::AgentConversation;
+    backend.route.kind = InputRouteKind::AgentConversation;
+    backend.score = 0.82f;
+    backend.requiresBackend = true;
+    backend.backendPriority = 90;
+    backend.reasonCodes = {QStringLiteral("candidate.backend_agent")};
+    candidates.push_back(backend);
+
+    InputRouteDecision policyDecision;
+    policyDecision.kind = InputRouteKind::Conversation;
+    const RouteArbitrationResult result = arbitrator.arbitrate(
+        policyDecision,
+        turnSignals,
+        state,
+        goals,
+        candidates,
+        IntentConfidence{.signalConfidence = 0.25f, .goalConfidence = 0.3f, .executionConfidence = 0.3f, .finalConfidence = 0.35f},
+        0.74f,
+        IntentAdvisorSuggestion{.available = false, .ambiguityBoost = 0.0f, .continuationLikelihood = 0.1f, .backendNecessity = 0.9f},
+        false);
+
+    QCOMPARE(result.decision.kind, InputRouteKind::AgentConversation);
+    QVERIFY(result.reasonCodes.contains(QStringLiteral("arbitrator.backend_escalation")));
+    QVERIFY(result.reasonCodes.contains(QStringLiteral("arbitrator.high_ambiguity_backend_needed")));
 }
 
 void SmartIntentV2Tests::summarizesRoutingTracePatterns()

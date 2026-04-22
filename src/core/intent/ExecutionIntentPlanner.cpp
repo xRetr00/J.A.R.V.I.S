@@ -83,6 +83,13 @@ QList<ExecutionIntentCandidate> ExecutionIntentPlanner::plan(const TurnGoalSet &
             QStringLiteral("planner.command_extraction"),
             65,
             0.1f));
+        candidates.push_back(makeCandidate(
+            ExecutionIntentKind::AgentConversation,
+            InputRouteKind::AgentConversation,
+            0.74f,
+            QStringLiteral("planner.command_agent_backend"),
+            84,
+            0.07f));
     }
 
     if (goals.primaryGoal.kind == UserGoalKind::InfoQuery) {
@@ -93,6 +100,13 @@ QList<ExecutionIntentCandidate> ExecutionIntentPlanner::plan(const TurnGoalSet &
             QStringLiteral("planner.info_query_conversation"),
             80,
             0.04f));
+        candidates.push_back(makeCandidate(
+            ExecutionIntentKind::AgentConversation,
+            InputRouteKind::AgentConversation,
+            0.79f,
+            QStringLiteral("planner.info_query_agent_backend"),
+            88,
+            0.05f));
     }
 
     if (goals.primaryGoal.kind == UserGoalKind::ContextReference) {

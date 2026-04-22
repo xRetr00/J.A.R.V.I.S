@@ -13,6 +13,11 @@ private slots:
     void clampVoiceSpeedAboveMax();
     void clampVoicePitchBelowMin();
     void clampVoicePitchAboveMax();
+    void clampPiperNoiseScaleRange();
+    void clampPiperNoiseWRange();
+    void clampPiperSentenceSilenceRange();
+    void normalizeTtsPostProcessMode();
+    void normalizeTtsVoiceProfileId();
     void clampVadSensitivityBelowMin();
     void clampVadSensitivityAboveMax();
     void clampConversationTemperatureBelowMin();
@@ -63,6 +68,13 @@ void AppSettingsTests::hasExpectedDefaults()
     QCOMPARE(settings.wakeWordSensitivity(), 0.80);
     QCOMPARE(settings.wakeEngineKind(), QStringLiteral("sherpa-onnx"));
     QCOMPARE(settings.ttsEngineKind(), QStringLiteral("piper"));
+    QCOMPARE(settings.voiceSpeed(), 0.95);
+    QCOMPARE(settings.voicePitch(), 1.00);
+    QCOMPARE(settings.piperNoiseScale(), 0.67);
+    QCOMPARE(settings.piperNoiseW(), 0.80);
+    QCOMPARE(settings.piperSentenceSilence(), 0.06);
+    QCOMPARE(settings.ttsPostProcessMode(), QStringLiteral("light"));
+    QCOMPARE(settings.ttsVoiceProfileId(), QStringLiteral("balanced"));
     QVERIFY(settings.aecEnabled());
     QVERIFY(!settings.rnnoiseEnabled());
     QVERIFY(settings.tracePanelEnabled());
@@ -95,21 +107,66 @@ void AppSettingsTests::clampVoiceSpeedAboveMax()
 {
     AppSettings settings;
     settings.setVoiceSpeed(9.9);
-    QCOMPARE(settings.voiceSpeed(), 0.92);
+    QCOMPARE(settings.voiceSpeed(), 1.20);
 }
 
 void AppSettingsTests::clampVoicePitchBelowMin()
 {
     AppSettings settings;
     settings.setVoicePitch(0.0);
-    QCOMPARE(settings.voicePitch(), 0.90);
+    QCOMPARE(settings.voicePitch(), 0.95);
 }
 
 void AppSettingsTests::clampVoicePitchAboveMax()
 {
     AppSettings settings;
     settings.setVoicePitch(9.9);
-    QCOMPARE(settings.voicePitch(), 0.97);
+    QCOMPARE(settings.voicePitch(), 1.05);
+}
+
+void AppSettingsTests::clampPiperNoiseScaleRange()
+{
+    AppSettings settings;
+    settings.setPiperNoiseScale(-1.0);
+    QCOMPARE(settings.piperNoiseScale(), 0.20);
+    settings.setPiperNoiseScale(2.0);
+    QCOMPARE(settings.piperNoiseScale(), 1.20);
+}
+
+void AppSettingsTests::clampPiperNoiseWRange()
+{
+    AppSettings settings;
+    settings.setPiperNoiseW(-1.0);
+    QCOMPARE(settings.piperNoiseW(), 0.20);
+    settings.setPiperNoiseW(2.0);
+    QCOMPARE(settings.piperNoiseW(), 1.20);
+}
+
+void AppSettingsTests::clampPiperSentenceSilenceRange()
+{
+    AppSettings settings;
+    settings.setPiperSentenceSilence(-1.0);
+    QCOMPARE(settings.piperSentenceSilence(), 0.0);
+    settings.setPiperSentenceSilence(1.0);
+    QCOMPARE(settings.piperSentenceSilence(), 0.35);
+}
+
+void AppSettingsTests::normalizeTtsPostProcessMode()
+{
+    AppSettings settings;
+    settings.setTtsPostProcessMode(QStringLiteral("presence"));
+    QCOMPARE(settings.ttsPostProcessMode(), QStringLiteral("presence"));
+    settings.setTtsPostProcessMode(QStringLiteral("nope"));
+    QCOMPARE(settings.ttsPostProcessMode(), QStringLiteral("light"));
+}
+
+void AppSettingsTests::normalizeTtsVoiceProfileId()
+{
+    AppSettings settings;
+    settings.setTtsVoiceProfileId(QStringLiteral("natural"));
+    QCOMPARE(settings.ttsVoiceProfileId(), QStringLiteral("natural"));
+    settings.setTtsVoiceProfileId(QStringLiteral("unknown"));
+    QCOMPARE(settings.ttsVoiceProfileId(), QStringLiteral("balanced"));
 }
 
 void AppSettingsTests::clampVadSensitivityBelowMin()

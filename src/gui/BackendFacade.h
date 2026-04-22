@@ -74,6 +74,14 @@ class BackendFacade : public QObject
     Q_PROPERTY(QString ffmpegExecutable READ ffmpegExecutable NOTIFY settingsChanged)
     Q_PROPERTY(double voiceSpeed READ voiceSpeed NOTIFY settingsChanged)
     Q_PROPERTY(double voicePitch READ voicePitch NOTIFY settingsChanged)
+    Q_PROPERTY(double piperNoiseScale READ piperNoiseScale NOTIFY settingsChanged)
+    Q_PROPERTY(double piperNoiseW READ piperNoiseW NOTIFY settingsChanged)
+    Q_PROPERTY(double piperSentenceSilence READ piperSentenceSilence NOTIFY settingsChanged)
+    Q_PROPERTY(QString ttsPostProcessMode READ ttsPostProcessMode NOTIFY settingsChanged)
+    Q_PROPERTY(QStringList ttsPostProcessModes READ ttsPostProcessModes CONSTANT)
+    Q_PROPERTY(QStringList ttsVoiceProfileNames READ ttsVoiceProfileNames CONSTANT)
+    Q_PROPERTY(QStringList ttsVoiceProfileIds READ ttsVoiceProfileIds CONSTANT)
+    Q_PROPERTY(QString ttsVoiceProfileId READ ttsVoiceProfileId NOTIFY settingsChanged)
     Q_PROPERTY(double micSensitivity READ micSensitivity NOTIFY settingsChanged)
     Q_PROPERTY(QStringList audioInputDeviceNames READ audioInputDeviceNames NOTIFY audioDevicesChanged)
     Q_PROPERTY(QStringList audioInputDeviceIds READ audioInputDeviceIds NOTIFY audioDevicesChanged)
@@ -201,6 +209,14 @@ public:
     QString ffmpegExecutable() const;
     double voiceSpeed() const;
     double voicePitch() const;
+    double piperNoiseScale() const;
+    double piperNoiseW() const;
+    double piperSentenceSilence() const;
+    QString ttsPostProcessMode() const;
+    QStringList ttsPostProcessModes() const;
+    QStringList ttsVoiceProfileNames() const;
+    QStringList ttsVoiceProfileIds() const;
+    QString ttsVoiceProfileId() const;
     double micSensitivity() const;
     QStringList audioInputDeviceNames() const;
     QStringList audioInputDeviceIds() const;
@@ -290,6 +306,7 @@ public:
                                        const QString &braveSearchApiKey,
                                        bool tracePanelEnabled);
     Q_INVOKABLE void setSelectedVoicePresetId(const QString &voiceId);
+    Q_INVOKABLE void setTtsVoiceProfileId(const QString &profileId);
     Q_INVOKABLE void setWakeEngineKind(const QString &kind);
     Q_INVOKABLE void activateFocusMode(int durationMinutes = 0, bool allowCriticalAlerts = true);
     Q_INVOKABLE void deactivateFocusMode();
@@ -331,6 +348,11 @@ public:
         const QString &ffmpegPath,
         double voiceSpeed,
         double voicePitch,
+        double piperNoiseScale,
+        double piperNoiseW,
+        double piperSentenceSilence,
+        const QString &ttsPostProcessMode,
+        const QString &ttsVoiceProfileId,
         double micSensitivity,
         const QString &audioInputDeviceId,
         const QString &audioOutputDeviceId,

@@ -13,11 +13,14 @@
 
 namespace {
 constexpr double kMinVoiceSpeed = 0.85;
-constexpr double kMaxVoiceSpeed = 0.92;
-constexpr double kDefaultVoiceSpeed = 0.89;
-constexpr double kMinVoicePitch = 0.90;
-constexpr double kMaxVoicePitch = 0.97;
-constexpr double kDefaultVoicePitch = 0.93;
+constexpr double kMaxVoiceSpeed = 1.20;
+constexpr double kDefaultVoiceSpeed = 0.95;
+constexpr double kMinVoicePitch = 0.95;
+constexpr double kMaxVoicePitch = 1.05;
+constexpr double kDefaultVoicePitch = 1.00;
+constexpr double kDefaultNoiseScale = 0.67;
+constexpr double kDefaultNoiseW = 0.80;
+constexpr double kDefaultSentenceSilence = 0.06;
 constexpr double kLegacyPreciseThresholdDefault = 0.30;
 constexpr int kLegacyPreciseCooldownDefault = 750;
 constexpr double kSherpaWakeThresholdDefault = 0.80;
@@ -75,6 +78,48 @@ int clampTtsDedupeWindowMs(int value)
 int clampQwenTtsThreads(int value)
 {
     return std::clamp(value, 1, 64);
+}
+
+double clampPiperNoiseScale(double value)
+{
+    return std::clamp(value, 0.20, 1.20);
+}
+
+double clampPiperNoiseW(double value)
+{
+    return std::clamp(value, 0.20, 1.20);
+}
+
+double clampPiperSentenceSilence(double value)
+{
+    return std::clamp(value, 0.0, 0.35);
+}
+
+QString normalizeTtsPostProcessMode(QString value)
+{
+    value = value.trimmed().toLower();
+    if (value == QStringLiteral("off")
+        || value == QStringLiteral("light")
+        || value == QStringLiteral("presence")
+        || value == QStringLiteral("legacy")) {
+        return value;
+    }
+    return QStringLiteral("light");
+}
+
+QString normalizeTtsVoiceProfileId(QString value)
+{
+    value = value.trimmed().toLower();
+    if (value == QStringLiteral("fast")
+        || value == QStringLiteral("balanced")
+        || value == QStringLiteral("natural")
+        || value == QStringLiteral("warm")
+        || value == QStringLiteral("crisp")
+        || value == QStringLiteral("soft")
+        || value == QStringLiteral("custom")) {
+        return value;
+    }
+    return QStringLiteral("balanced");
 }
 
 QString normalizeQwenTtsLanguage(QString value)
@@ -342,6 +387,11 @@ bool AppSettings::load()
     m_ttsDedupeWindowMs = clampTtsDedupeWindowMs(parsed.value("ttsDedupeWindowMs", m_ttsDedupeWindowMs));
     m_voiceSpeed = clampVoiceSpeed(parsed.value("voiceSpeed", kDefaultVoiceSpeed));
     m_voicePitch = clampVoicePitch(parsed.value("voicePitch", kDefaultVoicePitch));
+    m_piperNoiseScale = clampPiperNoiseScale(parsed.value("piperNoiseScale", kDefaultNoiseScale));
+    m_piperNoiseW = clampPiperNoiseW(parsed.value("piperNoiseW", kDefaultNoiseW));
+    m_piperSentenceSilence = clampPiperSentenceSilence(parsed.value("piperSentenceSilence", kDefaultSentenceSilence));
+    m_ttsPostProcessMode = normalizeTtsPostProcessMode(QString::fromStdString(parsed.value("ttsPostProcessMode", m_ttsPostProcessMode.toStdString())));
+    m_ttsVoiceProfileId = normalizeTtsVoiceProfileId(QString::fromStdString(parsed.value("ttsVoiceProfileId", m_ttsVoiceProfileId.toStdString())));
     m_micSensitivity = parsed.value("micSensitivity", 0.02);
     m_selectedAudioInputDeviceId = QString::fromStdString(parsed.value("selectedAudioInputDeviceId", std::string{}));
     m_selectedAudioOutputDeviceId = QString::fromStdString(parsed.value("selectedAudioOutputDeviceId", std::string{}));
@@ -475,6 +525,11 @@ bool AppSettings::save() const
         {"ttsDedupeWindowMs", m_ttsDedupeWindowMs},
         {"voiceSpeed", m_voiceSpeed},
         {"voicePitch", m_voicePitch},
+        {"piperNoiseScale", m_piperNoiseScale},
+        {"piperNoiseW", m_piperNoiseW},
+        {"piperSentenceSilence", m_piperSentenceSilence},
+        {"ttsPostProcessMode", m_ttsPostProcessMode.toStdString()},
+        {"ttsVoiceProfileId", m_ttsVoiceProfileId.toStdString()},
         {"micSensitivity", m_micSensitivity},
         {"selectedAudioInputDeviceId", m_selectedAudioInputDeviceId.toStdString()},
         {"selectedAudioOutputDeviceId", m_selectedAudioOutputDeviceId.toStdString()},
@@ -784,6 +839,24 @@ double AppSettings::voiceSpeed() const { return m_voiceSpeed; }
 void AppSettings::setVoiceSpeed(double speed) { m_voiceSpeed = clampVoiceSpeed(speed); emit settingsChanged(); }
 double AppSettings::voicePitch() const { return m_voicePitch; }
 void AppSettings::setVoicePitch(double pitch) { m_voicePitch = clampVoicePitch(pitch); emit settingsChanged(); }
+double AppSettings::piperNoiseScale() const { return m_piperNoiseScale; }
+void AppSettings::setPiperNoiseScale(double value) { m_piperNoiseScale = clampPiperNoiseScale(value); emit settingsChanged(); }
+double AppSettings::piperNoiseW() const { return m_piperNoiseW; }
+void AppSettings::setPiperNoiseW(double value) { m_piperNoiseW = clampPiperNoiseW(value); emit settingsChanged(); }
+double AppSettings::piperSentenceSilence() const { return m_piperSentenceSilence; }
+void AppSettings::setPiperSentenceSilence(double value) { m_piperSentenceSilence = clampPiperSentenceSilence(value); emit settingsChanged(); }
+QString AppSettings::ttsPostProcessMode() const { return m_ttsPostProcessMode; }
+void AppSettings::setTtsPostProcessMode(const QString &mode)
+{
+    m_ttsPostProcessMode = normalizeTtsPostProcessMode(mode);
+    emit settingsChanged();
+}
+QString AppSettings::ttsVoiceProfileId() const { return m_ttsVoiceProfileId; }
+void AppSettings::setTtsVoiceProfileId(const QString &profileId)
+{
+    m_ttsVoiceProfileId = normalizeTtsVoiceProfileId(profileId);
+    emit settingsChanged();
+}
 double AppSettings::micSensitivity() const { return m_micSensitivity; }
 void AppSettings::setMicSensitivity(double sensitivity) { m_micSensitivity = sensitivity; emit settingsChanged(); }
 QString AppSettings::selectedAudioInputDeviceId() const { return m_selectedAudioInputDeviceId; }

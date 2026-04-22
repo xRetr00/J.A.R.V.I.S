@@ -82,8 +82,9 @@ SpeechPreparationTrace SpeechPreparationPipeline::prepare(const QString &text,
     trace.rawInputText = text;
     trace.normalizedText = m_normalizer.normalize(text);
     trace.punctuationShapedText = m_punctuationShaper.shape(trace.normalizedText);
-    trace.pauseHintSummary = summarizePauseHints(trace.punctuationShapedText);
-    trace.finalSpokenText = trace.punctuationShapedText;
+    trace.speechShapedText = m_spokenTextShaper.shape(trace.punctuationShapedText, context);
+    trace.pauseHintSummary = summarizePauseHints(trace.speechShapedText);
+    trace.finalSpokenText = trace.speechShapedText;
 
     if (trace.finalSpokenText.trimmed().isEmpty()) {
         trace.emptyAfterPreparation = true;

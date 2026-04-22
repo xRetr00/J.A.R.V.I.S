@@ -56,6 +56,14 @@ class SettingsViewModel : public QObject
     Q_PROPERTY(QString ffmpegExecutable READ ffmpegExecutable NOTIFY settingsChanged)
     Q_PROPERTY(double voiceSpeed READ voiceSpeed NOTIFY settingsChanged)
     Q_PROPERTY(double voicePitch READ voicePitch NOTIFY settingsChanged)
+    Q_PROPERTY(double piperNoiseScale READ piperNoiseScale NOTIFY settingsChanged)
+    Q_PROPERTY(double piperNoiseW READ piperNoiseW NOTIFY settingsChanged)
+    Q_PROPERTY(double piperSentenceSilence READ piperSentenceSilence NOTIFY settingsChanged)
+    Q_PROPERTY(QString ttsPostProcessMode READ ttsPostProcessMode NOTIFY settingsChanged)
+    Q_PROPERTY(QStringList ttsPostProcessModes READ ttsPostProcessModes NOTIFY settingsChanged)
+    Q_PROPERTY(QStringList ttsVoiceProfileNames READ ttsVoiceProfileNames NOTIFY settingsChanged)
+    Q_PROPERTY(QStringList ttsVoiceProfileIds READ ttsVoiceProfileIds NOTIFY settingsChanged)
+    Q_PROPERTY(QString ttsVoiceProfileId READ ttsVoiceProfileId NOTIFY settingsChanged)
     Q_PROPERTY(double micSensitivity READ micSensitivity NOTIFY settingsChanged)
     Q_PROPERTY(bool aecEnabled READ aecEnabled NOTIFY settingsChanged)
     Q_PROPERTY(bool rnnoiseEnabled READ rnnoiseEnabled NOTIFY settingsChanged)
@@ -153,6 +161,14 @@ public:
     QString ffmpegExecutable() const;
     double voiceSpeed() const;
     double voicePitch() const;
+    double piperNoiseScale() const;
+    double piperNoiseW() const;
+    double piperSentenceSilence() const;
+    QString ttsPostProcessMode() const;
+    QStringList ttsPostProcessModes() const;
+    QStringList ttsVoiceProfileNames() const;
+    QStringList ttsVoiceProfileIds() const;
+    QString ttsVoiceProfileId() const;
     double micSensitivity() const;
     bool aecEnabled() const;
     bool rnnoiseEnabled() const;
@@ -214,6 +230,7 @@ public:
     Q_INVOKABLE void setSelectedModel(const QString &modelId);
     Q_INVOKABLE void setSelectedIntentModelId(const QString &modelId);
     Q_INVOKABLE void setSelectedVoicePresetId(const QString &voiceId);
+    Q_INVOKABLE void setTtsVoiceProfileId(const QString &profileId);
     Q_INVOKABLE void setWakeEngineKind(const QString &kind);
     Q_INVOKABLE void setTtsEngineKind(const QString &kind);
     Q_INVOKABLE void saveAudioProcessing(bool aecEnabled, bool rnnoiseEnabled, double vadSensitivity);
@@ -261,6 +278,11 @@ public:
                                   const QString &ffmpegPath,
                                   double voiceSpeed,
                                   double voicePitch,
+                                  double piperNoiseScale,
+                                  double piperNoiseW,
+                                  double piperSentenceSilence,
+                                  const QString &ttsPostProcessMode,
+                                  const QString &ttsVoiceProfileId,
                                   double micSensitivity,
                                   const QString &audioInputDeviceId,
                                   const QString &audioOutputDeviceId,

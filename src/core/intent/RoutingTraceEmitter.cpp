@@ -74,6 +74,11 @@ QJsonObject RoutingTraceEmitter::buildRouteFinalPayload(const RoutingTrace &trac
     payload.insert(QStringLiteral("advisor_mode"), advisorModeToString(trace.advisorMode));
     payload.insert(QStringLiteral("used_arbitrator_authority"), trace.usedArbitratorAuthority);
     payload.insert(QStringLiteral("final_executed_route"), trace.finalExecutedRoute);
+    payload.insert(QStringLiteral("tool_selection_reason"), trace.toolSelectionReason);
+    payload.insert(QStringLiteral("tool_suppression_reason"), trace.toolSuppressionReason);
+    payload.insert(QStringLiteral("tools_available_count"), trace.toolsAvailableCount);
+    payload.insert(QStringLiteral("clarification_trigger_reason"), trace.clarificationTriggerReason);
+    payload.insert(QStringLiteral("ambiguity_threshold_used"), trace.ambiguityThresholdUsed);
     payload.insert(QStringLiteral("confirmation_gate_triggered"), trace.confirmationGateTriggered);
     payload.insert(QStringLiteral("confirmation_outcome"), trace.confirmationOutcome);
     payload.insert(QStringLiteral("reason_codes"), stringsToArray(trace.reasonCodes));

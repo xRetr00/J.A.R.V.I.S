@@ -6,6 +6,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRegularExpression>
+#include <QSet>
 
 namespace {
 QString routeKindName(InputRouteKind kind)
@@ -58,6 +59,72 @@ bool toolListContains(const QList<AgentToolSpec> &tools, const QString &name)
         }
     }
     return false;
+}
+
+bool isBackendRoute(InputRouteKind kind)
+{
+    return kind == InputRouteKind::Conversation
+        || kind == InputRouteKind::AgentConversation
+        || kind == InputRouteKind::CommandExtraction;
+}
+
+bool hasAnyCue(const QString &lowered, const QStringList &cues)
+{
+    for (const QString &cue : cues) {
+        if (lowered.contains(cue)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+QList<AgentToolSpec> minimalBackendTools(const QString &effectiveInput,
+                                         const QList<AgentToolSpec> &availableTools)
+{
+    const QString lowered = effectiveInput.toLower();
+    QStringList preferred = {
+        QStringLiteral("web_search"),
+        QStringLiteral("web_fetch"),
+        QStringLiteral("browser_fetch_text"),
+        QStringLiteral("memory_search")
+    };
+    const bool fileOrLogIntent = hasAnyCue(lowered, {
+        QStringLiteral("file"),
+        QStringLiteral("read"),
+        QStringLiteral("log"),
+        QStringLiteral("error"),
+        QStringLiteral("trace")
+    });
+    if (fileOrLogIntent) {
+        preferred << QStringLiteral("file_read")
+                  << QStringLiteral("file_search")
+                  << QStringLiteral("log_search")
+                  << QStringLiteral("log_tail")
+                  << QStringLiteral("ai_log_read");
+    }
+    if (hasAnyCue(lowered, {QStringLiteral("open "), QStringLiteral("launch"), QStringLiteral("browser"), QStringLiteral("url")})) {
+        preferred << QStringLiteral("browser_open")
+                  << QStringLiteral("computer_open_url")
+                  << QStringLiteral("computer_open_app");
+    }
+
+    QList<AgentToolSpec> selected;
+    QSet<QString> selectedNames;
+    for (const QString &toolName : preferred) {
+        for (const AgentToolSpec &tool : availableTools) {
+            if (tool.name == toolName && !selectedNames.contains(tool.name)) {
+                selected.push_back(tool);
+                selectedNames.insert(tool.name);
+            }
+        }
+    }
+    if (!selected.isEmpty()) {
+        return selected;
+    }
+    if (availableTools.isEmpty()) {
+        return {};
+    }
+    return {availableTools.first()};
 }
 
 QString payloadPreview(const QJsonObject &payload)
@@ -266,6 +333,9 @@ TurnRuntimePlan TurnOrchestrationRuntime::buildPlan(const TurnRuntimeInput &inpu
     plan.selectedTools = input.preselectedTools;
     if (plan.selectedTools.isEmpty() && m_behaviorPolicy) {
         plan.selectedTools = m_behaviorPolicy->selectRelevantTools(effectiveInput, intent, input.availableTools);
+    }
+    if (plan.selectedTools.isEmpty() && isBackendRoute(input.routeDecision.kind) && !input.availableTools.isEmpty()) {
+        plan.selectedTools = minimalBackendTools(effectiveInput, input.availableTools);
     }
 
     plan.trustDecision = m_behaviorPolicy

@@ -71,9 +71,40 @@ RouteArbitrationResult RouteArbitrator::arbitrate(const InputRouteDecision &poli
         || turnSignals.socialOnly
         || turnSignals.hasContextReference
         || turnSignals.hasContinuationCue;
-    const bool shouldBackendAssist = (effectiveAmbiguity >= thresholds.highAmbiguity)
-        || (effectiveConfidence < thresholds.lowConfidence)
-        || (effectiveConfidence < thresholds.mediumConfidence && advisorSuggestion.backendNecessity >= thresholds.backendAssistNeed);
+    const bool highAmbiguity = effectiveAmbiguity >= thresholds.highAmbiguity;
+    const bool belowMediumConfidence = effectiveConfidence < thresholds.mediumConfidence;
+
+    std::optional<ExecutionIntentCandidate> bestBackendCandidate;
+    for (const ExecutionIntentCandidate &candidate : candidates) {
+        if (!candidate.requiresBackend) {
+            continue;
+        }
+        if (!bestBackendCandidate.has_value()
+            || candidate.backendPriority > bestBackendCandidate->backendPriority
+            || (candidate.backendPriority == bestBackendCandidate->backendPriority
+                && candidate.score > bestBackendCandidate->score)) {
+            bestBackendCandidate = candidate;
+        }
+    }
+    const bool backendClearlyNeededByAdvisor =
+        bestBackendCandidate.has_value()
+        && advisorSuggestion.backendNecessity >= (thresholds.backendAssistNeed + 0.12f);
+    const bool backendCandidatePenalizedForMissingContinuationContext =
+        bestBackendCandidate.has_value()
+        && (bestBackendCandidate->reasonCodes.contains(QStringLiteral("candidate.continuation_missing_context_penalty"))
+            || bestBackendCandidate->reasonCodes.contains(QStringLiteral("replay.continuation_missing_context_penalty")));
+    const bool backendClearlyNeededByCandidate =
+        bestBackendCandidate.has_value()
+        && !backendCandidatePenalizedForMissingContinuationContext
+        && (bestBackendCandidate->backendPriority >= 85)
+        && (bestBackendCandidate->score >= 0.7f);
+    const bool backendClearlyNeeded = backendClearlyNeededByAdvisor || backendClearlyNeededByCandidate;
+    const bool shouldAskClarification = highAmbiguity && belowMediumConfidence && !backendClearlyNeeded;
+    const bool shouldBackendAssist = (backendClearlyNeeded && (belowMediumConfidence || highAmbiguity))
+        || (effectiveConfidence < thresholds.lowConfidence && !highAmbiguity)
+        || (effectiveConfidence < thresholds.mediumConfidence
+            && advisorSuggestion.backendNecessity >= thresholds.backendAssistNeed
+            && !highAmbiguity);
 
     if (hasDeterministicTask) {
         if (const std::optional<ExecutionIntentCandidate> deterministic = findCandidate(InputRouteKind::DeterministicTasks)) {
@@ -85,7 +116,7 @@ RouteArbitrationResult RouteArbitrator::arbitrate(const InputRouteDecision &poli
             result.confidence = 0.95f;
             result.reasonCodes = {QStringLiteral("arbitrator.deterministic_priority")};
         }
-    } else if (effectiveAmbiguity >= thresholds.highAmbiguity && effectiveConfidence <= thresholds.lowConfidence) {
+    } else if (shouldAskClarification) {
         if (const std::optional<ExecutionIntentCandidate> clarify = findCandidate(InputRouteKind::LocalResponse)) {
             result.decision = clarify->route;
             result.confidence = clarify->score;
@@ -112,6 +143,7 @@ RouteArbitrationResult RouteArbitrator::arbitrate(const InputRouteDecision &poli
             result.decision.status = QStringLiteral("Clarification needed");
             result.reasonCodes = {QStringLiteral("arbitrator.ask_clarification")};
         }
+        result.reasonCodes.push_back(QStringLiteral("arbitrator.ask_clarification"));
         result.reasonCodes.push_back(QStringLiteral("arbitrator.very_high_ambiguity_clarify"));
     } else if (state.isContinuation
                && advisorSuggestion.continuationLikelihood >= 0.55f
@@ -125,11 +157,19 @@ RouteArbitrationResult RouteArbitrator::arbitrate(const InputRouteDecision &poli
             result.confidence = 0.78f;
             result.reasonCodes = {QStringLiteral("arbitrator.continuation")};
         }
+    } else if (turnSignals.hasCommandCue && turnSignals.hasQuestionCue) {
+        result.decision.kind = InputRouteKind::Conversation;
+        result.confidence = 0.85f;
+        result.reasonCodes = {QStringLiteral("arbitrator.command_vs_info_prefers_info_query")};
     } else if (shouldBackendAssist) {
-        if (const std::optional<ExecutionIntentCandidate> backend = findCandidate(InputRouteKind::Conversation)) {
-            result.decision = backend->route;
-            result.confidence = std::max(backend->score, 0.68f);
+        if (bestBackendCandidate.has_value()) {
+            const ExecutionIntentCandidate backend = *bestBackendCandidate;
+            result.decision = backend.route;
+            result.confidence = std::max(backend.score, 0.68f);
             result.reasonCodes = {QStringLiteral("arbitrator.backend_escalation")};
+            if (highAmbiguity && belowMediumConfidence && backendClearlyNeeded) {
+                result.reasonCodes.push_back(QStringLiteral("arbitrator.high_ambiguity_backend_needed"));
+            }
         } else {
             result.decision.kind = InputRouteKind::Conversation;
             result.confidence = 0.7f;
@@ -139,10 +179,6 @@ RouteArbitrationResult RouteArbitrator::arbitrate(const InputRouteDecision &poli
         result.decision.kind = InputRouteKind::LocalResponse;
         result.confidence = 0.9f;
         result.reasonCodes = {QStringLiteral("arbitrator.social_only_local_response")};
-    } else if (turnSignals.hasCommandCue && turnSignals.hasQuestionCue) {
-        result.decision.kind = InputRouteKind::Conversation;
-        result.confidence = 0.85f;
-        result.reasonCodes = {QStringLiteral("arbitrator.command_vs_info_prefers_info_query")};
     } else if (!candidates.isEmpty()) {
         ExecutionIntentCandidate selected = candidates.first();
         for (const ExecutionIntentCandidate &candidate : candidates) {
