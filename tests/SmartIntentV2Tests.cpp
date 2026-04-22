@@ -1,11 +1,16 @@
 #include <QtTest>
+#include <QDir>
 
 #include "core/intent/ExecutionIntentPlanner.h"
+#include "core/intent/IntentConfidenceCalculator.h"
+#include "core/intent/LocalIntentAdvisor.h"
 #include "core/intent/RouteArbitrator.h"
+#include "core/intent/RoutingTraceAnalyzer.h"
 #include "core/intent/RoutingTraceEmitter.h"
 #include "core/intent/TurnSignalExtractor.h"
 #include "core/intent/TurnStateAnalyzer.h"
 #include "core/intent/UserGoalInferer.h"
+#include "core/CurrentContextReferentResolver.h"
 
 class SmartIntentV2Tests : public QObject
 {
@@ -17,6 +22,14 @@ private slots:
     void infersPrimaryAndSecondaryGoals();
     void plansDeterministicCandidateFromSocialPrefixCommand();
     void arbitratesCommandVsInfoConflictToConversation();
+    void arbitratesContinuationAsPriorityRoute();
+    void resolvesContextReferenceToExecutionTask();
+    void prefersClarificationAtHighAmbiguity();
+    void marksBackendVsLocalCandidateCapabilities();
+    void routesLowConfidenceToBackendAssist();
+    void routesHighConfidenceStrongSignalToLocalCandidate();
+    void handlesContinuationAmbiguityWithClarification();
+    void summarizesRoutingTracePatterns();
     void buildsRouteFinalTracePayload();
 };
 
@@ -117,9 +130,247 @@ void SmartIntentV2Tests::arbitratesCommandVsInfoConflictToConversation()
         state,
         goals,
         candidates,
+        IntentConfidence{.signalConfidence = 0.65f, .goalConfidence = 0.62f, .executionConfidence = 0.7f, .finalConfidence = 0.68f},
+        0.42f,
+        IntentAdvisorSuggestion{},
         false);
 
     QCOMPARE(result.decision.kind, InputRouteKind::Conversation);
+}
+
+void SmartIntentV2Tests::arbitratesContinuationAsPriorityRoute()
+{
+    RouteArbitrator arbitrator;
+    TurnSignals turnSignals;
+    turnSignals.hasContinuationCue = true;
+    TurnState state;
+    state.isContinuation = true;
+    TurnGoalSet goals;
+    goals.primaryGoal.kind = UserGoalKind::Continuation;
+    QList<ExecutionIntentCandidate> candidates;
+    ExecutionIntentCandidate continuation;
+    continuation.kind = ExecutionIntentKind::AgentConversation;
+    continuation.route.kind = InputRouteKind::AgentConversation;
+    continuation.score = 0.9f;
+    continuation.reasonCodes = {QStringLiteral("candidate.continuation")};
+    candidates.push_back(continuation);
+
+    InputRouteDecision policyDecision;
+    policyDecision.kind = InputRouteKind::Conversation;
+    const RouteArbitrationResult result = arbitrator.arbitrate(
+        policyDecision,
+        turnSignals,
+        state,
+        goals,
+        candidates,
+        IntentConfidence{.signalConfidence = 0.7f, .goalConfidence = 0.72f, .executionConfidence = 0.8f, .finalConfidence = 0.76f},
+        0.35f,
+        IntentAdvisorSuggestion{.available = false, .ambiguityBoost = 0.0f, .continuationLikelihood = 0.9f, .backendNecessity = 0.2f},
+        false);
+    QCOMPARE(result.decision.kind, InputRouteKind::AgentConversation);
+}
+
+void SmartIntentV2Tests::resolvesContextReferenceToExecutionTask()
+{
+    const CurrentContextResolution resolution = CurrentContextReferentResolver::resolve({
+        .userInput = QStringLiteral("read the current page"),
+        .desktopContext = {
+            {QStringLiteral("taskId"), QStringLiteral("browser_tab")},
+            {QStringLiteral("url"), QStringLiteral("https://example.com")}
+        },
+        .desktopContextAtMs = 1000,
+        .nowMs = 1200,
+        .workspaceRoot = QDir::currentPath()
+    });
+
+    QCOMPARE(resolution.kind, CurrentContextResolutionKind::Task);
+    QCOMPARE(resolution.decision.kind, InputRouteKind::BackgroundTasks);
+    QCOMPARE(resolution.decision.tasks.first().type, QStringLiteral("browser_fetch_text"));
+}
+
+void SmartIntentV2Tests::prefersClarificationAtHighAmbiguity()
+{
+    RouteArbitrator arbitrator;
+    TurnSignals turnSignals;
+    TurnState state;
+    TurnGoalSet goals;
+    goals.ambiguity = 0.8f;
+    QList<ExecutionIntentCandidate> candidates;
+    ExecutionIntentCandidate clarify;
+    clarify.kind = ExecutionIntentKind::AskClarification;
+    clarify.route.kind = InputRouteKind::LocalResponse;
+    clarify.score = 0.91f;
+    clarify.reasonCodes = {QStringLiteral("candidate.high_ambiguity")};
+    candidates.push_back(clarify);
+
+    InputRouteDecision policyDecision;
+    policyDecision.kind = InputRouteKind::Conversation;
+    const RouteArbitrationResult result = arbitrator.arbitrate(
+        policyDecision,
+        turnSignals,
+        state,
+        goals,
+        candidates,
+        IntentConfidence{.signalConfidence = 0.3f, .goalConfidence = 0.3f, .executionConfidence = 0.2f, .finalConfidence = 0.28f},
+        0.82f,
+        IntentAdvisorSuggestion{.available = false, .ambiguityBoost = 0.1f, .continuationLikelihood = 0.2f, .backendNecessity = 0.8f},
+        false);
+    QCOMPARE(result.decision.kind, InputRouteKind::LocalResponse);
+    QVERIFY(result.reasonCodes.contains(QStringLiteral("arbitrator.ask_clarification")));
+}
+
+void SmartIntentV2Tests::marksBackendVsLocalCandidateCapabilities()
+{
+    TurnSignalExtractor extractor;
+    TurnStateAnalyzer analyzer;
+    UserGoalInferer inferer;
+    ExecutionIntentPlanner planner;
+
+    const TurnSignals extracted = extractor.extract(QStringLiteral("what does caching strategy mean?"));
+    TurnStateInput stateInput;
+    stateInput.normalizedInput = extracted.normalizedInput;
+    stateInput.turnSignals = extracted;
+    const TurnState state = analyzer.analyze(stateInput);
+    const TurnGoalSet goals = inferer.infer(extracted, state, false);
+    const QList<ExecutionIntentCandidate> candidates = planner.plan(goals, extracted, false, AgentTask{});
+
+    QVERIFY(!candidates.isEmpty());
+    QVERIFY(candidates.first().requiresBackend);
+    QVERIFY(!candidates.first().canRunLocal);
+}
+
+void SmartIntentV2Tests::routesLowConfidenceToBackendAssist()
+{
+    RouteArbitrator arbitrator;
+    TurnSignals turnSignals;
+    turnSignals.hasQuestionCue = true;
+    TurnState state;
+    TurnGoalSet goals;
+    goals.primaryGoal.kind = UserGoalKind::InfoQuery;
+    goals.primaryGoal.confidence = 0.35f;
+    QList<ExecutionIntentCandidate> candidates;
+
+    ExecutionIntentCandidate backend;
+    backend.kind = ExecutionIntentKind::BackendReasoning;
+    backend.route.kind = InputRouteKind::Conversation;
+    backend.score = 0.72f;
+    backend.requiresBackend = true;
+    backend.backendPriority = 90;
+    backend.reasonCodes = {QStringLiteral("candidate.backend")};
+    candidates.push_back(backend);
+
+    InputRouteDecision policyDecision;
+    policyDecision.kind = InputRouteKind::CommandExtraction;
+    const RouteArbitrationResult result = arbitrator.arbitrate(
+        policyDecision,
+        turnSignals,
+        state,
+        goals,
+        candidates,
+        IntentConfidence{.signalConfidence = 0.33f, .goalConfidence = 0.35f, .executionConfidence = 0.4f, .finalConfidence = 0.38f},
+        0.45f,
+        IntentAdvisorSuggestion{.available = false, .ambiguityBoost = 0.0f, .continuationLikelihood = 0.1f, .backendNecessity = 0.75f},
+        false);
+
+    QCOMPARE(result.decision.kind, InputRouteKind::Conversation);
+    QVERIFY(result.reasonCodes.contains(QStringLiteral("arbitrator.backend_escalation")));
+}
+
+void SmartIntentV2Tests::routesHighConfidenceStrongSignalToLocalCandidate()
+{
+    RouteArbitrator arbitrator;
+    TurnSignals turnSignals;
+    turnSignals.socialOnly = true;
+    turnSignals.hasDeterministicCue = true;
+    TurnState state;
+    TurnGoalSet goals;
+    goals.primaryGoal.kind = UserGoalKind::DeterministicAction;
+    QList<ExecutionIntentCandidate> candidates;
+
+    ExecutionIntentCandidate local;
+    local.kind = ExecutionIntentKind::DeterministicTask;
+    local.route.kind = InputRouteKind::DeterministicTasks;
+    local.score = 0.95f;
+    local.canRunLocal = true;
+    local.requiresBackend = false;
+    local.reasonCodes = {QStringLiteral("candidate.local_deterministic")};
+    candidates.push_back(local);
+
+    InputRouteDecision policyDecision;
+    policyDecision.kind = InputRouteKind::Conversation;
+    const RouteArbitrationResult result = arbitrator.arbitrate(
+        policyDecision,
+        turnSignals,
+        state,
+        goals,
+        candidates,
+        IntentConfidence{.signalConfidence = 0.9f, .goalConfidence = 0.88f, .executionConfidence = 0.9f, .finalConfidence = 0.89f},
+        0.1f,
+        IntentAdvisorSuggestion{},
+        true);
+
+    QCOMPARE(result.decision.kind, InputRouteKind::DeterministicTasks);
+}
+
+void SmartIntentV2Tests::handlesContinuationAmbiguityWithClarification()
+{
+    RouteArbitrator arbitrator;
+    TurnSignals turnSignals;
+    turnSignals.hasContinuationCue = true;
+    TurnState state;
+    state.isContinuation = true;
+    TurnGoalSet goals;
+    goals.primaryGoal.kind = UserGoalKind::Continuation;
+    QList<ExecutionIntentCandidate> candidates;
+
+    ExecutionIntentCandidate continuation;
+    continuation.kind = ExecutionIntentKind::AgentConversation;
+    continuation.route.kind = InputRouteKind::AgentConversation;
+    continuation.score = 0.7f;
+    continuation.reasonCodes = {QStringLiteral("candidate.continuation")};
+    candidates.push_back(continuation);
+
+    InputRouteDecision policyDecision;
+    policyDecision.kind = InputRouteKind::Conversation;
+    const RouteArbitrationResult result = arbitrator.arbitrate(
+        policyDecision,
+        turnSignals,
+        state,
+        goals,
+        candidates,
+        IntentConfidence{.signalConfidence = 0.3f, .goalConfidence = 0.2f, .executionConfidence = 0.3f, .finalConfidence = 0.24f},
+        0.75f,
+        IntentAdvisorSuggestion{.available = false, .ambiguityBoost = 0.1f, .continuationLikelihood = 0.85f, .backendNecessity = 0.7f},
+        false);
+
+    QCOMPARE(result.decision.kind, InputRouteKind::LocalResponse);
+    QVERIFY(result.reasonCodes.contains(QStringLiteral("arbitrator.ask_clarification")));
+}
+
+void SmartIntentV2Tests::summarizesRoutingTracePatterns()
+{
+    RoutingTraceAnalyzer analyzer;
+    QList<RoutingTrace> traces;
+
+    RoutingTrace first;
+    first.finalDecision.kind = InputRouteKind::None;
+    first.finalExecutedRoute = QStringLiteral("none");
+    first.overridesApplied = {QStringLiteral("override.fallback_conversation")};
+    first.ambiguityScore = 0.8f;
+    traces.push_back(first);
+
+    RoutingTrace second;
+    second.finalDecision.kind = InputRouteKind::Conversation;
+    second.finalExecutedRoute = QStringLiteral("conversation");
+    second.overridesApplied = {QStringLiteral("override.arbitrator_over_policy")};
+    traces.push_back(second);
+
+    const RoutingTraceAnalyzerSummary summary = analyzer.summarize(traces);
+    QCOMPARE(summary.total, 2);
+    QCOMPARE(summary.misroutes, 1);
+    QCOMPARE(summary.fallbackCount, 1);
+    QVERIFY(summary.overrideCount >= 2);
+    QVERIFY(summary.highAmbiguityCount >= 1);
 }
 
 void SmartIntentV2Tests::buildsRouteFinalTracePayload()
@@ -131,6 +382,9 @@ void SmartIntentV2Tests::buildsRouteFinalTracePayload()
     trace.turnSignals.hasQuestionCue = true;
     trace.turnState.isNewTurn = true;
     trace.turnState.reasonCodes = {QStringLiteral("turn_state.new_turn")};
+    trace.ambiguityScore = 0.62f;
+    trace.intentConfidence = IntentConfidence{.signalConfidence = 0.54f, .goalConfidence = 0.48f, .executionConfidence = 0.41f, .finalConfidence = 0.46f};
+    trace.advisorSuggestion = IntentAdvisorSuggestion{.available = false, .ambiguityBoost = 0.2f, .continuationLikelihood = 0.1f, .backendNecessity = 0.7f};
     trace.policyDecision.kind = InputRouteKind::CommandExtraction;
     trace.finalDecision.kind = InputRouteKind::Conversation;
     trace.finalExecutedRoute = QStringLiteral("conversation");
@@ -141,6 +395,9 @@ void SmartIntentV2Tests::buildsRouteFinalTracePayload()
     const QJsonObject payload = emitter.buildRouteFinalPayload(trace);
     QCOMPARE(payload.value(QStringLiteral("record")).toString(), QStringLiteral("route_final"));
     QCOMPARE(payload.value(QStringLiteral("final_executed_route")).toString(), QStringLiteral("conversation"));
+    QVERIFY(payload.contains(QStringLiteral("intent_confidence")));
+    QVERIFY(payload.contains(QStringLiteral("advisor_suggestion")));
+    QVERIFY(payload.contains(QStringLiteral("ambiguity_score")));
     QVERIFY(payload.contains(QStringLiteral("turn_signals")));
     QVERIFY(payload.contains(QStringLiteral("policy_decision")));
     QVERIFY(payload.contains(QStringLiteral("final_decision")));

@@ -269,7 +269,13 @@ set(JARVIS_SOURCES
     src/core/IntentRouter.cpp
     src/core/intent/CommandCueMatcher.cpp
     src/core/intent/ExecutionIntentPlanner.cpp
+    src/core/intent/IntentConfidenceCalculator.cpp
+    src/core/intent/IntentTuningConfig.cpp
+    src/core/intent/LocalIntentAdvisor.cpp
     src/core/intent/RouteArbitrator.cpp
+    src/core/intent/RoutingCalibrationAnalyzer.cpp
+    src/core/intent/RoutingReplayHarness.cpp
+    src/core/intent/RoutingTraceAnalyzer.cpp
     src/core/intent/RoutingTraceEmitter.cpp
     src/core/intent/TurnSignalExtractor.cpp
     src/core/intent/TurnStateAnalyzer.cpp
@@ -423,7 +429,13 @@ set(JARVIS_HEADERS
     src/core/IntentRouter.h
     src/core/intent/CommandCueMatcher.h
     src/core/intent/ExecutionIntentPlanner.h
+    src/core/intent/IntentConfidenceCalculator.h
+    src/core/intent/IntentTuningConfig.h
+    src/core/intent/LocalIntentAdvisor.h
     src/core/intent/RouteArbitrator.h
+    src/core/intent/RoutingCalibrationAnalyzer.h
+    src/core/intent/RoutingReplayHarness.h
+    src/core/intent/RoutingTraceAnalyzer.h
     src/core/intent/RoutingTraceEmitter.h
     src/core/intent/SmartIntentTypes.h
     src/core/intent/TurnSignalExtractor.h
@@ -962,6 +974,20 @@ if(JARVIS_BUILD_TESTS)
     add_test(NAME jarvis_smart_intent_v2_tests COMMAND jarvis_smart_intent_v2_tests)
     set_tests_properties(jarvis_smart_intent_v2_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
     jarvis_copy_optional_runtime_libraries(jarvis_smart_intent_v2_tests)
+
+    qt_add_executable(jarvis_intent_intelligence_tuning_tests
+        tests/IntentIntelligenceTuningTests.cpp
+    )
+
+    target_link_libraries(jarvis_intent_intelligence_tuning_tests
+        PRIVATE
+            jarvis_lib
+            Qt6::Test
+    )
+
+    add_test(NAME jarvis_intent_intelligence_tuning_tests COMMAND jarvis_intent_intelligence_tuning_tests)
+    set_tests_properties(jarvis_intent_intelligence_tuning_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_intent_intelligence_tuning_tests)
 
     qt_add_executable(jarvis_ai_services_tests
         tests/AiServicesTests.cpp

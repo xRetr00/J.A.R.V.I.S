@@ -10,5 +10,8 @@ public:
                                      const TurnState &state,
                                      const TurnGoalSet &goals,
                                      const QList<ExecutionIntentCandidate> &candidates,
+                                     const IntentConfidence &confidence,
+                                     float ambiguityScore,
+                                     const IntentAdvisorSuggestion &advisorSuggestion,
                                      bool hasDeterministicTask) const;
 };

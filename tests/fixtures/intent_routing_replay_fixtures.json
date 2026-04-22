@@ -1,0 +1,72 @@
+[
+  {
+    "name": "greeting_only",
+    "input": "hello",
+    "expectedFinalRoute": "LocalResponse",
+    "expectedTopCandidateRoute": "LocalResponse",
+    "requiredReasonCodes": ["arbitrator.social_only_local_response"]
+  },
+  {
+    "name": "greeting_plus_request",
+    "input": "hi explain open source licensing",
+    "expectedFinalRoute": "Conversation",
+    "expectedBackendEscalation": true
+  },
+  {
+    "name": "smalltalk_plus_question",
+    "input": "thanks, why is this slow?",
+    "expectedFinalRoute": "Conversation"
+  },
+  {
+    "name": "command_vs_info_phrase",
+    "input": "what does open source mean?",
+    "expectedFinalRoute": "Conversation"
+  },
+  {
+    "name": "continuation_missing_context",
+    "input": "open it",
+    "hasAnyActionThread": true,
+    "hasUsableActionThread": false,
+    "expectedFinalRoute": "LocalResponse",
+    "expectedClarification": true
+  },
+  {
+    "name": "continuation_with_valid_context",
+    "input": "open it",
+    "hasAnyActionThread": true,
+    "hasUsableActionThread": true,
+    "expectedFinalRoute": "AgentConversation"
+  },
+  {
+    "name": "ambiguity_to_clarification",
+    "input": "open or explain this issue",
+    "expectedFinalRoute": "LocalResponse",
+    "expectedClarification": true
+  },
+  {
+    "name": "low_confidence_to_backend",
+    "input": "compare this and tell me what to do next",
+    "expectedFinalRoute": "Conversation",
+    "expectedBackendEscalation": true
+  },
+  {
+    "name": "deterministic_with_social_prefix",
+    "input": "hey open youtube",
+    "hasDeterministicTask": true,
+    "deterministicTaskType": "browser_open",
+    "expectedFinalRoute": "DeterministicTasks",
+    "expectedTopCandidateRoute": "DeterministicTasks"
+  },
+  {
+    "name": "context_reference_route",
+    "input": "read the current page",
+    "includeContextResolution": true,
+    "desktopContext": { "taskId": "browser_tab", "url": "https://example.com" },
+    "desktopContextAtMs": 1000,
+    "nowMs": 1200,
+    "workspaceRoot": ".",
+    "expectedFinalRoute": "BackgroundTasks",
+    "expectedTopCandidateRoute": "BackgroundTasks"
+  }
+]
+

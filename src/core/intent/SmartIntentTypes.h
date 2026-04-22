@@ -41,6 +41,12 @@ enum class ExecutionIntentKind {
     CapabilityError
 };
 
+enum class IntentAdvisorMode {
+    Heuristic,
+    ShadowLearned,
+    Learned
+};
+
 struct TurnSignals {
     QString rawInput;
     QString normalizedInput;
@@ -94,6 +100,35 @@ struct ExecutionIntentCandidate {
     InputRouteDecision route;
     QList<AgentTask> tasks;
     float score = 0.0f;
+    bool requiresBackend = false;
+    bool canRunLocal = false;
+    int backendPriority = 0;
+    float confidencePenalty = 0.0f;
+    QStringList reasonCodes;
+};
+
+struct IntentConfidence {
+    float signalConfidence = 0.0f;
+    float goalConfidence = 0.0f;
+    float executionConfidence = 0.0f;
+    float finalConfidence = 0.0f;
+};
+
+struct IntentAdvisorSuggestion {
+    bool available = false;
+    float ambiguityBoost = 0.0f;
+    float continuationLikelihood = 0.0f;
+    float backendNecessity = 0.0f;
+    QStringList reasonCodes;
+};
+
+struct IntentAdvisorEvaluation {
+    float baseAmbiguity = 0.0f;
+    float adjustedAmbiguity = 0.0f;
+    bool ambiguityPreferenceChanged = false;
+    float baseBackendPreference = 0.0f;
+    float adjustedBackendPreference = 0.0f;
+    bool backendPreferenceChanged = false;
     QStringList reasonCodes;
 };
 
@@ -148,6 +183,11 @@ struct RoutingTrace {
     IntentInferenceSnapshot intentSnapshot;
     bool deterministicMatched = false;
     QString deterministicTaskType;
+    float ambiguityScore = 0.0f;
+    IntentConfidence intentConfidence;
+    IntentAdvisorMode advisorMode = IntentAdvisorMode::Heuristic;
+    IntentAdvisorSuggestion advisorSuggestion;
+    IntentAdvisorEvaluation advisorEvaluation;
     InputRouteDecision policyDecision;
     RouteArbitrationResult arbitratorResult;
     InputRouteDecision finalDecision;

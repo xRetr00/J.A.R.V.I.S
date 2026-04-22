@@ -50,7 +50,6 @@ class AiRequestCoordinator;
 class ActionThreadTracker;
 class AssistantBehaviorPolicy;
 class ExecutionNarrator;
-class InputRouter;
 class MemoryPolicyHandler;
 class ResponseFinalizer;
 class SpeechTranscriptGuard;
@@ -61,6 +60,8 @@ class UserGoalInferer;
 class ExecutionIntentPlanner;
 class RouteArbitrator;
 class RoutingTraceEmitter;
+class IntentConfidenceCalculator;
+class LocalIntentAdvisor;
 namespace LearningData {
 class LearningDataCollector;
 }
@@ -314,9 +315,6 @@ private:
     void setSurfaceError(const QString &source, const QString &primary, const QString &secondary = QString());
     void clearSurfaceError(const QString &source = QString());
     void startActionThreadCompletionRequest(const ActionThread &thread);
-    bool shouldContinueActionThread(const QString &input,
-                                    const InputRouteDecision &decision,
-                                    qint64 nowMs) const;
     QString buildActionThreadContinuationInput(const QString &userInput) const;
     QString buildActionThreadCompletionInput(const ActionThread &thread) const;
     void beginActionThread(const QList<AgentTask> &tasks, qint64 nowMs);
@@ -405,7 +403,6 @@ private:
     PromptAdapter *m_promptAdapter = nullptr;
     StreamAssembler *m_streamAssembler = nullptr;
     MemoryStore *m_memoryStore = nullptr;
-    std::unique_ptr<InputRouter> m_inputRouter;
     std::unique_ptr<AiRequestCoordinator> m_aiRequestCoordinator;
     std::unique_ptr<ActionThreadTracker> m_actionThreadTracker;
     std::unique_ptr<SpeechTranscriptGuard> m_speechTranscriptGuard;
@@ -419,6 +416,8 @@ private:
     std::unique_ptr<ExecutionIntentPlanner> m_executionIntentPlanner;
     std::unique_ptr<RouteArbitrator> m_routeArbitrator;
     std::unique_ptr<RoutingTraceEmitter> m_routingTraceEmitter;
+    std::unique_ptr<IntentConfidenceCalculator> m_intentConfidenceCalculator;
+    std::unique_ptr<LocalIntentAdvisor> m_localIntentAdvisor;
     std::unique_ptr<TurnOrchestrationRuntime> m_turnOrchestrationRuntime;
     std::unique_ptr<LearningData::LearningDataCollector> m_learningDataCollector;
     std::unique_ptr<WakeWordDataCapture> m_wakeWordDataCapture;

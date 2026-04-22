@@ -47,6 +47,19 @@ QJsonArray stringsToArray(const QStringList &items)
     }
     return array;
 }
+
+QString advisorModeToString(IntentAdvisorMode mode)
+{
+    switch (mode) {
+    case IntentAdvisorMode::Heuristic:
+        return QStringLiteral("heuristic");
+    case IntentAdvisorMode::ShadowLearned:
+        return QStringLiteral("shadow_learned");
+    case IntentAdvisorMode::Learned:
+        return QStringLiteral("learned");
+    }
+    return QStringLiteral("heuristic");
+}
 }
 
 QJsonObject RoutingTraceEmitter::buildRouteFinalPayload(const RoutingTrace &trace) const
@@ -57,6 +70,8 @@ QJsonObject RoutingTraceEmitter::buildRouteFinalPayload(const RoutingTrace &trac
     payload.insert(QStringLiteral("normalized_input"), trace.normalizedInput);
     payload.insert(QStringLiteral("deterministic_matched"), trace.deterministicMatched);
     payload.insert(QStringLiteral("deterministic_task_type"), trace.deterministicTaskType);
+    payload.insert(QStringLiteral("ambiguity_score"), trace.ambiguityScore);
+    payload.insert(QStringLiteral("advisor_mode"), advisorModeToString(trace.advisorMode));
     payload.insert(QStringLiteral("used_arbitrator_authority"), trace.usedArbitratorAuthority);
     payload.insert(QStringLiteral("final_executed_route"), trace.finalExecutedRoute);
     payload.insert(QStringLiteral("confirmation_gate_triggered"), trace.confirmationGateTriggered);
@@ -114,10 +129,49 @@ QJsonObject RoutingTraceEmitter::buildRouteFinalPayload(const RoutingTrace &trac
         candidateObject.insert(QStringLiteral("kind"), static_cast<int>(candidate.kind));
         candidateObject.insert(QStringLiteral("route"), inputRouteKindToString(candidate.route.kind));
         candidateObject.insert(QStringLiteral("score"), candidate.score);
+        candidateObject.insert(QStringLiteral("requires_backend"), candidate.requiresBackend);
+        candidateObject.insert(QStringLiteral("can_run_local"), candidate.canRunLocal);
+        candidateObject.insert(QStringLiteral("backend_priority"), candidate.backendPriority);
+        candidateObject.insert(QStringLiteral("confidence_penalty"), candidate.confidencePenalty);
         candidateObject.insert(QStringLiteral("reason_codes"), stringsToArray(candidate.reasonCodes));
         candidateArray.push_back(candidateObject);
     }
     payload.insert(QStringLiteral("execution_candidates"), candidateArray);
+
+    QJsonObject confidence;
+    confidence.insert(QStringLiteral("signal"), trace.intentConfidence.signalConfidence);
+    confidence.insert(QStringLiteral("goal"), trace.intentConfidence.goalConfidence);
+    confidence.insert(QStringLiteral("execution"), trace.intentConfidence.executionConfidence);
+    confidence.insert(QStringLiteral("final"), trace.intentConfidence.finalConfidence);
+    payload.insert(QStringLiteral("intent_confidence"), confidence);
+
+    QJsonObject advisor;
+    advisor.insert(QStringLiteral("available"), trace.advisorSuggestion.available);
+    advisor.insert(QStringLiteral("ambiguity_boost"), trace.advisorSuggestion.ambiguityBoost);
+    advisor.insert(QStringLiteral("continuation_likelihood"), trace.advisorSuggestion.continuationLikelihood);
+    advisor.insert(QStringLiteral("backend_necessity"), trace.advisorSuggestion.backendNecessity);
+    advisor.insert(QStringLiteral("reason_codes"), stringsToArray(trace.advisorSuggestion.reasonCodes));
+    payload.insert(QStringLiteral("advisor_suggestion"), advisor);
+
+    QJsonObject advisorEval;
+    advisorEval.insert(QStringLiteral("base_ambiguity"), trace.advisorEvaluation.baseAmbiguity);
+    advisorEval.insert(QStringLiteral("adjusted_ambiguity"), trace.advisorEvaluation.adjustedAmbiguity);
+    advisorEval.insert(QStringLiteral("ambiguity_preference_changed"), trace.advisorEvaluation.ambiguityPreferenceChanged);
+    advisorEval.insert(QStringLiteral("base_backend_preference"), trace.advisorEvaluation.baseBackendPreference);
+    advisorEval.insert(QStringLiteral("adjusted_backend_preference"), trace.advisorEvaluation.adjustedBackendPreference);
+    advisorEval.insert(QStringLiteral("backend_preference_changed"), trace.advisorEvaluation.backendPreferenceChanged);
+    advisorEval.insert(QStringLiteral("reason_codes"), stringsToArray(trace.advisorEvaluation.reasonCodes));
+    payload.insert(QStringLiteral("advisor_evaluation"), advisorEval);
+
+    QJsonObject scores;
+    scores.insert(QStringLiteral("social"), trace.arbitratorResult.scores.socialScore);
+    scores.insert(QStringLiteral("command"), trace.arbitratorResult.scores.commandScore);
+    scores.insert(QStringLiteral("info_query"), trace.arbitratorResult.scores.infoQueryScore);
+    scores.insert(QStringLiteral("deterministic"), trace.arbitratorResult.scores.deterministicScore);
+    scores.insert(QStringLiteral("continuation"), trace.arbitratorResult.scores.continuationScore);
+    scores.insert(QStringLiteral("context_reference"), trace.arbitratorResult.scores.contextReferenceScore);
+    scores.insert(QStringLiteral("backend_need"), trace.arbitratorResult.scores.backendNeedScore);
+    payload.insert(QStringLiteral("scores"), scores);
 
     QJsonObject intentSnapshot;
     intentSnapshot.insert(QStringLiteral("ml_intent"), static_cast<int>(trace.intentSnapshot.mlIntent));

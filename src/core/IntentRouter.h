@@ -21,5 +21,4 @@ private:
     QStringList m_greetingKeywords;
     QStringList m_smallTalkKeywords;
     QStringList m_commandKeywords;
-    QStringList m_complexKeywords;
 };

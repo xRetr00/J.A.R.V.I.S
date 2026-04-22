@@ -35,18 +35,6 @@ IntentRouter::IntentRouter(QObject *parent)
           QStringLiteral("enable"),
           QStringLiteral("disable")
       })
-    , m_complexKeywords({
-          QStringLiteral("analyze"),
-          QStringLiteral("analysis"),
-          QStringLiteral("explain"),
-          QStringLiteral("why"),
-          QStringLiteral("strategy"),
-          QStringLiteral("compare"),
-          QStringLiteral("reason"),
-          QStringLiteral("tradeoff"),
-          QStringLiteral("design"),
-          QStringLiteral("architecture")
-      })
 {
 }
 
@@ -91,11 +79,5 @@ LocalIntent IntentRouter::classify(const QString &input) const
         }
     }
 
-    for (const auto &keyword : m_complexKeywords) {
-        if (containsKeyword(lowered, keyword)) {
-            return LocalIntent::ComplexQuery;
-        }
-    }
-
-    return lowered.size() > 70 ? LocalIntent::ComplexQuery : LocalIntent::Unknown;
+    return LocalIntent::Unknown;
 }

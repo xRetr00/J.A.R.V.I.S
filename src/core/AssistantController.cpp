@@ -37,6 +37,7 @@
 #include "core/AssistantBehaviorPolicy.h"
 #include "core/DesktopActionContextPolicy.h"
 #include "core/ExecutionNarrator.h"
+#include "core/CurrentContextReferentResolver.h"
 #include "core/InputRouter.h"
 #include "core/IntentRouter.h"
 #include "core/LocalResponseEngine.h"
@@ -51,6 +52,9 @@
 #include "core/intent/TurnStateAnalyzer.h"
 #include "core/intent/UserGoalInferer.h"
 #include "core/intent/ExecutionIntentPlanner.h"
+#include "core/intent/IntentConfidenceCalculator.h"
+#include "core/intent/IntentTuningConfig.h"
+#include "core/intent/LocalIntentAdvisor.h"
 #include "core/intent/RouteArbitrator.h"
 #include "core/intent/RoutingTraceEmitter.h"
 #include "behavior_tuning/CompiledContextPolicyTuningPromotionPolicy.h"
@@ -1314,21 +1318,6 @@ int effectiveRequestTimeoutMs(const AppSettings *settings)
     return std::max(30000, settings != nullptr ? settings->requestTimeoutMs() : 30000);
 }
 
-IntentType expectedAgentIntentForQuery(const QString &input)
-{
-    if (containsAnyNormalized(input, {
-            QStringLiteral("read your own logs"),
-            QStringLiteral("read logs"),
-            QStringLiteral("startup log"),
-            QStringLiteral("vaxil log"),
-            QStringLiteral("jarvis log")
-        })) {
-        return IntentType::READ_FILE;
-    }
-
-    return IntentType::GENERAL_CHAT;
-}
-
 }
 
 AssistantController::AssistantController(
@@ -1349,7 +1338,6 @@ AssistantController::AssistantController(
     m_streamAssembler = new StreamAssembler(this);
     m_memoryStore = new MemoryStore(QString(), this);
     m_assistantBehaviorPolicy = std::make_unique<AssistantBehaviorPolicy>();
-    m_inputRouter = std::make_unique<InputRouter>(m_assistantBehaviorPolicy.get());
     m_aiRequestCoordinator = std::make_unique<AiRequestCoordinator>(m_settings, m_reasoningRouter, m_loggingService);
     m_actionThreadTracker = std::make_unique<ActionThreadTracker>();
     m_turnOrchestrationRuntime = std::make_unique<TurnOrchestrationRuntime>(m_assistantBehaviorPolicy.get());
@@ -1363,6 +1351,8 @@ AssistantController::AssistantController(
     m_executionIntentPlanner = std::make_unique<ExecutionIntentPlanner>();
     m_routeArbitrator = std::make_unique<RouteArbitrator>();
     m_routingTraceEmitter = std::make_unique<RoutingTraceEmitter>();
+    m_intentConfidenceCalculator = std::make_unique<IntentConfidenceCalculator>();
+    m_localIntentAdvisor = std::make_unique<LocalIntentAdvisor>();
     m_learningDataCollector = std::make_unique<LearningData::LearningDataCollector>(m_settings, m_loggingService);
     m_wakeWordDataCapture = std::make_unique<WakeWordDataCapture>(m_settings);
     m_skillStore = new SkillStore(this);
@@ -2718,9 +2708,382 @@ void AssistantController::submitText(const QString &text)
             hasDeterministicTask,
             deterministicTask);
     }
+    auto appendCandidate = [&routingTrace](const ExecutionIntentCandidate &candidate) {
+        routingTrace.candidates.push_back(candidate);
+    };
+    auto makeCandidate = [](ExecutionIntentKind kind,
+                            const InputRouteDecision &route,
+                            float score,
+                            bool requiresBackend,
+                            bool canRunLocal,
+                            int backendPriority,
+                            const QString &reason) {
+        ExecutionIntentCandidate candidate;
+        candidate.kind = kind;
+        candidate.route = route;
+        candidate.score = score;
+        candidate.requiresBackend = requiresBackend;
+        candidate.canRunLocal = canRunLocal;
+        candidate.backendPriority = backendPriority;
+        if (!reason.isEmpty()) {
+            candidate.reasonCodes.push_back(reason);
+        }
+        return candidate;
+    };
 
-    const InputRouteDecision policyDecision = m_inputRouter->decide(routeContext);
+    if (wakeOnly) {
+        InputRouteDecision wakeDecision;
+        wakeDecision.kind = InputRouteKind::LocalResponse;
+        wakeDecision.status = QStringLiteral("Listening");
+        wakeDecision.speak = false;
+        appendCandidate(makeCandidate(ExecutionIntentKind::LocalResponse,
+                                      wakeDecision,
+                                      1.0f,
+                                      false,
+                                      true,
+                                      0,
+                                      QStringLiteral("candidate.wake_only")));
+    }
+    if (shouldEndConversation) {
+        InputRouteDecision endDecision;
+        endDecision.kind = InputRouteKind::LocalResponse;
+        endDecision.status = QStringLiteral("Conversation ended");
+        appendCandidate(makeCandidate(ExecutionIntentKind::LocalResponse,
+                                      endDecision,
+                                      1.0f,
+                                      false,
+                                      true,
+                                      0,
+                                      QStringLiteral("candidate.end_conversation")));
+    }
+    if (isTimeQuery || isDateQuery) {
+        InputRouteDecision localTimeDecision;
+        localTimeDecision.kind = InputRouteKind::LocalResponse;
+        localTimeDecision.status = isTimeQuery
+            ? QStringLiteral("Local time response")
+            : QStringLiteral("Local date response");
+        appendCandidate(makeCandidate(ExecutionIntentKind::LocalResponse,
+                                      localTimeDecision,
+                                      0.98f,
+                                      false,
+                                      true,
+                                      0,
+                                      QStringLiteral("candidate.time_or_date")));
+    }
+    if (routeContext.explicitToolInventory) {
+        InputRouteDecision inventoryDecision;
+        inventoryDecision.kind = InputRouteKind::LocalResponse;
+        inventoryDecision.status = QStringLiteral("Tool inventory");
+        inventoryDecision.message = routeContext.toolInventoryText;
+        appendCandidate(makeCandidate(ExecutionIntentKind::LocalResponse,
+                                      inventoryDecision,
+                                      0.95f,
+                                      false,
+                                      true,
+                                      0,
+                                      QStringLiteral("candidate.tool_inventory")));
+    }
+    if (!routeContext.aiAvailable) {
+        InputRouteDecision offlineDecision;
+        offlineDecision.kind = InputRouteKind::AgentCapabilityError;
+        offlineDecision.status = QStringLiteral("AI unavailable");
+        appendCandidate(makeCandidate(ExecutionIntentKind::CapabilityError,
+                                      offlineDecision,
+                                      0.97f,
+                                      false,
+                                      true,
+                                      0,
+                                      QStringLiteral("candidate.ai_unavailable")));
+    }
+    if (routeContext.backgroundIntentReady && !routeContext.backgroundTasks.isEmpty()) {
+        InputRouteDecision backgroundDecision;
+        backgroundDecision.kind = InputRouteKind::BackgroundTasks;
+        backgroundDecision.tasks = routeContext.backgroundTasks;
+        backgroundDecision.message = routeContext.backgroundSpokenMessage;
+        appendCandidate(makeCandidate(ExecutionIntentKind::BackgroundTask,
+                                      backgroundDecision,
+                                      0.85f,
+                                      false,
+                                      true,
+                                      10,
+                                      QStringLiteral("candidate.background_intent")));
+    }
+    if (routeContext.visionRelevant && !routeContext.explicitComputerControl && !routeContext.directVisionResponse.trimmed().isEmpty()) {
+        InputRouteDecision visionDecision;
+        visionDecision.kind = InputRouteKind::LocalResponse;
+        visionDecision.message = routeContext.directVisionResponse;
+        visionDecision.status = QStringLiteral("Vision response");
+        appendCandidate(makeCandidate(ExecutionIntentKind::LocalResponse,
+                                      visionDecision,
+                                      0.88f,
+                                      false,
+                                      true,
+                                      0,
+                                      QStringLiteral("candidate.vision_local_response")));
+    }
+    if (!routeContext.visionRelevant && routeContext.explicitWebSearch) {
+        AgentTask searchTask;
+        searchTask.type = QStringLiteral("web_search");
+        searchTask.args = QJsonObject{{QStringLiteral("query"), routeContext.explicitWebQuery}};
+        searchTask.priority = 85;
+        InputRouteDecision webDecision;
+        webDecision.kind = InputRouteKind::BackgroundTasks;
+        webDecision.tasks = {searchTask};
+        appendCandidate(makeCandidate(ExecutionIntentKind::BackgroundTask,
+                                      webDecision,
+                                      0.82f,
+                                      false,
+                                      true,
+                                      20,
+                                      QStringLiteral("candidate.explicit_web_search")));
+    }
+    if (routeContext.desktopContextRecall) {
+        InputRouteDecision recallDecision;
+        recallDecision.kind = InputRouteKind::Conversation;
+        recallDecision.intent = routeContext.effectiveIntent;
+        appendCandidate(makeCandidate(ExecutionIntentKind::BackendReasoning,
+                                      recallDecision,
+                                      0.8f,
+                                      true,
+                                      false,
+                                      70,
+                                      QStringLiteral("candidate.desktop_context_recall")));
+    }
+    if (!routeContext.visionRelevant && routeContext.agentEnabled && routeContext.likelyKnowledgeLookup) {
+        AgentTask lookupTask;
+        lookupTask.type = QStringLiteral("web_search");
+        lookupTask.args = QJsonObject{{QStringLiteral("query"), routeContext.explicitWebQuery}};
+        lookupTask.priority = 83;
+        InputRouteDecision lookupDecision;
+        lookupDecision.kind = InputRouteKind::BackgroundTasks;
+        lookupDecision.tasks = {lookupTask};
+        appendCandidate(makeCandidate(ExecutionIntentKind::BackgroundTask,
+                                      lookupDecision,
+                                      0.76f,
+                                      false,
+                                      true,
+                                      30,
+                                      QStringLiteral("candidate.knowledge_lookup")));
+    }
+    if (!routeContext.visionRelevant && routeContext.agentEnabled && routeContext.freshnessSensitive) {
+        AgentTask freshTask;
+        freshTask.type = QStringLiteral("web_search");
+        freshTask.args = QJsonObject{
+            {QStringLiteral("query"), routeContext.explicitWebQuery},
+            {QStringLiteral("freshness"), routeContext.freshnessCode},
+            {QStringLiteral("prefer_fresh"), true}
+        };
+        freshTask.priority = 84;
+        InputRouteDecision freshDecision;
+        freshDecision.kind = InputRouteKind::BackgroundTasks;
+        freshDecision.tasks = {freshTask};
+        appendCandidate(makeCandidate(ExecutionIntentKind::BackgroundTask,
+                                      freshDecision,
+                                      0.78f,
+                                      false,
+                                      true,
+                                      30,
+                                      QStringLiteral("candidate.freshness_sensitive")));
+    }
+    if (routeContext.agentEnabled && routeContext.explicitAgentWorldQuery) {
+        InputRouteDecision agentDecision;
+        agentDecision.kind = InputRouteKind::AgentConversation;
+        agentDecision.intent = routeContext.effectiveIntent;
+        appendCandidate(makeCandidate(ExecutionIntentKind::AgentConversation,
+                                      agentDecision,
+                                      0.84f,
+                                      true,
+                                      false,
+                                      80,
+                                      QStringLiteral("candidate.explicit_agent_world_query")));
+    }
+    if (routingTrace.turnState.isContinuation && hasUsableActionThread) {
+        InputRouteDecision continuationDecision;
+        continuationDecision.kind = (routeContext.agentEnabled && routeContext.aiAvailable)
+            ? InputRouteKind::AgentConversation
+            : InputRouteKind::Conversation;
+        continuationDecision.intent = IntentType::GENERAL_CHAT;
+        appendCandidate(makeCandidate(ExecutionIntentKind::AgentConversation,
+                                      continuationDecision,
+                                      0.93f,
+                                      continuationDecision.kind != InputRouteKind::Conversation,
+                                      continuationDecision.kind == InputRouteKind::Conversation,
+                                      90,
+                                      QStringLiteral("candidate.continuation")));
+    }
+    {
+        const CurrentContextResolution contextResolution = CurrentContextReferentResolver::resolve({
+            .userInput = routedInput,
+            .desktopContext = m_latestDesktopContext,
+            .desktopContextAtMs = m_latestDesktopContextAtMs,
+            .nowMs = nowMs,
+            .workspaceRoot = QDir::currentPath()
+        });
+        if (contextResolution.kind == CurrentContextResolutionKind::Task
+            || contextResolution.kind == CurrentContextResolutionKind::Clarify
+            || contextResolution.kind == CurrentContextResolutionKind::Blocked) {
+            InputRouteDecision contextDecision = contextResolution.decision;
+            if (contextResolution.kind != CurrentContextResolutionKind::Task) {
+                contextDecision.kind = InputRouteKind::LocalResponse;
+                contextDecision.message = contextResolution.message;
+                contextDecision.status = contextResolution.status;
+            }
+            appendCandidate(makeCandidate(
+                contextResolution.kind == CurrentContextResolutionKind::Task
+                    ? ExecutionIntentKind::BackgroundTask
+                    : ExecutionIntentKind::AskClarification,
+                contextDecision,
+                contextResolution.kind == CurrentContextResolutionKind::Task ? 0.91f : 0.89f,
+                false,
+                true,
+                20,
+                contextResolution.reasonCode));
+        }
+    }
+    if (routeContext.turnSignals.hasCommandCue && !routeContext.turnSignals.hasQuestionCue) {
+        InputRouteDecision commandDecision;
+        commandDecision.kind = InputRouteKind::CommandExtraction;
+        appendCandidate(makeCandidate(ExecutionIntentKind::CommandExtraction,
+                                      commandDecision,
+                                      0.79f,
+                                      true,
+                                      false,
+                                      70,
+                                      QStringLiteral("candidate.command_extraction")));
+    }
+    if (routingTrace.goals.ambiguity >= 0.55f) {
+        InputRouteDecision clarifyDecision;
+        clarifyDecision.kind = InputRouteKind::LocalResponse;
+        clarifyDecision.message = QStringLiteral("Can you clarify what you want me to run?");
+        clarifyDecision.status = QStringLiteral("Clarification needed");
+        appendCandidate(makeCandidate(ExecutionIntentKind::AskClarification,
+                                      clarifyDecision,
+                                      0.9f,
+                                      false,
+                                      true,
+                                      0,
+                                      QStringLiteral("candidate.high_ambiguity")));
+    }
+    if (routeContext.visionRelevant && !routeContext.explicitComputerControl) {
+        InputRouteDecision conversationDecision;
+        conversationDecision.kind = InputRouteKind::Conversation;
+        conversationDecision.useVisionContext = true;
+        conversationDecision.intent = routeContext.effectiveIntent;
+        appendCandidate(makeCandidate(ExecutionIntentKind::BackendReasoning,
+                                      conversationDecision,
+                                      0.6f,
+                                      true,
+                                      false,
+                                      60,
+                                      QStringLiteral("candidate.vision_conversation")));
+    }
+    {
+        InputRouteDecision fallbackConversation;
+        fallbackConversation.kind = InputRouteKind::Conversation;
+        fallbackConversation.intent = routeContext.effectiveIntent;
+        fallbackConversation.useVisionContext = routeContext.visionRelevant;
+        appendCandidate(makeCandidate(ExecutionIntentKind::BackendReasoning,
+                                      fallbackConversation,
+                                      0.5f,
+                                      true,
+                                      false,
+                                      50,
+                                      QStringLiteral("candidate.default_conversation")));
+    }
+
+    for (ExecutionIntentCandidate &candidate : routingTrace.candidates) {
+        float penalty = 0.0f;
+        if (routingTrace.goals.mixedIntent) {
+            penalty += 0.08f;
+        }
+        penalty += std::clamp(routingTrace.goals.ambiguity * 0.15f, 0.0f, 0.18f);
+        if (candidate.requiresBackend) {
+            penalty += 0.03f;
+        }
+        if (routingTrace.turnState.isContinuation && !hasUsableActionThread) {
+            penalty += 0.1f;
+            candidate.reasonCodes.push_back(QStringLiteral("candidate.continuation_missing_context_penalty"));
+            candidate.backendPriority = std::max(candidate.backendPriority, 80);
+            candidate.requiresBackend = true;
+            candidate.canRunLocal = false;
+        }
+        if (routingTrace.goals.mixedIntent && candidate.canRunLocal && !candidate.requiresBackend) {
+            candidate.backendPriority = std::max(candidate.backendPriority, 35);
+        }
+        candidate.confidencePenalty = std::clamp(penalty, 0.0f, 0.4f);
+    }
+
+    std::sort(routingTrace.candidates.begin(), routingTrace.candidates.end(), [](const ExecutionIntentCandidate &left, const ExecutionIntentCandidate &right) {
+        if (left.score == right.score) {
+            return left.backendPriority > right.backendPriority;
+        }
+        return left.score > right.score;
+    });
+
+    InputRouteDecision policyDecision;
+    if (m_assistantBehaviorPolicy) {
+        policyDecision = m_assistantBehaviorPolicy->decideRoute(routeContext);
+        routingTrace.reasonCodes.push_back(QStringLiteral("authority.legacy_policy_fallback_ready"));
+    }
     routingTrace.policyDecision = policyDecision;
+
+    if (m_intentConfidenceCalculator) {
+        routingTrace.intentConfidence = m_intentConfidenceCalculator->compute(
+            routeContext.turnSignals,
+            routingTrace.goals,
+            routingTrace.candidates);
+        routingTrace.ambiguityScore = m_intentConfidenceCalculator->computeAmbiguity(
+            routeContext.turnSignals,
+            routingTrace.goals,
+            routingTrace.candidates,
+            routingTrace.intentConfidence);
+    } else {
+        routingTrace.ambiguityScore = routingTrace.goals.ambiguity;
+    }
+
+    const IntentTuningThresholds &thresholds = IntentTuningConfig::thresholds();
+    routingTrace.advisorMode = IntentTuningConfig::advisorModeFromEnvironment();
+    routingTrace.advisorEvaluation.baseAmbiguity = routingTrace.ambiguityScore;
+    routingTrace.advisorEvaluation.adjustedAmbiguity = routingTrace.ambiguityScore;
+    routingTrace.advisorEvaluation.baseBackendPreference =
+        (routingTrace.goals.primaryGoal.kind == UserGoalKind::InfoQuery) ? 0.45f : 0.2f;
+    routingTrace.advisorEvaluation.adjustedBackendPreference = routingTrace.advisorEvaluation.baseBackendPreference;
+
+    if (m_localIntentAdvisor) {
+        routingTrace.advisorSuggestion = m_localIntentAdvisor->suggest(
+            routeContext.turnSignals,
+            routingTrace.goals,
+            routingTrace.turnState,
+            routingTrace.candidates,
+            routingTrace.advisorMode);
+        routingTrace.reasonCodes.append(routingTrace.advisorSuggestion.reasonCodes);
+        const float adjustedAmbiguity = std::clamp(
+            routingTrace.ambiguityScore + routingTrace.advisorSuggestion.ambiguityBoost,
+            0.0f,
+            1.0f);
+        routingTrace.advisorEvaluation.adjustedAmbiguity = adjustedAmbiguity;
+        routingTrace.advisorEvaluation.ambiguityPreferenceChanged =
+            (routingTrace.advisorEvaluation.baseAmbiguity >= thresholds.highAmbiguity)
+            != (adjustedAmbiguity >= thresholds.highAmbiguity);
+        routingTrace.advisorEvaluation.adjustedBackendPreference =
+            std::clamp(routingTrace.advisorSuggestion.backendNecessity, 0.0f, 1.0f);
+        routingTrace.advisorEvaluation.backendPreferenceChanged =
+            (routingTrace.advisorEvaluation.baseBackendPreference >= thresholds.backendAssistNeed)
+            != (routingTrace.advisorEvaluation.adjustedBackendPreference >= thresholds.backendAssistNeed);
+        if (routingTrace.advisorEvaluation.ambiguityPreferenceChanged) {
+            routingTrace.advisorEvaluation.reasonCodes.push_back(
+                QStringLiteral("advisor_eval.ambiguity_threshold_crossed"));
+        }
+        if (routingTrace.advisorEvaluation.backendPreferenceChanged) {
+            routingTrace.advisorEvaluation.reasonCodes.push_back(
+                QStringLiteral("advisor_eval.backend_threshold_crossed"));
+        }
+        if (routingTrace.advisorMode == IntentAdvisorMode::ShadowLearned) {
+            routingTrace.advisorEvaluation.reasonCodes.push_back(
+                QStringLiteral("advisor_eval.shadow_compare_enabled"));
+        }
+    }
+
     if (m_routeArbitrator) {
         routingTrace.arbitratorResult = m_routeArbitrator->arbitrate(
             policyDecision,
@@ -2728,23 +3091,44 @@ void AssistantController::submitText(const QString &text)
             routingTrace.turnState,
             routingTrace.goals,
             routingTrace.candidates,
+            routingTrace.intentConfidence,
+            routingTrace.ambiguityScore,
+            routingTrace.advisorSuggestion,
             hasDeterministicTask);
     } else {
         routingTrace.arbitratorResult.decision = policyDecision;
     }
 
-    const bool useArbitratorAuthority =
-        routeContext.turnSignals.socialOnly
-        || (routeContext.turnSignals.hasCommandCue && routeContext.turnSignals.hasQuestionCue)
-        || (hasDeterministicTask && routeContext.turnSignals.hasGreeting);
-    InputRouteDecision decision = policyDecision;
-    if (useArbitratorAuthority) {
-        decision = routingTrace.arbitratorResult.decision;
-        routingTrace.usedArbitratorAuthority = true;
-        routingTrace.overridesApplied.push_back(QStringLiteral("authority.v2_controlled"));
-        routingTrace.reasonCodes.append(routingTrace.arbitratorResult.reasonCodes);
+    InputRouteDecision decision = routingTrace.arbitratorResult.decision;
+    if (!decision.tasks.isEmpty()) {
+        // keep tasks emitted by arbitrator route candidate
     } else {
-        routingTrace.reasonCodes.push_back(QStringLiteral("authority.legacy_policy"));
+        for (const ExecutionIntentCandidate &candidate : routingTrace.candidates) {
+            if (candidate.route.kind == decision.kind) {
+                if (!candidate.route.tasks.isEmpty()) {
+                    decision.tasks = candidate.route.tasks;
+                }
+                if (decision.message.trimmed().isEmpty()) {
+                    decision.message = candidate.route.message;
+                }
+                if (decision.status.trimmed().isEmpty()) {
+                    decision.status = candidate.route.status;
+                }
+                break;
+            }
+        }
+    }
+
+    if (decision.kind == InputRouteKind::None) {
+        decision = policyDecision.kind == InputRouteKind::None ? routingTrace.candidates.first().route : policyDecision;
+        routingTrace.overridesApplied.push_back(QStringLiteral("override.legacy_policy_fallback"));
+        routingTrace.reasonCodes.push_back(QStringLiteral("authority.legacy_policy_fallback_used"));
+    } else {
+        routingTrace.usedArbitratorAuthority = true;
+        routingTrace.reasonCodes.append(routingTrace.arbitratorResult.reasonCodes);
+        if (decision.kind != policyDecision.kind) {
+            routingTrace.overridesApplied.push_back(QStringLiteral("override.arbitrator_over_policy"));
+        }
     }
     routingTrace.finalDecision = decision;
 
@@ -2764,27 +3148,20 @@ void AssistantController::submitText(const QString &text)
         if (routingTrace.arbitratorResult.decision.kind != policyDecision.kind) {
             m_loggingService->infoFor(
                 QStringLiteral("route_audit"),
-                QStringLiteral("[route_shadow_compare] policy=%1 arbitrator=%2 promoted=%3")
+                QStringLiteral("[route_shadow_compare] policy=%1 arbitrator=%2 promoted=true")
                     .arg(routeKindToString(policyDecision.kind),
-                         routeKindToString(routingTrace.arbitratorResult.decision.kind),
-                         routingTrace.usedArbitratorAuthority ? QStringLiteral("true") : QStringLiteral("false")));
+                         routeKindToString(routingTrace.arbitratorResult.decision.kind)));
         }
     }
-    if (shouldContinueActionThread(effectiveInput, decision, nowMs)) {
+
+    const bool continuationChosen = hasUsableActionThread
+        && routingTrace.arbitratorResult.reasonCodes.contains(QStringLiteral("candidate.continuation"));
+    if (continuationChosen) {
         m_lastPromptForAiLog = effectiveInput;
         const QString continuationInput = buildActionThreadContinuationInput(effectiveInput);
         routingTrace.overridesApplied.push_back(QStringLiteral("override.action_thread_continuation"));
         routingTrace.reasonCodes.push_back(QStringLiteral("continuation.override"));
-        if (m_loggingService) {
-            m_loggingService->infoFor(
-                QStringLiteral("follow_up_audit"),
-                QStringLiteral("[action_thread_continue] input=%1 routedTo=%2")
-                    .arg(userFacingPromptForLogging(effectiveInput).left(320),
-                         (m_settings->agentEnabled() && availability.online && availability.modelAvailable)
-                             ? QStringLiteral("agent_conversation")
-                             : QStringLiteral("conversation")));
-        }
-        if (m_settings->agentEnabled() && availability.online && availability.modelAvailable) {
+        if (decision.kind == InputRouteKind::AgentConversation) {
             routingTrace.finalExecutedRoute = QStringLiteral("agent_conversation");
             if (m_routingTraceEmitter) {
                 m_routingTraceEmitter->emitRouteFinal(m_loggingService, routingTrace);
@@ -2833,6 +3210,9 @@ void AssistantController::submitText(const QString &text)
             ? routeKindToString(decision.kind).toLower()
             : executedRoute;
         routingTrace.confirmationGateTriggered = routingTrace.finalExecutedRoute == QStringLiteral("pending_confirmation");
+        routingTrace.confirmationOutcome = routingTrace.confirmationGateTriggered
+            ? QStringLiteral("pending")
+            : QStringLiteral("not_required");
         if (m_routingTraceEmitter) {
             m_routingTraceEmitter->emitRouteFinal(m_loggingService, routingTrace);
         }
@@ -6270,26 +6650,6 @@ void AssistantController::startActionThreadCompletionRequest(const ActionThread 
         ? gatedThread.taskType
         : gatedThread.userGoal;
     startConversationRequest(buildActionThreadCompletionInput(gatedThread));
-}
-
-bool AssistantController::shouldContinueActionThread(const QString &input,
-                                                     const InputRouteDecision &decision,
-                                                     qint64 nowMs) const
-{
-    if (m_assistantBehaviorPolicy == nullptr) {
-        return false;
-    }
-
-    const std::optional<ActionThread> &currentThread = m_actionThreadTracker->current();
-    if (!currentThread.has_value()) {
-        return false;
-    }
-
-    return m_assistantBehaviorPolicy->shouldContinueActionThread(
-        input,
-        decision,
-        *currentThread,
-        nowMs);
 }
 
 QString AssistantController::buildActionThreadContinuationInput(const QString &userInput) const

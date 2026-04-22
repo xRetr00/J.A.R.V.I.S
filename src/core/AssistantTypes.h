@@ -80,7 +80,6 @@ enum class LocalIntent {
     Greeting,
     SmallTalk,
     Command,
-    ComplexQuery,
     Unknown
 };
 
