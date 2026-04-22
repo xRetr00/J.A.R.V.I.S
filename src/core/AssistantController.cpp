@@ -7140,18 +7140,26 @@ void AssistantController::logPromptResponsePair(const QString &response, const Q
         ? QStringLiteral("[no prompt captured]")
         : m_lastPromptForAiLog.trimmed();
 
-    const bool ok = m_loggingService->logAiExchange(prompt, response, source, status);
-    if (!ok) {
-        m_loggingService->warn(QStringLiteral("Failed to write AI exchange log file."));
-    }
-
     m_loggingService->infoFor(
         QStringLiteral("ai_prompt"),
-        QStringLiteral("[assistant_exchange] source=%1 status=%2\n--- user ---\n%3\n--- assistant ---\n%4")
+        QStringLiteral("[assistant_exchange] source=%1 status=%2 promptChars=%3 responseChars=%4")
             .arg(source,
                  status,
-                 userFacingPromptForLogging(prompt),
-                 response.left(12000)));
+                 QString::number(prompt.size()),
+                 QString::number(response.size())));
+    if (debugPromptDumpEnabled()) {
+        const bool ok = m_loggingService->logAiExchange(prompt, response, source, status);
+        if (!ok) {
+            m_loggingService->warn(QStringLiteral("Failed to write AI exchange log file."));
+        }
+        m_loggingService->infoFor(
+            QStringLiteral("ai_prompt"),
+            QStringLiteral("[assistant_exchange_debug] source=%1 status=%2\n--- user ---\n%3\n--- assistant ---\n%4")
+                .arg(source,
+                     status,
+                     userFacingPromptForLogging(prompt),
+                     response.left(12000)));
+    }
 
     m_lastPromptForAiLog.clear();
 }
