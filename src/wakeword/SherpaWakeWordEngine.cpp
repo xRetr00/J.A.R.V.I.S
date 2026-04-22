@@ -445,6 +445,7 @@ void SherpaWakeWordEngine::consumeHelperStdout()
                         .arg(detectedKeyword));
                 }
                 emit probabilityUpdated(1.0f);
+                emit wakeWordDetected();
                 emit wakeKeywordDetected(detectedKeyword);
             }
         } else if (text.startsWith(QStringLiteral("ERROR:"), Qt::CaseInsensitive)) {
