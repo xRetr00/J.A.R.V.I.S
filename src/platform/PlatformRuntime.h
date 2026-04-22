@@ -17,6 +17,7 @@ QString helperExecutableName(const QString &baseName);
 QStringList executableFileNames(const QStringList &baseNames);
 QStringList whisperExecutableNames();
 QStringList piperExecutableNames();
+QStringList qwenTtsExecutableNames();
 QStringList ffmpegExecutableNames();
 QStringList sharedLibraryPatterns(const QString &baseName);
 

@@ -65,6 +65,10 @@ class BackendFacade : public QObject
     Q_PROPERTY(QString ttsEngineKind READ ttsEngineKind NOTIFY settingsChanged)
     Q_PROPERTY(QString piperExecutable READ piperExecutable NOTIFY settingsChanged)
     Q_PROPERTY(QString piperVoiceModel READ piperVoiceModel NOTIFY settingsChanged)
+    Q_PROPERTY(QString qwenTtsExecutable READ qwenTtsExecutable NOTIFY settingsChanged)
+    Q_PROPERTY(QString qwenTtsModelDir READ qwenTtsModelDir NOTIFY settingsChanged)
+    Q_PROPERTY(QString qwenTtsLanguage READ qwenTtsLanguage NOTIFY settingsChanged)
+    Q_PROPERTY(int qwenTtsThreads READ qwenTtsThreads NOTIFY settingsChanged)
     Q_PROPERTY(double wakeTriggerThreshold READ wakeTriggerThreshold NOTIFY settingsChanged)
     Q_PROPERTY(int wakeTriggerCooldownMs READ wakeTriggerCooldownMs NOTIFY settingsChanged)
     Q_PROPERTY(QString ffmpegExecutable READ ffmpegExecutable NOTIFY settingsChanged)
@@ -188,6 +192,10 @@ public:
     QString ttsEngineKind() const;
     QString piperExecutable() const;
     QString piperVoiceModel() const;
+    QString qwenTtsExecutable() const;
+    QString qwenTtsModelDir() const;
+    QString qwenTtsLanguage() const;
+    int qwenTtsThreads() const;
     double wakeTriggerThreshold() const;
     int wakeTriggerCooldownMs() const;
     QString ffmpegExecutable() const;
@@ -316,6 +324,10 @@ public:
         const QString &ttsEngineKind,
         const QString &piperPath,
         const QString &voicePath,
+        const QString &qwenTtsExecutable,
+        const QString &qwenTtsModelDir,
+        const QString &qwenTtsLanguage,
+        int qwenTtsThreads,
         const QString &ffmpegPath,
         double voiceSpeed,
         double voicePitch,
@@ -324,6 +336,7 @@ public:
         const QString &audioOutputDeviceId,
         bool clickThrough);
     Q_INVOKABLE bool downloadVoiceModel(const QString &voiceId);
+    Q_INVOKABLE bool downloadQwenTtsModel();
     Q_INVOKABLE bool downloadWhisperModel(const QString &modelId);
     Q_INVOKABLE bool completeInitialSetup(
         const QString &userName,

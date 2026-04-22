@@ -177,6 +177,14 @@ public:
 
     QString ttsEngineKind() const;
     void setTtsEngineKind(const QString &kind);
+    QString qwenTtsExecutable() const;
+    void setQwenTtsExecutable(const QString &path);
+    QString qwenTtsModelDir() const;
+    void setQwenTtsModelDir(const QString &path);
+    QString qwenTtsLanguage() const;
+    void setQwenTtsLanguage(const QString &languageCode);
+    int qwenTtsThreads() const;
+    void setQwenTtsThreads(int threads);
 
     int ttsDedupeWindowMs() const;
     void setTtsDedupeWindowMs(int dedupeWindowMs);
@@ -323,6 +331,10 @@ private:
     int m_wakeTriggerCooldownMs = 450;
     QString m_ffmpegExecutable;
     QString m_ttsEngineKind = QStringLiteral("piper");
+    QString m_qwenTtsExecutable;
+    QString m_qwenTtsModelDir;
+    QString m_qwenTtsLanguage = QStringLiteral("en");
+    int m_qwenTtsThreads = 4;
     int m_ttsDedupeWindowMs = 7000;
     double m_voiceSpeed = 0.89;
     double m_voicePitch = 0.93;

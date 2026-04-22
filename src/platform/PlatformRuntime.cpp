@@ -123,6 +123,11 @@ QStringList piperExecutableNames()
     return executableFileNames({QStringLiteral("piper")});
 }
 
+QStringList qwenTtsExecutableNames()
+{
+    return executableFileNames({QStringLiteral("qwen3-tts-cli"), QStringLiteral("qwen3_tts_cli")});
+}
+
 QStringList ffmpegExecutableNames()
 {
     return executableFileNames({QStringLiteral("ffmpeg")});

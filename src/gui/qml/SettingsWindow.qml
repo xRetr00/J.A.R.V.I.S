@@ -70,6 +70,10 @@ Window {
         intentModelPathField.text = settingsVm.intentModelPath
         piperPathField.text = settingsVm.piperExecutable
         voicePathField.text = settingsVm.piperVoiceModel
+        qwenTtsPathField.text = settingsVm.qwenTtsExecutable
+        qwenTtsModelDirField.text = settingsVm.qwenTtsModelDir
+        qwenTtsLanguageField.text = settingsVm.qwenTtsLanguage
+        qwenTtsThreadsSpin.value = settingsVm.qwenTtsThreads
         ffmpegPathField.text = settingsVm.ffmpegExecutable
         speedSlider.value = settingsVm.voiceSpeed
         pitchSlider.value = settingsVm.voicePitch
@@ -118,7 +122,7 @@ Window {
         const modeIndex = settingsVm.defaultReasoningMode
         modeCombo.currentIndex = modeIndex >= 0 ? modeIndex : 0
 
-        const ttsIndex = ["piper"].indexOf(settingsVm.ttsEngineKind)
+        const ttsIndex = ["piper", "qwen"].indexOf(settingsVm.ttsEngineKind)
         ttsEngineCombo.currentIndex = ttsIndex >= 0 ? ttsIndex : 0
 
         const wakeIndex = ["sherpa-onnx"].indexOf(settingsVm.wakeEngineKind)
@@ -779,7 +783,7 @@ Window {
                     ComboBox {
                         id: ttsEngineCombo
                         Layout.fillWidth: true
-                        model: ["piper"]
+                        model: ["piper", "qwen"]
                         currentIndex: Math.max(0, model.indexOf(settingsVm.ttsEngineKind))
                         onActivated: settingsVm.setTtsEngineKind(currentText)
                     }
@@ -945,6 +949,69 @@ Window {
                         color: "#9ab0ca"
                         font.pixelSize: 12
                         wrapMode: Text.Wrap
+                    }
+
+                    Text { text: "Qwen3-TTS CLI executable"; color: "#c9def3"; font.pixelSize: 13 }
+                    TextField { id: qwenTtsPathField; Layout.fillWidth: true; text: settingsVm.qwenTtsExecutable }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Rectangle { width: 10; height: 10; radius: 5; color: settingsWindow.statusColor(requirementStatus.qwenOk === true) }
+                        Text {
+                            text: "Qwen CLI: " + settingsWindow.statusText(requirementStatus.qwenOk === true)
+                            color: "#9ab0ca"
+                            font.pixelSize: 12
+                        }
+                    }
+
+                    Text { text: "Qwen3-TTS model directory"; color: "#c9def3"; font.pixelSize: 13 }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        TextField { id: qwenTtsModelDirField; Layout.fillWidth: true; text: settingsVm.qwenTtsModelDir }
+                        Button {
+                            text: "Download 0.6B Base"
+                            visible: settingsVm.supportsAutoToolInstall
+                            onClicked: {
+                                settingsVm.downloadQwenTtsModel()
+                                settingsWindow.syncFieldsFromBackend()
+                                settingsWindow.refreshRequirementStatus()
+                            }
+                        }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Rectangle { width: 10; height: 10; radius: 5; color: settingsWindow.statusColor(requirementStatus.qwenModelOk === true) }
+                        Text {
+                            text: "Qwen model assets: " + settingsWindow.statusText(requirementStatus.qwenModelOk === true)
+                            color: "#9ab0ca"
+                            font.pixelSize: 12
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Text { text: "Qwen language"; color: "#c9def3"; font.pixelSize: 13 }
+                            TextField {
+                                id: qwenTtsLanguageField
+                                Layout.fillWidth: true
+                                text: settingsVm.qwenTtsLanguage
+                                placeholderText: "en"
+                            }
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Text { text: "Qwen threads"; color: "#c9def3"; font.pixelSize: 13 }
+                            SpinBox {
+                                id: qwenTtsThreadsSpin
+                                Layout.fillWidth: true
+                                from: 1
+                                to: 64
+                                value: settingsVm.qwenTtsThreads
+                            }
+                        }
                     }
 
                     Text { text: "ffmpeg executable"; color: "#c9def3"; font.pixelSize: 13 }
@@ -1220,6 +1287,10 @@ Window {
                                         ttsEngineCombo.currentText,
                                         piperPathField.text,
                                         voicePathField.text,
+                                        qwenTtsPathField.text,
+                                        qwenTtsModelDirField.text,
+                                        qwenTtsLanguageField.text,
+                                        qwenTtsThreadsSpin.value,
                                         ffmpegPathField.text,
                                         speedSlider.value,
                                         pitchSlider.value,

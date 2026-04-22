@@ -207,6 +207,26 @@ QString SettingsViewModel::piperVoiceModel() const
     return m_backend ? m_backend->piperVoiceModel() : QString();
 }
 
+QString SettingsViewModel::qwenTtsExecutable() const
+{
+    return m_backend ? m_backend->qwenTtsExecutable() : QString();
+}
+
+QString SettingsViewModel::qwenTtsModelDir() const
+{
+    return m_backend ? m_backend->qwenTtsModelDir() : QString();
+}
+
+QString SettingsViewModel::qwenTtsLanguage() const
+{
+    return m_backend ? m_backend->qwenTtsLanguage() : QStringLiteral("en");
+}
+
+int SettingsViewModel::qwenTtsThreads() const
+{
+    return m_backend ? m_backend->qwenTtsThreads() : 4;
+}
+
 double SettingsViewModel::wakeTriggerThreshold() const
 {
     return m_backend ? m_backend->wakeTriggerThreshold() : 0.18;
@@ -614,6 +634,10 @@ void SettingsViewModel::saveSettings(const QString &endpoint,
                                      const QString &ttsEngineKind,
                                      const QString &piperPath,
                                      const QString &voicePath,
+                                     const QString &qwenTtsExecutable,
+                                     const QString &qwenTtsModelDir,
+                                     const QString &qwenTtsLanguage,
+                                     int qwenTtsThreads,
                                      const QString &ffmpegPath,
                                      double voiceSpeed,
                                      double voicePitch,
@@ -642,6 +666,10 @@ void SettingsViewModel::saveSettings(const QString &endpoint,
                                 ttsEngineKind,
                                 piperPath,
                                 voicePath,
+                                qwenTtsExecutable,
+                                qwenTtsModelDir,
+                                qwenTtsLanguage,
+                                qwenTtsThreads,
                                 ffmpegPath,
                                 voiceSpeed,
                                 voicePitch,
@@ -662,6 +690,11 @@ void SettingsViewModel::setUiMode(const QString &mode)
 bool SettingsViewModel::downloadVoiceModel(const QString &voiceId)
 {
     return m_backend && m_backend->downloadVoiceModel(voiceId);
+}
+
+bool SettingsViewModel::downloadQwenTtsModel()
+{
+    return m_backend && m_backend->downloadQwenTtsModel();
 }
 
 bool SettingsViewModel::downloadWhisperModel(const QString &modelId)

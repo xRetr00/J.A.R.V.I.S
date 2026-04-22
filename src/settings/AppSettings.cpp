@@ -72,6 +72,26 @@ int clampTtsDedupeWindowMs(int value)
     return std::clamp(value, 1000, 60000);
 }
 
+int clampQwenTtsThreads(int value)
+{
+    return std::clamp(value, 1, 64);
+}
+
+QString normalizeQwenTtsLanguage(QString value)
+{
+    value = value.trimmed().toLower();
+    return value.isEmpty() ? QStringLiteral("en") : value;
+}
+
+QString normalizeTtsEngineKind(QString value)
+{
+    value = value.trimmed().toLower();
+    if (value == QStringLiteral("qwen")) {
+        return value;
+    }
+    return QStringLiteral("piper");
+}
+
 double clampWakeTriggerThreshold(double value)
 {
     return std::clamp(value, 0.50, 1.0);
@@ -314,7 +334,11 @@ bool AppSettings::load()
     m_wakeTriggerThreshold = m_wakeWordSensitivity;
     m_wakeTriggerCooldownMs = clampWakeTriggerCooldownMs(wakeTriggerCooldownMs);
     m_ffmpegExecutable = QString::fromStdString(parsed.value("ffmpegExecutable", std::string{}));
-    m_ttsEngineKind = QString::fromStdString(parsed.value("ttsEngineKind", m_ttsEngineKind.toStdString()));
+    m_ttsEngineKind = normalizeTtsEngineKind(QString::fromStdString(parsed.value("ttsEngineKind", m_ttsEngineKind.toStdString())));
+    m_qwenTtsExecutable = QString::fromStdString(parsed.value("qwenTtsExecutable", std::string{}));
+    m_qwenTtsModelDir = QString::fromStdString(parsed.value("qwenTtsModelDir", std::string{}));
+    m_qwenTtsLanguage = normalizeQwenTtsLanguage(QString::fromStdString(parsed.value("qwenTtsLanguage", m_qwenTtsLanguage.toStdString())));
+    m_qwenTtsThreads = clampQwenTtsThreads(parsed.value("qwenTtsThreads", m_qwenTtsThreads));
     m_ttsDedupeWindowMs = clampTtsDedupeWindowMs(parsed.value("ttsDedupeWindowMs", m_ttsDedupeWindowMs));
     m_voiceSpeed = clampVoiceSpeed(parsed.value("voiceSpeed", kDefaultVoiceSpeed));
     m_voicePitch = clampVoicePitch(parsed.value("voicePitch", kDefaultVoicePitch));
@@ -444,6 +468,10 @@ bool AppSettings::save() const
         {"wakeTriggerCooldownMs", m_wakeTriggerCooldownMs},
         {"ffmpegExecutable", m_ffmpegExecutable.toStdString()},
         {"ttsEngineKind", m_ttsEngineKind.toStdString()},
+        {"qwenTtsExecutable", m_qwenTtsExecutable.toStdString()},
+        {"qwenTtsModelDir", m_qwenTtsModelDir.toStdString()},
+        {"qwenTtsLanguage", m_qwenTtsLanguage.toStdString()},
+        {"qwenTtsThreads", m_qwenTtsThreads},
         {"ttsDedupeWindowMs", m_ttsDedupeWindowMs},
         {"voiceSpeed", m_voiceSpeed},
         {"voicePitch", m_voicePitch},
@@ -719,7 +747,31 @@ void AppSettings::setFfmpegExecutable(const QString &path) { m_ffmpegExecutable 
 QString AppSettings::ttsEngineKind() const { return m_ttsEngineKind; }
 void AppSettings::setTtsEngineKind(const QString &kind)
 {
-    m_ttsEngineKind = kind.trimmed().isEmpty() ? QStringLiteral("piper") : kind.trimmed();
+    m_ttsEngineKind = normalizeTtsEngineKind(kind);
+    emit settingsChanged();
+}
+QString AppSettings::qwenTtsExecutable() const { return m_qwenTtsExecutable; }
+void AppSettings::setQwenTtsExecutable(const QString &path)
+{
+    m_qwenTtsExecutable = path.trimmed();
+    emit settingsChanged();
+}
+QString AppSettings::qwenTtsModelDir() const { return m_qwenTtsModelDir; }
+void AppSettings::setQwenTtsModelDir(const QString &path)
+{
+    m_qwenTtsModelDir = path.trimmed();
+    emit settingsChanged();
+}
+QString AppSettings::qwenTtsLanguage() const { return m_qwenTtsLanguage; }
+void AppSettings::setQwenTtsLanguage(const QString &languageCode)
+{
+    m_qwenTtsLanguage = normalizeQwenTtsLanguage(languageCode);
+    emit settingsChanged();
+}
+int AppSettings::qwenTtsThreads() const { return m_qwenTtsThreads; }
+void AppSettings::setQwenTtsThreads(int threads)
+{
+    m_qwenTtsThreads = clampQwenTtsThreads(threads);
     emit settingsChanged();
 }
 int AppSettings::ttsDedupeWindowMs() const { return m_ttsDedupeWindowMs; }

@@ -32,6 +32,10 @@ private slots:
     void wakeWordPhraseDefaultsWhenEmpty();
     void wakeEngineKindDefaultsWhenEmpty();
     void ttsEngineKindDefaultsWhenEmpty();
+    void ttsEngineKindAcceptsQwen();
+    void ttsEngineKindUnknownFallsBackToPiper();
+    void qwenTtsDefaultsAreExpected();
+    void qwenTtsThreadsClampRange();
     void focusModeDefaultsDisabled();
     void focusModeDurationClamps();
     void privateModeDefaultsDisabled();
@@ -239,6 +243,36 @@ void AppSettingsTests::ttsEngineKindDefaultsWhenEmpty()
     AppSettings settings;
     settings.setTtsEngineKind(QStringLiteral(""));
     QCOMPARE(settings.ttsEngineKind(), QStringLiteral("piper"));
+}
+
+void AppSettingsTests::ttsEngineKindAcceptsQwen()
+{
+    AppSettings settings;
+    settings.setTtsEngineKind(QStringLiteral("qwen"));
+    QCOMPARE(settings.ttsEngineKind(), QStringLiteral("qwen"));
+}
+
+void AppSettingsTests::ttsEngineKindUnknownFallsBackToPiper()
+{
+    AppSettings settings;
+    settings.setTtsEngineKind(QStringLiteral("invalid-backend"));
+    QCOMPARE(settings.ttsEngineKind(), QStringLiteral("piper"));
+}
+
+void AppSettingsTests::qwenTtsDefaultsAreExpected()
+{
+    AppSettings settings;
+    QCOMPARE(settings.qwenTtsLanguage(), QStringLiteral("en"));
+    QCOMPARE(settings.qwenTtsThreads(), 4);
+}
+
+void AppSettingsTests::qwenTtsThreadsClampRange()
+{
+    AppSettings settings;
+    settings.setQwenTtsThreads(0);
+    QCOMPARE(settings.qwenTtsThreads(), 1);
+    settings.setQwenTtsThreads(200);
+    QCOMPARE(settings.qwenTtsThreads(), 64);
 }
 
 void AppSettingsTests::focusModeDefaultsDisabled()

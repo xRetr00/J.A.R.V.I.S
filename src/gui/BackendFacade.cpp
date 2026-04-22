@@ -539,6 +539,27 @@ QString whisperModelsRoot(const QString &appDataRoot)
     return appDataRoot + QStringLiteral("/tools/whisper/models");
 }
 
+QString qwenToolsRoot(const QString &appDataRoot)
+{
+    return appDataRoot + QStringLiteral("/tools/qwen3-tts");
+}
+
+QString qwenModelRoot(const QString &appDataRoot)
+{
+    return qwenToolsRoot(appDataRoot) + QStringLiteral("/models/0.6b-base");
+}
+
+bool hasQwenModelAssets(const QString &modelDir)
+{
+    const QDir dir(modelDir);
+    if (!dir.exists()) {
+        return false;
+    }
+    const bool hasMainModel = !dir.entryList({QStringLiteral("qwen3-tts-0.6b*.gguf")}, QDir::Files).isEmpty();
+    const bool hasTokenizer = !dir.entryList({QStringLiteral("qwen3-tts-tokenizer*.gguf")}, QDir::Files).isEmpty();
+    return hasMainModel && hasTokenizer;
+}
+
 QString joinExecutableNames(const QStringList &names)
 {
     QStringList quoted;
@@ -1324,9 +1345,13 @@ double BackendFacade::vadSensitivity() const { return m_settings->vadSensitivity
 QString BackendFacade::wakeEngineKind() const { return QStringLiteral("sherpa-onnx"); }
 QString BackendFacade::whisperExecutable() const { return m_settings->whisperExecutable(); }
 QString BackendFacade::whisperModelPath() const { return m_settings->whisperModelPath(); }
-QString BackendFacade::ttsEngineKind() const { return QStringLiteral("piper"); }
+QString BackendFacade::ttsEngineKind() const { return m_settings->ttsEngineKind(); }
 QString BackendFacade::piperExecutable() const { return m_settings->piperExecutable(); }
 QString BackendFacade::piperVoiceModel() const { return m_settings->piperVoiceModel(); }
+QString BackendFacade::qwenTtsExecutable() const { return m_settings->qwenTtsExecutable(); }
+QString BackendFacade::qwenTtsModelDir() const { return m_settings->qwenTtsModelDir(); }
+QString BackendFacade::qwenTtsLanguage() const { return m_settings->qwenTtsLanguage(); }
+int BackendFacade::qwenTtsThreads() const { return m_settings->qwenTtsThreads(); }
 double BackendFacade::wakeTriggerThreshold() const { return m_settings->wakeTriggerThreshold(); }
 int BackendFacade::wakeTriggerCooldownMs() const { return m_settings->wakeTriggerCooldownMs(); }
 QString BackendFacade::ffmpegExecutable() const { return m_settings->ffmpegExecutable(); }
@@ -1673,8 +1698,7 @@ bool BackendFacade::savePermissionOverrides(const QVariantList &overrides)
 
 void BackendFacade::setTtsEngineKind(const QString &kind)
 {
-    Q_UNUSED(kind);
-    m_settings->setTtsEngineKind(QStringLiteral("piper"));
+    m_settings->setTtsEngineKind(kind);
     m_settings->save();
     emit settingsChanged();
 }
@@ -1751,6 +1775,10 @@ void BackendFacade::saveSettings(
     const QString &ttsEngineKind,
     const QString &piperPath,
     const QString &voicePath,
+    const QString &qwenTtsExecutable,
+    const QString &qwenTtsModelDir,
+    const QString &qwenTtsLanguage,
+    int qwenTtsThreads,
     const QString &ffmpegPath,
     double voiceSpeed,
     double voicePitch,
@@ -1765,6 +1793,10 @@ void BackendFacade::saveSettings(
     if (!detectedVoicePresetId.isEmpty()) {
         m_settings->setSelectedVoicePresetId(detectedVoicePresetId);
     }
+    m_settings->setQwenTtsExecutable(qwenTtsExecutable);
+    m_settings->setQwenTtsModelDir(qwenTtsModelDir);
+    m_settings->setQwenTtsLanguage(qwenTtsLanguage);
+    m_settings->setQwenTtsThreads(qwenTtsThreads);
 
     m_assistantController->saveSettings(
         providerKind,
@@ -1778,7 +1810,7 @@ void BackendFacade::saveSettings(
         whisperModelPath,
         wakeThreshold,
         wakeCooldownMs,
-        QStringLiteral("piper"),
+        ttsEngineKind,
         piperPath,
         voicePath,
         ffmpegPath,
@@ -1836,6 +1868,48 @@ bool BackendFacade::downloadVoiceModel(const QString &voiceId)
     m_settings->save();
     clearSurfaceToolActivity();
     setToolInstallStatus(QStringLiteral("Voice ready: %1").arg(preset->label));
+    emit settingsChanged();
+    return true;
+}
+
+bool BackendFacade::downloadQwenTtsModel()
+{
+    if (!PlatformRuntime::currentCapabilities().supportsAutoToolInstall) {
+        setToolInstallStatus(autoInstallUnavailableMessage());
+        return false;
+    }
+
+    const QString appDataRoot = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    const QString modelRoot = qwenModelRoot(appDataRoot);
+    QDir().mkpath(modelRoot);
+
+    const QString modelPath = modelRoot + QStringLiteral("/qwen3-tts-0.6b-f16.gguf");
+    const QString tokenizerPath = modelRoot + QStringLiteral("/qwen3-tts-tokenizer-f16.gguf");
+    const QString modelUrl = QStringLiteral("https://huggingface.co/endo5501/qwen3-tts.cpp/resolve/main/qwen3-tts-0.6b-f16.gguf?download=true");
+    const QString tokenizerUrl = QStringLiteral("https://huggingface.co/endo5501/qwen3-tts.cpp/resolve/main/qwen3-tts-tokenizer-f16.gguf?download=true");
+
+    clearSurfaceBackendError();
+    setSurfaceToolActivity(QStringLiteral("Downloading model..."), QStringLiteral("Qwen3-TTS 0.6B"));
+    setToolInstallStatus(QStringLiteral("Downloading Qwen3-TTS 0.6B model assets..."));
+
+    QString errorText;
+    if (!QFileInfo::exists(modelPath) && !downloadFileWithPowerShell(modelUrl, modelPath, 30 * 60 * 1000, &errorText)) {
+        clearSurfaceToolActivity();
+        setSurfaceBackendError(QStringLiteral("Qwen model download failed"), compactBackendSurfaceText(errorText, 60));
+        setToolInstallStatus(QStringLiteral("Qwen model download failed: %1").arg(errorText));
+        return false;
+    }
+    if (!QFileInfo::exists(tokenizerPath) && !downloadFileWithPowerShell(tokenizerUrl, tokenizerPath, 10 * 60 * 1000, &errorText)) {
+        clearSurfaceToolActivity();
+        setSurfaceBackendError(QStringLiteral("Qwen tokenizer download failed"), compactBackendSurfaceText(errorText, 60));
+        setToolInstallStatus(QStringLiteral("Qwen tokenizer download failed: %1").arg(errorText));
+        return false;
+    }
+
+    m_settings->setQwenTtsModelDir(modelRoot);
+    m_settings->save();
+    clearSurfaceToolActivity();
+    setToolInstallStatus(QStringLiteral("Qwen3-TTS 0.6B model assets are ready."));
     emit settingsChanged();
     return true;
 }
@@ -2157,6 +2231,9 @@ QVariantMap BackendFacade::evaluateSetupRequirements(
     const QString resolvedPiper = resolveExecutableSelection(
         piperPath,
         PlatformRuntime::piperExecutableNames());
+    const QString resolvedQwen = resolveExecutableSelection(
+        m_settings->qwenTtsExecutable(),
+        PlatformRuntime::qwenTtsExecutableNames());
     const QString resolvedFfmpeg = resolveExecutableSelection(
         ffmpegPath,
         PlatformRuntime::ffmpegExecutableNames());
@@ -2165,6 +2242,8 @@ QVariantMap BackendFacade::evaluateSetupRequirements(
     const bool whisperOk = !resolvedWhisper.isEmpty();
     const bool whisperModelOk = !resolvedWhisperModel.isEmpty();
     const bool piperOk = !resolvedPiper.isEmpty();
+    const bool qwenOk = !resolvedQwen.isEmpty();
+    const bool qwenModelOk = hasQwenModelAssets(m_settings->qwenTtsModelDir());
     const bool ffmpegOk = !resolvedFfmpeg.isEmpty();
     const bool voiceOk = !resolvedVoice.isEmpty();
     const QString resolvedIntentModel = resolveIntentModelPath(m_settings->selectedIntentModelId());
@@ -2186,6 +2265,8 @@ QVariantMap BackendFacade::evaluateSetupRequirements(
     result.insert(QStringLiteral("whisperOk"), whisperOk);
     result.insert(QStringLiteral("whisperModelOk"), whisperModelOk);
     result.insert(QStringLiteral("piperOk"), piperOk);
+    result.insert(QStringLiteral("qwenOk"), qwenOk);
+    result.insert(QStringLiteral("qwenModelOk"), qwenModelOk);
     result.insert(QStringLiteral("voiceOk"), voiceOk);
     result.insert(QStringLiteral("ffmpegOk"), ffmpegOk);
     result.insert(QStringLiteral("intentModelOk"), intentModelOk);
@@ -2196,6 +2277,8 @@ QVariantMap BackendFacade::evaluateSetupRequirements(
     result.insert(QStringLiteral("whisperPathResolved"), resolvedWhisper);
     result.insert(QStringLiteral("whisperModelPathResolved"), resolvedWhisperModel);
     result.insert(QStringLiteral("piperPathResolved"), resolvedPiper);
+    result.insert(QStringLiteral("qwenPathResolved"), resolvedQwen);
+    result.insert(QStringLiteral("qwenModelPathResolved"), m_settings->qwenTtsModelDir());
     result.insert(QStringLiteral("voicePathResolved"), resolvedVoice);
     result.insert(QStringLiteral("ffmpegPathResolved"), resolvedFfmpeg);
 
@@ -2375,6 +2458,7 @@ bool BackendFacade::autoDetectVoiceTools()
     const QString repoRoot = QDir::currentPath();
     const QStringList whisperNames = PlatformRuntime::whisperExecutableNames();
     const QStringList piperNames = PlatformRuntime::piperExecutableNames();
+    const QStringList qwenNames = PlatformRuntime::qwenTtsExecutableNames();
     const QStringList ffmpegNames = PlatformRuntime::ffmpegExecutableNames();
     QDir().mkpath(appDataRoot + QStringLiteral("/tools"));
 
@@ -2436,6 +2520,21 @@ bool BackendFacade::autoDetectVoiceTools()
         piper = findFirstMatchingFileRecursive(repoRoot + QStringLiteral("/tools"), piperNames);
     }
 
+    QString qwen = resolveExecutable(
+        qwenNames,
+        {
+            repoRoot + QStringLiteral("/tools/qwen3-tts/") + qwenNames.value(0),
+            repoRoot + QStringLiteral("/tools/qwen3-tts/bin/") + qwenNames.value(0),
+            appDataRoot + QStringLiteral("/tools/qwen3-tts/") + qwenNames.value(0),
+            appDataRoot + QStringLiteral("/tools/qwen3-tts/bin/") + qwenNames.value(0)
+        });
+    if (qwen.isEmpty()) {
+        qwen = findFirstMatchingFileRecursive(toolsRoot, qwenNames);
+    }
+    if (qwen.isEmpty()) {
+        qwen = findFirstMatchingFileRecursive(repoRoot + QStringLiteral("/tools"), qwenNames);
+    }
+
     QString ffmpeg = resolveExecutable(
         ffmpegNames,
         {
@@ -2459,6 +2558,20 @@ bool BackendFacade::autoDetectVoiceTools()
         voiceModel = detectPiperVoiceModel(repoRoot);
     }
 
+    QString qwenModelDir = m_settings->qwenTtsModelDir();
+    if (!hasQwenModelAssets(qwenModelDir)) {
+        const QString appDataQwenModelDir = qwenModelRoot(appDataRoot);
+        if (hasQwenModelAssets(appDataQwenModelDir)) {
+            qwenModelDir = appDataQwenModelDir;
+        }
+    }
+    if (!hasQwenModelAssets(qwenModelDir)) {
+        const QString repoQwenModelDir = repoRoot + QStringLiteral("/tools/qwen3-tts/models/0.6b-base");
+        if (hasQwenModelAssets(repoQwenModelDir)) {
+            qwenModelDir = repoQwenModelDir;
+        }
+    }
+
     if (!whisper.isEmpty()) {
         m_settings->setWhisperExecutable(whisper);
     }
@@ -2471,12 +2584,18 @@ bool BackendFacade::autoDetectVoiceTools()
     if (!ffmpeg.isEmpty()) {
         m_settings->setFfmpegExecutable(ffmpeg);
     }
+    if (!qwen.isEmpty()) {
+        m_settings->setQwenTtsExecutable(qwen);
+    }
     if (!voiceModel.isEmpty()) {
         m_settings->setPiperVoiceModel(voiceModel);
         const QString detectedVoicePresetId = detectVoicePresetIdFromPath(voiceModel);
         if (!detectedVoicePresetId.isEmpty()) {
             m_settings->setSelectedVoicePresetId(detectedVoicePresetId);
         }
+    }
+    if (hasQwenModelAssets(qwenModelDir)) {
+        m_settings->setQwenTtsModelDir(qwenModelDir);
     }
 
     const bool complete = !m_settings->whisperExecutable().isEmpty()

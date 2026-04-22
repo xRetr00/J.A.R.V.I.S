@@ -8,7 +8,6 @@
 
 class AppSettings;
 class LoggingService;
-class PiperTtsEngine;
 class WhisperSttEngine;
 
 class SpeechIoWorker : public QObject
@@ -33,7 +32,7 @@ signals:
 
 private:
     WhisperSttEngine *m_whisper = nullptr;
-    PiperTtsEngine *m_tts = nullptr;
+    TtsEngine *m_tts = nullptr;
     quint64 m_activePlaybackGeneration = 0;
     quint64 m_sttGeneration = 0;
 };
