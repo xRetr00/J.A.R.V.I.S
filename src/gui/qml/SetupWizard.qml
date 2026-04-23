@@ -18,7 +18,12 @@ Window {
     property real dpiScale: Math.max(1.0, Screen.devicePixelRatio)
 
     property int stepIndex: 0
-    property bool openRouterSelected: providerCombo.currentText === "openrouter"
+    readonly property var providerOptions: [
+        { label: "LM Studio", value: "openai_compatible_local" },
+        { label: "OpenRouter", value: "openrouter" },
+        { label: "Ollama", value: "ollama" }
+    ]
+    property bool openRouterSelected: providerCombo.currentValue === "openrouter"
     readonly property string iconRoot: "qrc:/qt/qml/VAXIL/gui/assets/Icons/"
 
     function stepIconSource(index) {
@@ -37,7 +42,11 @@ Window {
     }
 
     function syncVoiceFieldsFromBackend() {
-        const providerIndex = ["openai_compatible_local", "openrouter", "ollama"].indexOf(settingsVm.chatProviderKind)
+        const providerKind = settingsVm.chatProviderKind === "lmstudio"
+            ? "openai_compatible_local"
+            : settingsVm.chatProviderKind
+        const providerValues = providerOptions.map(function(option) { return option.value })
+        const providerIndex = providerValues.indexOf(providerKind)
         providerCombo.currentIndex = providerIndex >= 0 ? providerIndex : 0
         providerApiKeyField.text = settingsVm.chatProviderApiKey
         whisperPathField.text = settingsVm.whisperExecutable
@@ -358,7 +367,9 @@ Window {
                         ComboBox {
                             id: providerCombo
                             Layout.fillWidth: true
-                            model: ["openai_compatible_local", "openrouter", "ollama"]
+                            model: providerOptions
+                            textRole: "label"
+                            valueRole: "value"
                         }
 
                         Text { text: "Provider API key"; color: "#d0e3f5"; font.pixelSize: 13 }
@@ -384,7 +395,7 @@ Window {
 
                         Text {
                             visible: !wizard.openRouterSelected
-                            text: "Local AI backend endpoint"
+                            text: "Local AI backend endpoint (LM Studio / compatible)"
                             color: "#d0e3f5"
                             font.pixelSize: 13
                         }
@@ -793,7 +804,7 @@ Window {
                                 onClicked: {
                                     if (!settingsVm.runSetupScenario(
                                             userNameField.text,
-                                            providerCombo.currentText,
+                                            providerCombo.currentValue,
                                             providerApiKeyField.text,
                                             wizard.openRouterSelected ? "https://openrouter.ai/api" : endpointField.text,
                                             effectiveModelText(),
@@ -818,7 +829,7 @@ Window {
                                 onClicked: {
                                     if (!settingsVm.runSetupScenario(
                                             userNameField.text,
-                                            providerCombo.currentText,
+                                            providerCombo.currentValue,
                                             providerApiKeyField.text,
                                             wizard.openRouterSelected ? "https://openrouter.ai/api" : endpointField.text,
                                             effectiveModelText(),
@@ -944,7 +955,7 @@ Window {
                         onClicked: {
                             if (!settingsVm.runSetupScenario(
                                     userNameField.text,
-                                    providerCombo.currentText,
+                                    providerCombo.currentValue,
                                     providerApiKeyField.text,
                                     wizard.openRouterSelected ? "https://openrouter.ai/api" : endpointField.text,
                                     effectiveModelText(),
@@ -975,7 +986,7 @@ Window {
                             settingsVm.setUiMode(uiModeCombo.currentIndex === 1 ? "overlay" : "full")
                             if (!settingsVm.completeInitialSetup(
                                     userNameField.text,
-                                    providerCombo.currentText,
+                                    providerCombo.currentValue,
                                     providerApiKeyField.text,
                                     wizard.openRouterSelected ? "https://openrouter.ai/api" : endpointField.text,
                                     effectiveModelText(),

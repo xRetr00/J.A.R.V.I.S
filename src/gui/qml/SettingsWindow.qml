@@ -18,7 +18,12 @@ Window {
     property real dpiScale: Math.max(1.0, Screen.devicePixelRatio)
     property string braveValidationMessage: ""
     property bool braveValidationOk: false
-    property bool openRouterSelected: providerCombo.currentText === "openrouter"
+    readonly property var providerOptions: [
+        { label: "LM Studio", value: "openai_compatible_local" },
+        { label: "OpenRouter", value: "openrouter" },
+        { label: "Ollama", value: "ollama" }
+    ]
+    property bool openRouterSelected: providerCombo.currentValue === "openrouter"
     readonly property string iconRoot: "qrc:/qt/qml/VAXIL/gui/assets/Icons/"
 
     onClosing: function(close) {
@@ -62,7 +67,11 @@ Window {
             userNameField.text = settingsVm.userName
         }
         endpointField.text = settingsVm.lmStudioEndpoint
-        const providerIndex = ["openai_compatible_local", "openrouter", "ollama"].indexOf(settingsVm.chatProviderKind)
+        const providerKind = settingsVm.chatProviderKind === "lmstudio"
+            ? "openai_compatible_local"
+            : settingsVm.chatProviderKind
+        const providerValues = providerOptions.map(function(option) { return option.value })
+        const providerIndex = providerValues.indexOf(providerKind)
         providerCombo.currentIndex = providerIndex >= 0 ? providerIndex : 0
         providerApiKeyField.text = settingsVm.chatProviderApiKey
         whisperPathField.text = settingsVm.whisperExecutable
@@ -452,7 +461,9 @@ Window {
                     ComboBox {
                         id: providerCombo
                         Layout.fillWidth: true
-                        model: ["openai_compatible_local", "openrouter", "ollama"]
+                        model: providerOptions
+                        textRole: "label"
+                        valueRole: "value"
                     }
 
                     Text { text: "Provider API key (optional for local backends)"; color: "#c9def3"; font.pixelSize: 13 }
@@ -474,7 +485,7 @@ Window {
                         readOnly: true
                         text: "https://openrouter.ai/api"
                     }
-                    Text { visible: !openRouterSelected; text: "Local AI backend endpoint"; color: "#c9def3"; font.pixelSize: 13 }
+                    Text { visible: !openRouterSelected; text: "Local AI backend endpoint (LM Studio / compatible)"; color: "#c9def3"; font.pixelSize: 13 }
                     TextField { id: endpointField; visible: !openRouterSelected; Layout.fillWidth: true; text: settingsVm.lmStudioEndpoint }
                     RowLayout {
                         Layout.fillWidth: true
@@ -1371,7 +1382,7 @@ Window {
                                 onClicked: {
                                     settingsVm.saveSettings(
                                         effectiveEndpointText(),
-                                        providerCombo.currentText,
+                                        providerCombo.currentValue,
                                         providerApiKeyField.text,
                                         effectiveModelText(),
                                         modeCombo.currentIndex,

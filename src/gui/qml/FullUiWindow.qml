@@ -103,11 +103,11 @@ Window {
     readonly property bool toolingReady: missingToolCount() === 0
     readonly property bool agentReady: settingsVm.agentEnabled && settingsVm.agentAvailable
 
-    readonly property string providerLabel: settingsVm.chatProviderKind === "openrouter"
-                                            ? "OpenRouter"
-                                            : settingsVm.chatProviderKind === "ollama"
-                                              ? "Ollama"
-                                              : "Local OpenAI-Compatible"
+        readonly property string providerLabel: settingsVm.chatProviderKind === "openrouter"
+                                                                                        ? "OpenRouter"
+                                                                                        : settingsVm.chatProviderKind === "ollama"
+                                                                                            ? "Ollama"
+                                                                                            : "LM Studio"
 
     onClosing: function(close) {
         close.accepted = false
