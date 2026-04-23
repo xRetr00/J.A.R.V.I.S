@@ -1,4 +1,4 @@
-# VaXil
+# [Vaxil](https://www.vaxil.app)
 
 <p align="center">
   <img src="assets/banner.png" alt="Vaxil logo" width="300" />
