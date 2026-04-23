@@ -219,6 +219,15 @@ int affordanceScoreForTool(const QString &input, IntentType intent, const AgentT
         QStringLiteral("web page"),
         QStringLiteral("url")
     });
+    const bool explicitWebSearch = containsAny(userRequest, {
+        QStringLiteral("search the web"),
+        QStringLiteral("search the internet"),
+        QStringLiteral("web search"),
+        QStringLiteral("internet search"),
+        QStringLiteral("look it up"),
+        QStringLiteral("use the internet"),
+        QStringLiteral("use the web")
+    });
     const bool explicitActionRequest = explicitStateChange;
     int score = 0;
 
@@ -255,6 +264,10 @@ int affordanceScoreForTool(const QString &input, IntentType intent, const AgentT
         if (toolName == QStringLiteral("web_search") || toolName == QStringLiteral("web_fetch")) {
             score += 150;
         }
+    }
+
+    if (explicitWebSearch && toolName == QStringLiteral("web_search")) {
+        score += 180;
     }
 
     if (isExplicitBrowserOpenRequest(userRequest)) {
