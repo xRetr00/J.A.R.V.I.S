@@ -19,6 +19,7 @@ QString stripHiddenReasoning(QString text)
     text.replace(QRegularExpression(QStringLiteral("(?im)^\\s*(reasoning|analysis|thought process)\\s*:\\s*.*$")), QStringLiteral(" "));
     text.replace(QRegularExpression(QStringLiteral("(?im)^\\s*(assistant|system|developer)\\s*:\\s*")), QStringLiteral(" "));
     text.replace(QRegularExpression(QStringLiteral("(?im)^\\s*(tone|addressing style|user name|user preferences|runtime|session_goal|policy|mode|reasoning mode)\\s*:\\s*.*$")), QStringLiteral(" "));
+    text.replace(QRegularExpression(QStringLiteral("(?im)^\\s*(session\\s+goal|next\\s+step|task\\s+type|active\\s+thread)\\s*:\\s*.*$")), QStringLiteral(" "));
     text.replace(QRegularExpression(QStringLiteral("(?im)^\\s*[-*]\\s*(mode|policy|session_goal|reasoning mode)\\s*:\\s*.*$")), QStringLiteral(" "));
     text.replace(QStringLiteral("/no_think"), QStringLiteral(" "));
     return text;

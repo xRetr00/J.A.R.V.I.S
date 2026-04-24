@@ -125,6 +125,8 @@ public:
     QString latestProactiveSuggestion() const;
     QString latestProactiveSuggestionTone() const;
     QString latestProactiveSuggestionType() const;
+    QVariantMap latestProviderUsage() const;
+    QString latestProviderReasoningEffort() const;
     bool installSkill(const QString &url, QString *error = nullptr);
     bool createSkill(const QString &id, const QString &name, const QString &description, QString *error = nullptr);
 
@@ -492,6 +494,7 @@ private:
     QString m_latestProactiveSuggestion;
     QString m_latestProactiveSuggestionTone = QStringLiteral("response");
     QString m_latestProactiveSuggestionType = QStringLiteral("proactive");
+    QVariantMap m_latestProviderUsage;
     std::unique_ptr<ConnectorHistoryTracker> m_connectorHistoryTracker;
     QString m_lastProactiveSuggestionThreadId;
     qint64 m_lastProactiveSuggestionMs = 0;

@@ -575,7 +575,7 @@ AgentStartRequestResult AiRequestCoordinator::startAgentRequest(AiBackendClient 
             .model = compatibleContext.modelId,
             .instructions = instructions,
             .inputText = compatibleContext.input,
-            .previousResponseId = {},
+            .previousResponseId = compatibleContext.previousResponseId,
             .tools = compatibleContext.tools,
             .toolResults = {},
             .sampling = compatibleContext.sampling,

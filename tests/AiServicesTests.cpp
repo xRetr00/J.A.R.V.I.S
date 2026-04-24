@@ -26,6 +26,7 @@ private slots:
     void spokenReplyStripsUnclosedThinkBlocks();
     void spokenReplyStripsModelWrapperTags();
     void spokenReplyStripsPromptLeakageLines();
+    void spokenReplyStripsSessionGoalAndFollowUpLeakage();
     void spokenReplySuppressesStatusOnlySpeech();
     void spokenReplyTruncatesLongSpeechForPlayback();
     void webSearchQueryBuilderRemovesFillerAndAddsFreshYear();
@@ -357,6 +358,19 @@ void AiServicesTests::spokenReplyStripsPromptLeakageLines()
     QVERIFY(!reply.displayText.contains(QStringLiteral("Tone:"), Qt::CaseInsensitive));
     QVERIFY(!reply.displayText.contains(QStringLiteral("Runtime:"), Qt::CaseInsensitive));
     QVERIFY(reply.displayText.contains(QStringLiteral("GPT-5.4")));
+    QVERIFY(reply.shouldSpeak);
+}
+
+void AiServicesTests::spokenReplyStripsSessionGoalAndFollowUpLeakage()
+{
+    const SpokenReply reply = parseSpokenReply(
+        QStringLiteral("AND Give Me A List Of The Top 5 Best Open Source Projects.\n"
+                       "Session Goal: Work through the request with tools as needed\n"
+                       "</user_follow_up>"));
+
+    QVERIFY(!reply.displayText.contains(QStringLiteral("Session Goal"), Qt::CaseInsensitive));
+    QVERIFY(!reply.displayText.contains(QStringLiteral("user_follow_up"), Qt::CaseInsensitive));
+    QVERIFY(reply.displayText.contains(QStringLiteral("Top 5 Best Open Source Projects")));
     QVERIFY(reply.shouldSpeak);
 }
 

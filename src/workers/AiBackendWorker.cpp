@@ -15,6 +15,9 @@ AiBackendWorker::AiBackendWorker(QObject *parent)
     connect(m_client, &OpenAiCompatibleClient::requestDelta, this, [this](quint64 requestId, const QString &delta) {
         emit requestDelta(m_requestGenerationMap.value(requestId, requestId), delta);
     });
+    connect(m_client, &OpenAiCompatibleClient::requestUsageUpdated, this, [this](quint64 requestId, const QVariantMap &usage) {
+        emit requestUsageUpdated(m_requestGenerationMap.value(requestId, requestId), usage);
+    });
     connect(m_client, &OpenAiCompatibleClient::requestFinished, this, [this](quint64 requestId, const QString &text) {
         const quint64 generationId = m_requestGenerationMap.take(requestId);
         emit requestFinished(generationId == 0 ? requestId : generationId, text);

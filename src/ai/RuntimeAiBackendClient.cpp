@@ -22,6 +22,11 @@ RuntimeAiBackendClient::RuntimeAiBackendClient(VoicePipelineRuntime *runtime, QO
             emit requestDelta(requestId, delta);
         }
     });
+    connect(m_runtime, &VoicePipelineRuntime::requestUsageUpdated, this, [this](quint64 requestId, const QVariantMap &usage) {
+        if (requestId == m_activeRequestId) {
+            emit requestUsageUpdated(requestId, usage);
+        }
+    });
     connect(m_runtime, &VoicePipelineRuntime::requestFinished, this, [this](quint64 requestId, const QString &text) {
         if (requestId == m_activeRequestId) {
             emit requestFinished(requestId, text);

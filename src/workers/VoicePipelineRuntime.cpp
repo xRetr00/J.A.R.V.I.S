@@ -57,6 +57,7 @@ VoicePipelineRuntime::VoicePipelineRuntime(AppSettings *settings, LoggingService
     connect(m_backendWorker, &AiBackendWorker::capabilitiesChanged, this, &VoicePipelineRuntime::capabilitiesChanged, Qt::QueuedConnection);
     connect(m_backendWorker, &AiBackendWorker::requestStarted, this, &VoicePipelineRuntime::requestStarted, Qt::QueuedConnection);
     connect(m_backendWorker, &AiBackendWorker::requestDelta, this, &VoicePipelineRuntime::requestDelta, Qt::QueuedConnection);
+    connect(m_backendWorker, &AiBackendWorker::requestUsageUpdated, this, &VoicePipelineRuntime::requestUsageUpdated, Qt::QueuedConnection);
     connect(m_backendWorker, &AiBackendWorker::requestFinished, this, &VoicePipelineRuntime::requestFinished, Qt::QueuedConnection);
     connect(m_backendWorker, &AiBackendWorker::agentResponseReady, this, &VoicePipelineRuntime::agentResponseReady, Qt::QueuedConnection);
     connect(m_backendWorker, &AiBackendWorker::requestFailed, this, &VoicePipelineRuntime::requestFailed, Qt::QueuedConnection);

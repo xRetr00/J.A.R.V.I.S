@@ -7,7 +7,9 @@
 #include <QScopeGuard>
 #include <QDebug>
 #include <QVariantMap>
+#include <QVariantList>
 #include <QUrl>
+#include <optional>
 
 namespace {
 QString normalizeEndpoint(QString endpoint, const QString &providerKind)
@@ -61,12 +63,14 @@ bool shouldIncludeReasoningObject(const QString &providerKind)
         || normalized == QStringLiteral("azure_openai");
 }
 
-bool isLocalEndpoint(const QString &endpoint)
+bool containsPromptLeakMarkers(const QString &text)
 {
-    const QString lowered = endpoint.trimmed().toLower();
-    return lowered.contains(QStringLiteral("localhost"))
-        || lowered.contains(QStringLiteral("127.0.0.1"))
-        || lowered.contains(QStringLiteral("::1"));
+    const QString lowered = text.toLower();
+    return lowered.contains(QStringLiteral("<identity>"))
+        || lowered.contains(QStringLiteral("<behavior_mode>"))
+        || lowered.contains(QStringLiteral("<response_contract>"))
+        || lowered.contains(QStringLiteral("</user_follow_up>"))
+        || lowered.contains(QStringLiteral("session goal:"));
 }
 
 QString firstNonEmptyTextField(const QJsonObject &object, const QStringList &keys)
@@ -109,6 +113,142 @@ QString firstNonEmptyTextField(const QJsonObject &object, const QStringList &key
         }
     }
     return {};
+}
+
+std::optional<double> toDoubleIfNumeric(const QJsonValue &value)
+{
+    if (value.isDouble()) {
+        return value.toDouble();
+    }
+    if (value.isString()) {
+        bool ok = false;
+        const double parsed = value.toString().toDouble(&ok);
+        if (ok) {
+            return parsed;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<int> toIntIfNumeric(const QJsonValue &value)
+{
+    if (value.isDouble()) {
+        return static_cast<int>(value.toDouble());
+    }
+    if (value.isString()) {
+        bool ok = false;
+        const int parsed = value.toString().toInt(&ok);
+        if (ok) {
+            return parsed;
+        }
+    }
+    return std::nullopt;
+}
+
+void copyNumericField(const QJsonObject &source, const QString &sourceKey, QVariantMap *target, const QString &targetKey = QString())
+{
+    if (target == nullptr || !source.contains(sourceKey)) {
+        return;
+    }
+    const QString finalKey = targetKey.isEmpty() ? sourceKey : targetKey;
+    if (const std::optional<int> asInt = toIntIfNumeric(source.value(sourceKey))) {
+        target->insert(finalKey, *asInt);
+        return;
+    }
+    if (const std::optional<double> asDouble = toDoubleIfNumeric(source.value(sourceKey))) {
+        target->insert(finalKey, *asDouble);
+    }
+}
+
+QVariantMap extractUsageTelemetry(const QJsonObject &root)
+{
+    QVariantMap telemetry;
+    telemetry.insert(QStringLiteral("raw"), root.toVariantMap());
+
+    const QString model = root.value(QStringLiteral("model")).toString().trimmed();
+    if (!model.isEmpty()) {
+        telemetry.insert(QStringLiteral("model"), model);
+    }
+    const QString object = root.value(QStringLiteral("object")).toString().trimmed();
+    if (!object.isEmpty()) {
+        telemetry.insert(QStringLiteral("response_object"), object);
+    }
+
+    const QJsonValue usageValue = root.value(QStringLiteral("usage"));
+    if (usageValue.isObject()) {
+        const QJsonObject usageObj = usageValue.toObject();
+        const QVariantMap usageVariant = usageObj.toVariantMap();
+        if (!usageVariant.isEmpty()) {
+            telemetry.insert(QStringLiteral("usage_raw"), usageVariant);
+        }
+
+        copyNumericField(usageObj, QStringLiteral("prompt_tokens"), &telemetry);
+        copyNumericField(usageObj, QStringLiteral("completion_tokens"), &telemetry);
+        copyNumericField(usageObj, QStringLiteral("total_tokens"), &telemetry);
+        copyNumericField(usageObj, QStringLiteral("input_tokens"), &telemetry);
+        copyNumericField(usageObj, QStringLiteral("output_tokens"), &telemetry);
+        copyNumericField(usageObj, QStringLiteral("reasoning_tokens"), &telemetry);
+        copyNumericField(usageObj, QStringLiteral("native_tokens_reasoning"), &telemetry);
+        copyNumericField(usageObj, QStringLiteral("native_tokens_prompt"), &telemetry);
+        copyNumericField(usageObj, QStringLiteral("native_tokens_completion"), &telemetry);
+
+        copyNumericField(usageObj, QStringLiteral("usage"), &telemetry, QStringLiteral("usage_usd"));
+        copyNumericField(usageObj, QStringLiteral("total_cost"), &telemetry, QStringLiteral("total_cost_usd"));
+        copyNumericField(usageObj, QStringLiteral("upstream_inference_cost"), &telemetry, QStringLiteral("upstream_inference_cost_usd"));
+        copyNumericField(usageObj, QStringLiteral("byok_usage_inference"), &telemetry, QStringLiteral("byok_usage_inference_usd"));
+
+        const QJsonObject inputDetails = usageObj.value(QStringLiteral("input_tokens_details")).toObject();
+        if (!inputDetails.isEmpty()) {
+            copyNumericField(inputDetails, QStringLiteral("cached_tokens"), &telemetry);
+        }
+        const QJsonObject outputDetails = usageObj.value(QStringLiteral("output_tokens_details")).toObject();
+        if (!outputDetails.isEmpty()) {
+            copyNumericField(outputDetails, QStringLiteral("reasoning_tokens"), &telemetry, QStringLiteral("output_reasoning_tokens"));
+        }
+    } else if (const std::optional<double> usageDouble = toDoubleIfNumeric(usageValue)) {
+        telemetry.insert(QStringLiteral("usage_usd"), *usageDouble);
+    }
+
+    copyNumericField(root, QStringLiteral("prompt_tokens"), &telemetry);
+    copyNumericField(root, QStringLiteral("completion_tokens"), &telemetry);
+    copyNumericField(root, QStringLiteral("total_tokens"), &telemetry);
+    copyNumericField(root, QStringLiteral("input_tokens"), &telemetry);
+    copyNumericField(root, QStringLiteral("output_tokens"), &telemetry);
+    copyNumericField(root, QStringLiteral("reasoning_tokens"), &telemetry);
+    copyNumericField(root, QStringLiteral("native_tokens_reasoning"), &telemetry);
+    copyNumericField(root, QStringLiteral("usage"), &telemetry, QStringLiteral("usage_usd"));
+    copyNumericField(root, QStringLiteral("total_cost"), &telemetry, QStringLiteral("total_cost_usd"));
+    copyNumericField(root, QStringLiteral("upstream_inference_cost"), &telemetry, QStringLiteral("upstream_inference_cost_usd"));
+    copyNumericField(root, QStringLiteral("byok_usage_inference"), &telemetry, QStringLiteral("byok_usage_inference_usd"));
+
+    if (!telemetry.contains(QStringLiteral("credits_spent_usd")) && telemetry.contains(QStringLiteral("usage_usd"))) {
+        telemetry.insert(QStringLiteral("credits_spent_usd"), telemetry.value(QStringLiteral("usage_usd")));
+    }
+
+    telemetry.remove(QStringLiteral("raw"));
+    telemetry.remove(QStringLiteral("usage_raw"));
+    return telemetry;
+}
+
+bool hasUsageSignalFields(const QVariantMap &telemetry)
+{
+    static const QStringList keys{
+        QStringLiteral("prompt_tokens"),
+        QStringLiteral("completion_tokens"),
+        QStringLiteral("total_tokens"),
+        QStringLiteral("input_tokens"),
+        QStringLiteral("output_tokens"),
+        QStringLiteral("reasoning_tokens"),
+        QStringLiteral("usage_usd"),
+        QStringLiteral("total_cost_usd"),
+        QStringLiteral("credits_spent_usd")
+    };
+    for (const QString &key : keys) {
+        if (telemetry.contains(key)) {
+            return true;
+        }
+    }
+    return false;
 }
 }
 
@@ -297,7 +437,18 @@ quint64 OpenAiCompatibleClient::sendChatRequest(const QList<AiMessage> &messages
             return;
         }
 
-        const auto document = QJsonDocument::fromJson(reply->readAll());
+        const QByteArray payload = reply->readAll();
+        const auto document = QJsonDocument::fromJson(payload);
+        const QVariantMap usageTelemetry = document.isObject()
+            ? extractUsageTelemetry(document.object())
+            : QVariantMap{};
+        if (hasUsageSignalFields(usageTelemetry)) {
+            QVariantMap usage = usageTelemetry;
+            usage.insert(QStringLiteral("provider"), normalizedProviderKind(m_providerKind));
+            usage.insert(QStringLiteral("request_kind"), QStringLiteral("conversation"));
+            usage.insert(QStringLiteral("reasoning_effort"), reasoningEffortForMode(options.mode));
+            emit requestUsageUpdated(requestId, usage);
+        }
         const auto choices = document.object().value(QStringLiteral("choices")).toArray();
         const auto content = choices.isEmpty()
             ? QString{}
@@ -368,8 +519,9 @@ quint64 OpenAiCompatibleClient::sendAgentRequest(const AgentRequest &request)
     if (request.sampling.maxOutputTokens > 0) {
         body.insert(QStringLiteral("max_output_tokens"), request.sampling.maxOutputTokens);
     }
-    if (shouldIncludeReasoningObject(m_providerKind) && !isLocalEndpoint(m_endpoint)) {
-        body.insert(QStringLiteral("reasoning"), QJsonObject{{QStringLiteral("effort"), reasoningEffortForMode(request.mode)}});
+    if (shouldIncludeReasoningObject(m_providerKind)) {
+        const QString effort = reasoningEffortForMode(request.mode);
+        body.insert(QStringLiteral("reasoning"), QJsonObject{{QStringLiteral("effort"), effort}});
     }
 
     m_activeRequestId = ++m_requestCounter;
@@ -386,7 +538,7 @@ quint64 OpenAiCompatibleClient::sendAgentRequest(const AgentRequest &request)
     emit requestStarted(requestId);
     m_timeoutTimer->start(static_cast<int>(request.timeout.count()));
 
-    connect(reply, &QNetworkReply::finished, this, [this, requestId, reply]() {
+    connect(reply, &QNetworkReply::finished, this, [this, request, requestId, reply]() {
         if (!reply) {
             return;
         }
@@ -409,6 +561,17 @@ quint64 OpenAiCompatibleClient::sendAgentRequest(const AgentRequest &request)
         }
 
         const QByteArray payload = reply->readAll();
+        const QJsonDocument document = QJsonDocument::fromJson(payload);
+        if (document.isObject()) {
+            const QVariantMap usageTelemetry = extractUsageTelemetry(document.object());
+            if (hasUsageSignalFields(usageTelemetry)) {
+                QVariantMap usage = usageTelemetry;
+                usage.insert(QStringLiteral("provider"), normalizedProviderKind(m_providerKind));
+                usage.insert(QStringLiteral("request_kind"), QStringLiteral("agent"));
+                usage.insert(QStringLiteral("reasoning_effort"), reasoningEffortForMode(request.mode));
+                emit requestUsageUpdated(requestId, usage);
+            }
+        }
         const AgentResponse response = parseAgentResponse(payload);
         if (response.toolCalls.isEmpty() && response.outputText.trimmed().isEmpty()) {
             finishWithFailure(m_activeRequestId, QStringLiteral("Provider returned an empty agent response payload"));
@@ -568,6 +731,10 @@ AgentResponse OpenAiCompatibleClient::parseAgentResponse(const QByteArray &paylo
     } else {
         response.outputText = textParts.join(QString());
     }
+
+    if (containsPromptLeakMarkers(response.outputText)) {
+        response.outputText.clear();
+    }
     return response;
 }
 
@@ -682,18 +849,35 @@ void OpenAiCompatibleClient::handleStreamingReply(quint64 requestId, QNetworkRep
             continue;
         }
 
-        const QJsonArray choices = document.object().value(QStringLiteral("choices")).toArray();
-        if (choices.isEmpty()) {
+        const QJsonObject object = document.object();
+        const QVariantMap usageTelemetry = extractUsageTelemetry(object);
+        if (hasUsageSignalFields(usageTelemetry)) {
+            QVariantMap usage = usageTelemetry;
+            usage.insert(QStringLiteral("provider"), normalizedProviderKind(m_providerKind));
+            usage.insert(QStringLiteral("request_kind"), QStringLiteral("conversation"));
+            emit requestUsageUpdated(requestId, usage);
+        }
+
+        const QString eventType = object.value(QStringLiteral("type")).toString();
+        if (eventType == QStringLiteral("response.output_text.delta")) {
+            const QString delta = object.value(QStringLiteral("delta")).toString();
+            if (!delta.isEmpty()) {
+                m_streamedContent += delta;
+                emit requestDelta(requestId, delta);
+            }
             separatorIndex = m_streamBuffer.indexOf("\n\n");
             continue;
         }
 
-        const QJsonObject choice = choices.first().toObject();
-        const QJsonObject deltaObject = choice.value(QStringLiteral("delta")).toObject();
-        const QString delta = deltaObject.value(QStringLiteral("content")).toString();
-        if (!delta.isEmpty()) {
-            m_streamedContent += delta;
-            emit requestDelta(requestId, delta);
+        const QJsonArray choices = object.value(QStringLiteral("choices")).toArray();
+        if (!choices.isEmpty()) {
+            const QJsonObject choice = choices.first().toObject();
+            const QJsonObject deltaObject = choice.value(QStringLiteral("delta")).toObject();
+            const QString delta = deltaObject.value(QStringLiteral("content")).toString();
+            if (!delta.isEmpty()) {
+                m_streamedContent += delta;
+                emit requestDelta(requestId, delta);
+            }
         }
 
         separatorIndex = m_streamBuffer.indexOf("\r\n\r\n");

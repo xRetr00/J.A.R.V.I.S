@@ -412,6 +412,26 @@ Window {
                                             font.pixelSize: 11
                                             elide: Text.ElideRight
                                         }
+
+                                        Text {
+                                            text: agentVm.providerUsageSummary
+                                            color: "#8fb2da"
+                                            font.pixelSize: 11
+                                            elide: Text.ElideRight
+                                        }
+
+                                        Text {
+                                            text: {
+                                                const u = agentVm.providerUsage || {}
+                                                const usageUsd = (u.usage_usd !== undefined && u.usage_usd !== null) ? u.usage_usd : "-"
+                                                const totalCostUsd = (u.total_cost_usd !== undefined && u.total_cost_usd !== null) ? u.total_cost_usd : "-"
+                                                const creditsUsd = (u.credits_spent_usd !== undefined && u.credits_spent_usd !== null) ? u.credits_spent_usd : "-"
+                                                return "USD usage/total/credits: " + usageUsd + " / " + totalCostUsd + " / " + creditsUsd
+                                            }
+                                            color: "#7ea0c9"
+                                            font.pixelSize: 10
+                                            elide: Text.ElideRight
+                                        }
                                     }
                                 }
 

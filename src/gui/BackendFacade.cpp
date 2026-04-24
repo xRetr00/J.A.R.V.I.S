@@ -1553,6 +1553,45 @@ QVariantList BackendFacade::permissionCapabilityOptions() const
 bool BackendFacade::tracePanelEnabled() const { return m_settings->tracePanelEnabled(); }
 QString BackendFacade::agentStatus() const { return m_assistantController->agentCapabilities().status; }
 bool BackendFacade::agentAvailable() const { return m_settings->agentEnabled(); }
+QVariantMap BackendFacade::providerUsage() const { return m_assistantController->latestProviderUsage(); }
+QString BackendFacade::providerUsageSummary() const
+{
+    const QVariantMap usage = providerUsage();
+    if (usage.isEmpty()) {
+        return QStringLiteral("No usage metrics yet.");
+    }
+
+    const QString model = usage.value(QStringLiteral("model")).toString();
+    const QString requestKind = usage.value(QStringLiteral("request_kind")).toString();
+    const QString effort = usage.value(QStringLiteral("reasoning_effort")).toString();
+    const QString prompt = usage.value(QStringLiteral("prompt_tokens")).toString();
+    const QString completion = usage.value(QStringLiteral("completion_tokens")).toString();
+    const QString total = usage.value(QStringLiteral("total_tokens")).toString();
+    const QString reasoning = usage.value(QStringLiteral("reasoning_tokens")).toString();
+    const QString cost = usage.value(QStringLiteral("usage_usd")).toString();
+    const QString totalCost = usage.value(QStringLiteral("total_cost_usd")).toString();
+
+    QStringList parts;
+    if (!model.isEmpty()) {
+        parts.push_back(QStringLiteral("model=%1").arg(model));
+    }
+    if (!requestKind.isEmpty()) {
+        parts.push_back(QStringLiteral("kind=%1").arg(requestKind));
+    }
+    if (!effort.isEmpty()) {
+        parts.push_back(QStringLiteral("effort=%1").arg(effort));
+    }
+    if (!prompt.isEmpty() || !completion.isEmpty() || !total.isEmpty()) {
+        parts.push_back(QStringLiteral("tokens p/c/t=%1/%2/%3").arg(prompt, completion, total));
+    }
+    if (!reasoning.isEmpty()) {
+        parts.push_back(QStringLiteral("reasoning=%1").arg(reasoning));
+    }
+    if (!cost.isEmpty() || !totalCost.isEmpty()) {
+        parts.push_back(QStringLiteral("cost usage/total=%1/%2 USD").arg(cost, totalCost));
+    }
+    return parts.isEmpty() ? QStringLiteral("No usage metrics yet.") : parts.join(QStringLiteral(" | "));
+}
 QVariantList BackendFacade::agentTraceEntries() const
 {
     QVariantList list;

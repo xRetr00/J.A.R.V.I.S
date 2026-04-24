@@ -2075,6 +2075,45 @@ void AssistantController::initialize()
             m_streamAssembler->appendChunk(delta);
         }
     });
+    connect(m_aiBackendClient, &AiBackendClient::requestUsageUpdated, this, [this](quint64 requestId, const QVariantMap &usage) {
+        if (requestId != m_activeRequestId || usage.isEmpty()) {
+            return;
+        }
+        QVariantMap normalized = usage;
+        if (!normalized.contains(QStringLiteral("provider"))) {
+            normalized.insert(QStringLiteral("provider"), m_settings->chatBackendKind().trimmed().toLower());
+        }
+        if (!normalized.contains(QStringLiteral("request_kind"))) {
+            normalized.insert(QStringLiteral("request_kind"), m_activeRequestKind == RequestKind::CommandExtraction
+                ? QStringLiteral("command_extraction")
+                : (m_activeRequestKind == RequestKind::AgentConversation
+                    ? QStringLiteral("agent")
+                    : QStringLiteral("conversation")));
+        }
+        m_latestProviderUsage = normalized;
+        if (m_loggingService) {
+            const QString promptTokens = normalized.value(QStringLiteral("prompt_tokens")).toString();
+            const QString completionTokens = normalized.value(QStringLiteral("completion_tokens")).toString();
+            const QString totalTokens = normalized.value(QStringLiteral("total_tokens")).toString();
+            const QString reasoningTokens = normalized.value(QStringLiteral("reasoning_tokens")).toString();
+            const QString usageUsd = normalized.value(QStringLiteral("usage_usd")).toString();
+            const QString totalCostUsd = normalized.value(QStringLiteral("total_cost_usd")).toString();
+            m_loggingService->infoFor(
+                QStringLiteral("route_audit"),
+                QStringLiteral("[provider_usage] provider=%1 model=%2 request_kind=%3 prompt_tokens=%4 completion_tokens=%5 total_tokens=%6 reasoning_tokens=%7 usage_usd=%8 total_cost_usd=%9 reasoning_effort=%10")
+                    .arg(normalized.value(QStringLiteral("provider")).toString(),
+                         normalized.value(QStringLiteral("model")).toString(),
+                         normalized.value(QStringLiteral("request_kind")).toString(),
+                         promptTokens,
+                         completionTokens,
+                         totalTokens,
+                         reasoningTokens,
+                         usageUsd,
+                         totalCostUsd,
+                         normalized.value(QStringLiteral("reasoning_effort")).toString()));
+        }
+        emit agentStateChanged();
+    });
     connect(m_aiBackendClient, &AiBackendClient::capabilitiesChanged, this, [this](const AgentCapabilitySet &capabilities) {
         m_agentCapabilities = capabilities;
         m_agentCapabilities.agentEnabled = m_settings->agentEnabled();
@@ -2285,6 +2324,8 @@ QString AssistantController::latestTaskToastType() const { return m_toolCoordina
 QString AssistantController::latestProactiveSuggestion() const { return m_latestProactiveSuggestion; }
 QString AssistantController::latestProactiveSuggestionTone() const { return m_latestProactiveSuggestionTone; }
 QString AssistantController::latestProactiveSuggestionType() const { return m_latestProactiveSuggestionType; }
+QVariantMap AssistantController::latestProviderUsage() const { return m_latestProviderUsage; }
+QString AssistantController::latestProviderReasoningEffort() const { return m_latestProviderUsage.value(QStringLiteral("reasoning_effort")).toString(); }
 bool AssistantController::installSkill(const QString &url, QString *error)
 {
     const bool ok = m_skillStore->installSkill(url, error);
@@ -4114,6 +4155,7 @@ void AssistantController::endConversationSession()
     m_consecutiveSessionMisses = 0;
     m_conversationSessionExpiresAtMs = 0;
     m_followUpListeningAfterWakeAck = false;
+    m_previousAgentResponseId.clear();
     if (m_learningDataCollector) {
         m_learningDataCollector->runMaintenance();
     }
@@ -5656,7 +5698,6 @@ void AssistantController::startAgentConversationRequest(const QString &input, In
     m_lastAgentIntent = expectedIntent;
     m_activeAgentIteration = 0;
     AgentToolLoopGuard::reset(&m_agentToolLoopGuardState);
-    m_previousAgentResponseId.clear();
     m_agentTrace.clear();
     emit agentTraceChanged();
     const QList<AgentToolSpec> availableTools = m_agentToolbox ? m_agentToolbox->builtInTools() : QList<AgentToolSpec>{};
@@ -5828,6 +5869,7 @@ void AssistantController::startAgentConversationRequest(const QString &input, In
         .turnId = m_activeTurnId,
         .modelId = modelId,
         .input = input,
+        .previousResponseId = m_previousAgentResponseId,
         .intent = expectedIntent,
         .memory = memoryContext,
         .skills = m_skillStore->listSkills(),

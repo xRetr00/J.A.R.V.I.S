@@ -125,6 +125,8 @@ class BackendFacade : public QObject
     Q_PROPERTY(bool tracePanelEnabled READ tracePanelEnabled NOTIFY agentStateChanged)
     Q_PROPERTY(QString agentStatus READ agentStatus NOTIFY agentStateChanged)
     Q_PROPERTY(bool agentAvailable READ agentAvailable NOTIFY agentStateChanged)
+    Q_PROPERTY(QVariantMap providerUsage READ providerUsage NOTIFY agentStateChanged)
+    Q_PROPERTY(QString providerUsageSummary READ providerUsageSummary NOTIFY agentStateChanged)
     Q_PROPERTY(QVariantList agentTraceEntries READ agentTraceEntries NOTIFY agentTraceChanged)
     Q_PROPERTY(QVariantList availableAgentTools READ availableAgentTools NOTIFY toolStatusesChanged)
     Q_PROPERTY(QVariantList installedSkills READ installedSkills NOTIFY toolStatusesChanged)
@@ -261,6 +263,8 @@ public:
     bool tracePanelEnabled() const;
     QString agentStatus() const;
     bool agentAvailable() const;
+    QVariantMap providerUsage() const;
+    QString providerUsageSummary() const;
     QVariantList agentTraceEntries() const;
     QVariantList availableAgentTools() const;
     QVariantList installedSkills() const;

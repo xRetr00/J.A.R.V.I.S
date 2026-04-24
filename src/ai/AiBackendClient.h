@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QVariantMap>
 
 #include "core/AssistantTypes.h"
 
@@ -31,6 +32,7 @@ signals:
     void capabilitiesChanged(const AgentCapabilitySet &capabilities);
     void requestStarted(quint64 requestId);
     void requestDelta(quint64 requestId, const QString &delta);
+    void requestUsageUpdated(quint64 requestId, const QVariantMap &usage);
     void requestFinished(quint64 requestId, const QString &fullText);
     void agentResponseReady(quint64 requestId, const AgentResponse &response);
     void requestFailed(quint64 requestId, const QString &errorText);

@@ -2,6 +2,7 @@
 
 #include <QHash>
 #include <QObject>
+#include <QVariantMap>
 
 #include "core/AssistantTypes.h"
 
@@ -28,6 +29,7 @@ signals:
     void capabilitiesChanged(const AgentCapabilitySet &capabilities);
     void requestStarted(quint64 generationId);
     void requestDelta(quint64 generationId, const QString &delta);
+    void requestUsageUpdated(quint64 generationId, const QVariantMap &usage);
     void requestFinished(quint64 generationId, const QString &text);
     void agentResponseReady(quint64 generationId, const AgentResponse &response);
     void requestFailed(quint64 generationId, const QString &errorText);
