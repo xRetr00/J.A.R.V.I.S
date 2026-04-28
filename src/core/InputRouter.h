@@ -6,6 +6,7 @@
 class AssistantBehaviorPolicy;
 
 struct InputRouterContext {
+    QString rawInput;
     bool wakeOnly = false;
     bool shouldEndConversation = false;
     bool isTimeQuery = false;

@@ -120,6 +120,18 @@ QList<AgentToolSpec> AgentToolbox::builtInTools() const
                      schemaObject({{"url", {{"type", "string"}}}}, {"url"})});
     tools.push_back({QStringLiteral("skill_create"), QStringLiteral("Create a new local skill scaffold."),
                      schemaObject({{"id", {{"type", "string"}}}, {"name", {{"type", "string"}}}, {"description", {{"type", "string"}}}}, {"id", "name", "description"})});
+    tools.push_back({QStringLiteral("get_room_status"), QStringLiteral("Check the configured smart room occupancy sensor through Home Assistant."),
+                     schemaObject({})});
+    tools.push_back({QStringLiteral("get_light_status"), QStringLiteral("Check the configured smart light state through Home Assistant."),
+                     schemaObject({})});
+    tools.push_back({QStringLiteral("turn_light_on"), QStringLiteral("Turn on the configured smart light through Home Assistant."),
+                     schemaObject({})});
+    tools.push_back({QStringLiteral("turn_light_off"), QStringLiteral("Turn off the configured smart light through Home Assistant."),
+                     schemaObject({})});
+    tools.push_back({QStringLiteral("set_light_brightness"), QStringLiteral("Set the configured smart light brightness percentage through Home Assistant."),
+                     schemaObject({{"brightness_percent", {{"type", "integer"}, {"minimum", 1}, {"maximum", 100}}}}, {"brightness_percent"})});
+    tools.push_back({QStringLiteral("set_light_color"), QStringLiteral("Set the configured smart light color if Home Assistant exposes color support."),
+                     schemaObject({{"color", {{"type", "string"}}}}, {"color"})});
 
     const PlatformCapabilities capabilities = PlatformRuntime::currentCapabilities();
     if (capabilities.supportsAppListing) {

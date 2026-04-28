@@ -96,6 +96,7 @@
 #include "memory/MemoryStore.h"
 #include "settings/AppSettings.h"
 #include "settings/IdentityProfileService.h"
+#include "smart_home/SmartHomeRuntime.h"
 #include "skills/SkillStore.h"
 #include "stt/RuntimeSpeechRecognizer.h"
 #include "telemetry/SelectionTelemetryBuilder.h"
@@ -1476,6 +1477,7 @@ AssistantController::AssistantController(
     m_localResponseEngine = new LocalResponseEngine(this);
     m_taskDispatcher = new TaskDispatcher(m_loggingService, this);
     m_toolWorker = new ToolWorker(backgroundAllowedRoots(), m_loggingService, m_settings);
+    m_smartHomeRuntime = new SmartHomeRuntime(m_settings, m_loggingService, this);
     m_browserBookmarksMonitor = new BrowserBookmarksMonitor(this);
     m_calendarIcsMonitor = new CalendarIcsMonitor(this);
     m_connectorSnapshotMonitor = new ConnectorSnapshotMonitor(m_settings, m_loggingService, this);
@@ -1598,6 +1600,17 @@ AssistantController::AssistantController(
 
         setSurfaceError(QStringLiteral("vision"), compactSurfaceText(status));
     }, Qt::QueuedConnection);
+    connect(m_smartHomeRuntime, &SmartHomeRuntime::welcomeRequested, this, [this](const QString &message) {
+        const QString spoken = message.trimmed().isEmpty() ? QStringLiteral("Welcome back.") : message.trimmed();
+        if (m_currentState == AssistantState::Idle) {
+            deliverLocalResponse(spoken, QStringLiteral("Smart room welcome"), true);
+            return;
+        }
+        if (m_loggingService) {
+            m_loggingService->infoFor(QStringLiteral("tools_mcp"),
+                                      QStringLiteral("[smart_room.welcome] delivery=blocked reason=assistant_busy"));
+        }
+    }, Qt::QueuedConnection);
     connect(m_gestureInterpreter, &GestureInterpreter::observationsInterpreted, m_gestureStateMachine, &GestureStateMachine::ingestObservations, Qt::QueuedConnection);
     connect(m_gestureStateMachine, &GestureStateMachine::gestureEventReady, m_gestureActionRouter, &GestureActionRouter::routeGestureEvent, Qt::QueuedConnection);
     connect(m_gestureActionRouter, &GestureActionRouter::gestureTriggered, this, [this](const QString &gestureName, qint64 timestampMs) {
@@ -1672,6 +1685,9 @@ void AssistantController::initialize()
     reconfigureGestureActionRouter();
     if (m_visionIngestService) {
         m_visionIngestService->start();
+    }
+    if (m_smartHomeRuntime) {
+        m_smartHomeRuntime->start();
     }
     if (m_learningDataCollector) {
         m_learningDataCollector->initialize();
@@ -2398,6 +2414,7 @@ InputRouterContext AssistantController::buildInputRouteContext(const QString &ro
     }
 
     InputRouterContext routeContext;
+    routeContext.rawInput = routedInput;
     const TurnSignals turnSignals = m_turnSignalExtractor
         ? m_turnSignalExtractor->extract(routedInput)
         : TurnSignals{};

@@ -25,6 +25,7 @@
 #include "memory/MemoryManager.h"
 #include "python/PythonRuntimeManager.h"
 #include "settings/AppSettings.h"
+#include "smart_home/HomeAssistantSmartHomeAdapter.h"
 #include "skills/SkillStore.h"
 
 namespace {
@@ -553,6 +554,12 @@ ToolExecutionResult ToolExecutionService::executeBuiltIn(const ToolExecutionRequ
     if (request.toolName == QStringLiteral("computer_open_url")) return executeComputerOpenUrl(request);
     if (request.toolName == QStringLiteral("computer_write_file")) return executeComputerWriteFile(request);
     if (request.toolName == QStringLiteral("computer_set_timer")) return executeComputerSetTimer(request);
+    if (request.toolName == QStringLiteral("get_room_status")) return executeSmartHomeGetRoomStatus(request);
+    if (request.toolName == QStringLiteral("get_light_status")) return executeSmartHomeGetLightStatus(request);
+    if (request.toolName == QStringLiteral("turn_light_on")) return executeSmartHomeTurnLightOn(request);
+    if (request.toolName == QStringLiteral("turn_light_off")) return executeSmartHomeTurnLightOff(request);
+    if (request.toolName == QStringLiteral("set_light_brightness")) return executeSmartHomeSetLightBrightness(request);
+    if (request.toolName == QStringLiteral("set_light_color")) return executeSmartHomeSetLightColor(request);
     if (request.toolName == QStringLiteral("skill_list")) return executeSkillList(request);
     if (request.toolName == QStringLiteral("skill_install")) return executeSkillInstall(request);
     if (request.toolName == QStringLiteral("skill_create")) return executeSkillCreate(request);
@@ -561,6 +568,214 @@ ToolExecutionResult ToolExecutionService::executeBuiltIn(const ToolExecutionRequ
                          ToolErrorKind::Capability,
                          QStringLiteral("Unsupported task"),
                          QStringLiteral("Unsupported tool type: %1").arg(request.toolName));
+}
+
+namespace {
+SmartHomeConfig smartHomeConfigFromSettings(const AppSettings *settings)
+{
+    SmartHomeConfig config;
+    if (settings == nullptr) {
+        return config;
+    }
+    config.enabled = settings->smartHomeEnabled();
+    config.provider = settings->smartHomeProvider();
+    config.homeAssistantBaseUrl = settings->smartHomeHomeAssistantBaseUrl();
+    config.homeAssistantTokenEnvVar = settings->smartHomeHomeAssistantTokenEnvVar();
+    config.presenceEntityId = settings->smartHomePresenceEntityId();
+    config.lightEntityId = settings->smartHomeLightEntityId();
+    config.pollIntervalMs = settings->smartHomePollIntervalMs();
+    config.sensorOnlyWelcomeEnabled = settings->smartHomeSensorOnlyWelcomeEnabled();
+    config.welcomeCooldownMinutes = settings->smartHomeWelcomeCooldownMinutes();
+    config.roomAbsenceGraceMinutes = settings->smartHomeRoomAbsenceGraceMinutes();
+    config.requestTimeoutMs = settings->smartHomeRequestTimeoutMs();
+    return config;
+}
+
+QString roomStatusSummary(const SmartHomeSnapshot &snapshot)
+{
+    if (!snapshot.success || !snapshot.presence.available) {
+        return QStringLiteral("Smart room is unavailable.");
+    }
+    QString text = snapshot.presence.occupied
+        ? QStringLiteral("The room is occupied.")
+        : QStringLiteral("The room is not occupied.");
+    if (snapshot.light.available) {
+        text += QLatin1Char(' ');
+        text += snapshot.light.on ? QStringLiteral("The light is on") : QStringLiteral("The light is off");
+        if (snapshot.light.on && snapshot.light.brightnessPercent >= 0) {
+            text += QStringLiteral(" at %1%").arg(snapshot.light.brightnessPercent);
+        }
+        text += QLatin1Char('.');
+    }
+    return text;
+}
+
+QString lightStatusSummary(const SmartHomeSnapshot &snapshot)
+{
+    if (!snapshot.success || !snapshot.light.available) {
+        return QStringLiteral("Smart light is unavailable.");
+    }
+    QString text = snapshot.light.on ? QStringLiteral("The light is on") : QStringLiteral("The light is off");
+    if (snapshot.light.on && snapshot.light.brightnessPercent >= 0) {
+        text += QStringLiteral(" at %1%").arg(snapshot.light.brightnessPercent);
+    }
+    if (snapshot.light.on && !snapshot.light.colorName.trimmed().isEmpty()) {
+        text += QStringLiteral(" (%1)").arg(snapshot.light.colorName.trimmed());
+    }
+    return text + QLatin1Char('.');
+}
+
+QJsonObject snapshotPayload(const SmartHomeSnapshot &snapshot)
+{
+    return {
+        {QStringLiteral("success"), snapshot.success},
+        {QStringLiteral("presence_available"), snapshot.presence.available},
+        {QStringLiteral("room_occupied"), snapshot.presence.occupied},
+        {QStringLiteral("presence_entity_id"), snapshot.presence.sensorId},
+        {QStringLiteral("presence_raw_state"), snapshot.presence.rawState},
+        {QStringLiteral("light_available"), snapshot.light.available},
+        {QStringLiteral("light_on"), snapshot.light.on},
+        {QStringLiteral("light_entity_id"), snapshot.light.lightId},
+        {QStringLiteral("light_raw_state"), snapshot.light.rawState},
+        {QStringLiteral("brightness_percent"), snapshot.light.brightnessPercent},
+        {QStringLiteral("color_supported"), snapshot.light.colorSupported},
+        {QStringLiteral("color"), snapshot.light.colorName},
+        {QStringLiteral("http_status"), snapshot.httpStatus},
+        {QStringLiteral("latency_ms"), snapshot.latencyMs}
+    };
+}
+}
+
+ToolExecutionResult ToolExecutionService::executeSmartHomeGetRoomStatus(const ToolExecutionRequest &request)
+{
+    HomeAssistantSmartHomeAdapter adapter(smartHomeConfigFromSettings(m_settings));
+    const SmartHomeSnapshot snapshot = adapter.fetchStateBlocking();
+    const QString summary = roomStatusSummary(snapshot);
+    if (m_loggingService) {
+        m_loggingService->infoFor(QStringLiteral("tools_mcp"),
+                                  QStringLiteral("[smart_home.tool] action=get_room_status success=%1 httpStatus=%2 latencyMs=%3 occupied=%4")
+                                      .arg(snapshot.success ? QStringLiteral("true") : QStringLiteral("false"),
+                                           QString::number(snapshot.httpStatus),
+                                           QString::number(snapshot.latencyMs),
+                                           snapshot.presence.occupied ? QStringLiteral("true") : QStringLiteral("false")));
+    }
+    return snapshot.success
+        ? successResult(request, summary, summary, snapshotPayload(snapshot))
+        : failureResult(request, classifyErrorKind(snapshot.detail, snapshot.httpStatus), summary, snapshot.detail, snapshotPayload(snapshot));
+}
+
+ToolExecutionResult ToolExecutionService::executeSmartHomeGetLightStatus(const ToolExecutionRequest &request)
+{
+    HomeAssistantSmartHomeAdapter adapter(smartHomeConfigFromSettings(m_settings));
+    const SmartHomeSnapshot snapshot = adapter.fetchStateBlocking();
+    const QString summary = lightStatusSummary(snapshot);
+    if (m_loggingService) {
+        m_loggingService->infoFor(QStringLiteral("tools_mcp"),
+                                  QStringLiteral("[smart_home.tool] action=get_light_status success=%1 httpStatus=%2 latencyMs=%3 lightOn=%4")
+                                      .arg(snapshot.success ? QStringLiteral("true") : QStringLiteral("false"),
+                                           QString::number(snapshot.httpStatus),
+                                           QString::number(snapshot.latencyMs),
+                                           snapshot.light.on ? QStringLiteral("true") : QStringLiteral("false")));
+    }
+    return snapshot.success
+        ? successResult(request, summary, summary, snapshotPayload(snapshot))
+        : failureResult(request, classifyErrorKind(snapshot.detail, snapshot.httpStatus), summary, snapshot.detail, snapshotPayload(snapshot));
+}
+
+ToolExecutionResult ToolExecutionService::executeSmartHomeTurnLightOn(const ToolExecutionRequest &request)
+{
+    HomeAssistantSmartHomeAdapter adapter(smartHomeConfigFromSettings(m_settings));
+    SmartLightCommand command;
+    command.action = QStringLiteral("turn_light_on");
+    const SmartLightCommandResult result = adapter.executeLightCommandBlocking(command);
+    if (m_loggingService) {
+        m_loggingService->infoFor(QStringLiteral("tools_mcp"),
+                                  QStringLiteral("[smart_home.light_command] action=turn_light_on success=%1 httpStatus=%2 latencyMs=%3")
+                                      .arg(result.success ? QStringLiteral("true") : QStringLiteral("false"),
+                                           QString::number(result.httpStatus),
+                                           QString::number(result.latencyMs)));
+    }
+    const QJsonObject payload{{QStringLiteral("http_status"), result.httpStatus}, {QStringLiteral("latency_ms"), result.latencyMs}};
+    return result.success
+        ? successResult(request, result.summary, result.detail, payload)
+        : failureResult(request, classifyErrorKind(result.detail, result.httpStatus), result.summary, result.detail, payload);
+}
+
+ToolExecutionResult ToolExecutionService::executeSmartHomeTurnLightOff(const ToolExecutionRequest &request)
+{
+    HomeAssistantSmartHomeAdapter adapter(smartHomeConfigFromSettings(m_settings));
+    SmartLightCommand command;
+    command.action = QStringLiteral("turn_light_off");
+    const SmartLightCommandResult result = adapter.executeLightCommandBlocking(command);
+    if (m_loggingService) {
+        m_loggingService->infoFor(QStringLiteral("tools_mcp"),
+                                  QStringLiteral("[smart_home.light_command] action=turn_light_off success=%1 httpStatus=%2 latencyMs=%3")
+                                      .arg(result.success ? QStringLiteral("true") : QStringLiteral("false"),
+                                           QString::number(result.httpStatus),
+                                           QString::number(result.latencyMs)));
+    }
+    const QJsonObject payload{{QStringLiteral("http_status"), result.httpStatus}, {QStringLiteral("latency_ms"), result.latencyMs}};
+    return result.success
+        ? successResult(request, result.summary, result.detail, payload)
+        : failureResult(request, classifyErrorKind(result.detail, result.httpStatus), result.summary, result.detail, payload);
+}
+
+ToolExecutionResult ToolExecutionService::executeSmartHomeSetLightBrightness(const ToolExecutionRequest &request)
+{
+    const int brightness = request.args.value(QStringLiteral("brightness_percent")).toInt(-1);
+    if (brightness < 1 || brightness > 100) {
+        return failureResult(request, ToolErrorKind::Invalid, QStringLiteral("Invalid brightness"), QStringLiteral("Brightness must be between 1 and 100."));
+    }
+    HomeAssistantSmartHomeAdapter adapter(smartHomeConfigFromSettings(m_settings));
+    SmartLightCommand command;
+    command.action = QStringLiteral("set_light_brightness");
+    command.brightnessPercent = brightness;
+    const SmartLightCommandResult result = adapter.executeLightCommandBlocking(command);
+    if (m_loggingService) {
+        m_loggingService->infoFor(QStringLiteral("tools_mcp"),
+                                  QStringLiteral("[smart_home.light_command] action=set_light_brightness success=%1 brightness=%2 httpStatus=%3 latencyMs=%4")
+                                      .arg(result.success ? QStringLiteral("true") : QStringLiteral("false"),
+                                           QString::number(brightness),
+                                           QString::number(result.httpStatus),
+                                           QString::number(result.latencyMs)));
+    }
+    const QJsonObject payload{{QStringLiteral("brightness_percent"), brightness}, {QStringLiteral("http_status"), result.httpStatus}, {QStringLiteral("latency_ms"), result.latencyMs}};
+    return result.success
+        ? successResult(request, result.summary, result.detail, payload)
+        : failureResult(request, classifyErrorKind(result.detail, result.httpStatus), result.summary, result.detail, payload);
+}
+
+ToolExecutionResult ToolExecutionService::executeSmartHomeSetLightColor(const ToolExecutionRequest &request)
+{
+    const QString color = request.args.value(QStringLiteral("color")).toString().trimmed().toLower();
+    if (color.isEmpty()) {
+        return failureResult(request, ToolErrorKind::Invalid, QStringLiteral("Invalid color"), QStringLiteral("Color is required."));
+    }
+    HomeAssistantSmartHomeAdapter adapter(smartHomeConfigFromSettings(m_settings));
+    const SmartHomeSnapshot snapshot = adapter.fetchStateBlocking();
+    if (snapshot.success && snapshot.light.available && !snapshot.light.colorSupported) {
+        return failureResult(request,
+                             ToolErrorKind::Capability,
+                             QStringLiteral("Light color unavailable"),
+                             QStringLiteral("Light color is not exposed by Home Assistant."),
+                             snapshotPayload(snapshot));
+    }
+    SmartLightCommand command;
+    command.action = QStringLiteral("set_light_color");
+    command.colorName = color;
+    const SmartLightCommandResult result = adapter.executeLightCommandBlocking(command);
+    if (m_loggingService) {
+        m_loggingService->infoFor(QStringLiteral("tools_mcp"),
+                                  QStringLiteral("[smart_home.light_command] action=set_light_color success=%1 color=%2 httpStatus=%3 latencyMs=%4")
+                                      .arg(result.success ? QStringLiteral("true") : QStringLiteral("false"),
+                                           color,
+                                           QString::number(result.httpStatus),
+                                           QString::number(result.latencyMs)));
+    }
+    const QJsonObject payload{{QStringLiteral("color"), color}, {QStringLiteral("http_status"), result.httpStatus}, {QStringLiteral("latency_ms"), result.latencyMs}};
+    return result.success
+        ? successResult(request, result.summary, result.detail, payload)
+        : failureResult(request, classifyErrorKind(result.detail, result.httpStatus), result.summary, result.detail, payload);
 }
 
 ToolExecutionResult ToolExecutionService::executeFileRead(const ToolExecutionRequest &request)

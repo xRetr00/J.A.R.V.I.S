@@ -160,6 +160,21 @@ QString toolUseGuidance(const QString &toolName)
     if (toolName == QStringLiteral("computer_set_timer")) {
         return QStringLiteral("the user asks to set a local timer or reminder on this computer");
     }
+    if (toolName == QStringLiteral("get_room_status")) {
+        return QStringLiteral("the user asks whether the smart room is occupied or asks for smart room status");
+    }
+    if (toolName == QStringLiteral("get_light_status")) {
+        return QStringLiteral("the user asks whether the configured smart light is on or asks for light status");
+    }
+    if (toolName == QStringLiteral("turn_light_on") || toolName == QStringLiteral("turn_light_off")) {
+        return QStringLiteral("the user explicitly asks to turn the configured smart light on or off");
+    }
+    if (toolName == QStringLiteral("set_light_brightness")) {
+        return QStringLiteral("the user explicitly asks to set the configured smart light brightness percentage");
+    }
+    if (toolName == QStringLiteral("set_light_color")) {
+        return QStringLiteral("the user explicitly asks to make the configured smart light warm, white, red, blue, or another supported color");
+    }
     if (toolName == QStringLiteral("skill_list")) {
         return QStringLiteral("the user asks which skills are installed");
     }
@@ -231,6 +246,15 @@ QString toolOutputHint(const QString &toolName)
     if (toolName == QStringLiteral("computer_set_timer")) {
         return QStringLiteral("a timer confirmation or an error");
     }
+    if (toolName == QStringLiteral("get_room_status") || toolName == QStringLiteral("get_light_status")) {
+        return QStringLiteral("a short smart-room status answer plus structured state");
+    }
+    if (toolName == QStringLiteral("turn_light_on")
+        || toolName == QStringLiteral("turn_light_off")
+        || toolName == QStringLiteral("set_light_brightness")
+        || toolName == QStringLiteral("set_light_color")) {
+        return QStringLiteral("a short smart-light command confirmation or an unavailable/error message");
+    }
     if (toolName == QStringLiteral("skill_list")) {
         return QStringLiteral("installed skills");
     }
@@ -280,7 +304,13 @@ QStringList toolNamesForIntent(IntentType intent)
                 QStringLiteral("computer_open_app"),
                 QStringLiteral("computer_open_url"),
                 QStringLiteral("computer_write_file"),
-                QStringLiteral("computer_set_timer")};
+                QStringLiteral("computer_set_timer"),
+                QStringLiteral("get_room_status"),
+                QStringLiteral("get_light_status"),
+                QStringLiteral("turn_light_on"),
+                QStringLiteral("turn_light_off"),
+                QStringLiteral("set_light_brightness"),
+                QStringLiteral("set_light_color")};
     }
 }
 
@@ -310,7 +340,7 @@ QString spokenTaskGuidance(IntentType intent)
         return QStringLiteral("Say that you are saving the memory now and the result will appear visually.");
     case IntentType::GENERAL_CHAT:
     default:
-        return QStringLiteral("Use the computer-control tools when the user explicitly asks to open apps or websites, create files on the computer, or set a timer.");
+        return QStringLiteral("Use smart-home tools for configured room/light questions or light control. Use computer-control tools when the user explicitly asks to open apps or websites, create files on the computer, or set a timer.");
     }
 }
 
@@ -1027,6 +1057,7 @@ QString PromptAdapter::buildCapabilityRulesContext(IntentType intent) const
         QStringLiteral("<rules>\n"
                        "- If the request involves files, folders, or logs, you must use a tool instead of answering from memory.\n"
                        "- If the user asks to open an app, launch a site, create a file on the computer, or set a timer, you must use a matching computer tool.\n"
+                       "- If the user asks about room occupancy, smart room status, light status, or light control, use the matching smart-home tool.\n"
                        "- If the request involves memory writes, you must use a memory tool.\n"
                        "- Prefer tools over natural-language guesses whenever a tool can verify the answer.\n"
                        "- For requests to open browser pages, prefer browser_open first and use computer_open_url only as a fallback.\n"
@@ -1061,6 +1092,10 @@ QString PromptAdapter::buildFewShotExamples(IntentType intent) const
                        "Assistant: {\"intent\":\"GENERAL_CHAT\",\"message\":\"All right, I'm opening YouTube now.\",\"tool_calls\":[{\"name\":\"browser_open\",\"arguments_json\":\"{\\\"url\\\":\\\"https://www.youtube.com/\\\"}\",\"priority\":90}]}\n"
                        "User: set a timer for 10 minutes\n"
                        "Assistant: {\"intent\":\"GENERAL_CHAT\",\"message\":\"Okay, I'm setting that timer now.\",\"tool_calls\":[{\"name\":\"computer_set_timer\",\"arguments_json\":\"{\\\"duration_seconds\\\":600,\\\"title\\\":\\\"VAXIL Timer\\\",\\\"message\\\":\\\"Your 10 minute timer is done.\\\"}\",\"priority\":88}]}\n"
+                       "User: turn on the light\n"
+                       "Assistant: {\"intent\":\"GENERAL_CHAT\",\"message\":\"Okay, I'm turning the light on.\",\"tool_calls\":[{\"name\":\"turn_light_on\",\"arguments_json\":\"{}\",\"priority\":90}]}\n"
+                       "User: is the room occupied?\n"
+                       "Assistant: {\"intent\":\"GENERAL_CHAT\",\"message\":\"I'll check the smart room status.\",\"tool_calls\":[{\"name\":\"get_room_status\",\"arguments_json\":\"{}\",\"priority\":90}]}\n"
                        "User: create a file on my desktop called notes.txt with hello\n"
                        "Assistant: {\"intent\":\"WRITE_FILE\",\"message\":\"All right, I'm creating that file now.\",\"tool_calls\":[{\"name\":\"computer_write_file\",\"arguments_json\":\"{\\\"path\\\":\\\"notes.txt\\\",\\\"base_dir\\\":\\\"desktop\\\",\\\"content\\\":\\\"hello\\\"}\",\"priority\":92}]}\n"
                        "User: remember that I like short answers\n"

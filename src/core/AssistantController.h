@@ -37,6 +37,7 @@ class PromptAdapter;
 class ReasoningRouter;
 class IdentityProfileService;
 class SkillStore;
+class SmartHomeRuntime;
 class StreamAssembler;
 class TaskDispatcher;
 class SpeechRecognizer;
@@ -439,6 +440,7 @@ private:
     LocalResponseEngine *m_localResponseEngine = nullptr;
     TaskDispatcher *m_taskDispatcher = nullptr;
     ToolWorker *m_toolWorker = nullptr;
+    SmartHomeRuntime *m_smartHomeRuntime = nullptr;
     BrowserBookmarksMonitor *m_browserBookmarksMonitor = nullptr;
     CalendarIcsMonitor *m_calendarIcsMonitor = nullptr;
     ConnectorSnapshotMonitor *m_connectorSnapshotMonitor = nullptr;

@@ -109,6 +109,39 @@ public:
     double visionGesturesMinConfidence() const;
     void setVisionGesturesMinConfidence(double confidence);
 
+    bool smartHomeEnabled() const;
+    void setSmartHomeEnabled(bool enabled);
+
+    QString smartHomeProvider() const;
+    void setSmartHomeProvider(const QString &provider);
+
+    QString smartHomeHomeAssistantBaseUrl() const;
+    void setSmartHomeHomeAssistantBaseUrl(const QString &baseUrl);
+
+    QString smartHomeHomeAssistantTokenEnvVar() const;
+    void setSmartHomeHomeAssistantTokenEnvVar(const QString &envVar);
+
+    QString smartHomePresenceEntityId() const;
+    void setSmartHomePresenceEntityId(const QString &entityId);
+
+    QString smartHomeLightEntityId() const;
+    void setSmartHomeLightEntityId(const QString &entityId);
+
+    int smartHomePollIntervalMs() const;
+    void setSmartHomePollIntervalMs(int intervalMs);
+
+    bool smartHomeSensorOnlyWelcomeEnabled() const;
+    void setSmartHomeSensorOnlyWelcomeEnabled(bool enabled);
+
+    int smartHomeWelcomeCooldownMinutes() const;
+    void setSmartHomeWelcomeCooldownMinutes(int minutes);
+
+    int smartHomeRoomAbsenceGraceMinutes() const;
+    void setSmartHomeRoomAbsenceGraceMinutes(int minutes);
+
+    int smartHomeRequestTimeoutMs() const;
+    void setSmartHomeRequestTimeoutMs(int timeoutMs);
+
     bool gestureEnabled() const;
     void setGestureEnabled(bool enabled);
 
@@ -326,6 +359,17 @@ private:
     bool m_visionContextAlwaysOn = false;
     double m_visionObjectsMinConfidence = 0.60;
     double m_visionGesturesMinConfidence = 0.70;
+    bool m_smartHomeEnabled = false;
+    QString m_smartHomeProvider = QStringLiteral("home_assistant");
+    QString m_smartHomeHomeAssistantBaseUrl;
+    QString m_smartHomeHomeAssistantTokenEnvVar = QStringLiteral("VAXIL_HOME_ASSISTANT_TOKEN");
+    QString m_smartHomePresenceEntityId;
+    QString m_smartHomeLightEntityId;
+    int m_smartHomePollIntervalMs = 5000;
+    bool m_smartHomeSensorOnlyWelcomeEnabled = false;
+    int m_smartHomeWelcomeCooldownMinutes = 30;
+    int m_smartHomeRoomAbsenceGraceMinutes = 6;
+    int m_smartHomeRequestTimeoutMs = 5000;
     bool m_gestureEnabled = false;
     int m_gestureStabilityMs = 180;
     int m_gestureCooldownMs = 500;

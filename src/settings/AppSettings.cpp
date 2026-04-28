@@ -185,6 +185,35 @@ int clampVisionStaleThresholdMs(int value)
     return std::clamp(value, 100, 10000);
 }
 
+int clampSmartHomePollIntervalMs(int value)
+{
+    return std::clamp(value, 1000, 600000);
+}
+
+int clampSmartHomeRequestTimeoutMs(int value)
+{
+    return std::clamp(value, 500, 60000);
+}
+
+int clampSmartHomeWelcomeCooldownMinutes(int value)
+{
+    return std::clamp(value, 0, 24 * 60);
+}
+
+int clampSmartHomeRoomAbsenceGraceMinutes(int value)
+{
+    return std::clamp(value, 0, 30);
+}
+
+QString normalizeSmartHomeProvider(QString value)
+{
+    value = value.trimmed().toLower();
+    if (value == QStringLiteral("home_assistant")) {
+        return value;
+    }
+    return QStringLiteral("home_assistant");
+}
+
 int clampGestureCooldownMs(int value)
 {
     return std::clamp(value, 100, 5000);
@@ -356,6 +385,26 @@ bool AppSettings::load()
     m_visionContextAlwaysOn = parsed.value("visionContextAlwaysOn", false);
     m_visionObjectsMinConfidence = clampVisionConfidence(parsed.value("visionObjectsMinConfidence", 0.60), 0.60);
     m_visionGesturesMinConfidence = clampVisionConfidence(parsed.value("visionGesturesMinConfidence", 0.70), 0.70);
+    if (parsed.contains("smart_home") && parsed.at("smart_home").is_object()) {
+        const auto smartHome = parsed.at("smart_home");
+        m_smartHomeEnabled = smartHome.value("enabled", m_smartHomeEnabled);
+        m_smartHomeProvider = normalizeSmartHomeProvider(QString::fromStdString(smartHome.value("provider", m_smartHomeProvider.toStdString())));
+        m_smartHomePresenceEntityId = QString::fromStdString(smartHome.value("presence_entity_id", m_smartHomePresenceEntityId.toStdString())).trimmed();
+        m_smartHomeLightEntityId = QString::fromStdString(smartHome.value("light_entity_id", m_smartHomeLightEntityId.toStdString())).trimmed();
+        m_smartHomePollIntervalMs = clampSmartHomePollIntervalMs(smartHome.value("poll_interval_ms", m_smartHomePollIntervalMs));
+        m_smartHomeSensorOnlyWelcomeEnabled = smartHome.value("sensor_only_welcome_enabled", m_smartHomeSensorOnlyWelcomeEnabled);
+        m_smartHomeWelcomeCooldownMinutes = clampSmartHomeWelcomeCooldownMinutes(smartHome.value("welcome_cooldown_minutes", m_smartHomeWelcomeCooldownMinutes));
+        m_smartHomeRoomAbsenceGraceMinutes = clampSmartHomeRoomAbsenceGraceMinutes(smartHome.value("room_absence_grace_minutes", m_smartHomeRoomAbsenceGraceMinutes));
+        m_smartHomeRequestTimeoutMs = clampSmartHomeRequestTimeoutMs(smartHome.value("request_timeout_ms", m_smartHomeRequestTimeoutMs));
+        if (smartHome.contains("home_assistant") && smartHome.at("home_assistant").is_object()) {
+            const auto homeAssistant = smartHome.at("home_assistant");
+            m_smartHomeHomeAssistantBaseUrl = QString::fromStdString(homeAssistant.value("base_url", m_smartHomeHomeAssistantBaseUrl.toStdString())).trimmed();
+            m_smartHomeHomeAssistantTokenEnvVar = QString::fromStdString(homeAssistant.value("token_env_var", m_smartHomeHomeAssistantTokenEnvVar.toStdString())).trimmed();
+            if (m_smartHomeHomeAssistantTokenEnvVar.isEmpty()) {
+                m_smartHomeHomeAssistantTokenEnvVar = QStringLiteral("VAXIL_HOME_ASSISTANT_TOKEN");
+            }
+        }
+    }
     m_gestureEnabled = parsed.value("gestureEnabled", false);
     m_gestureStabilityMs = clampGestureStabilityMs(parsed.value("gestureStabilityMs", 180));
     m_gestureCooldownMs = clampGestureCooldownMs(parsed.value("gestureCooldownMs", 500));
@@ -519,6 +568,21 @@ bool AppSettings::save() const
         {"visionContextAlwaysOn", m_visionContextAlwaysOn},
         {"visionObjectsMinConfidence", m_visionObjectsMinConfidence},
         {"visionGesturesMinConfidence", m_visionGesturesMinConfidence},
+        {"smart_home", {
+            {"enabled", m_smartHomeEnabled},
+            {"provider", m_smartHomeProvider.toStdString()},
+            {"home_assistant", {
+                {"base_url", m_smartHomeHomeAssistantBaseUrl.toStdString()},
+                {"token_env_var", m_smartHomeHomeAssistantTokenEnvVar.toStdString()}
+            }},
+            {"presence_entity_id", m_smartHomePresenceEntityId.toStdString()},
+            {"light_entity_id", m_smartHomeLightEntityId.toStdString()},
+            {"poll_interval_ms", m_smartHomePollIntervalMs},
+            {"sensor_only_welcome_enabled", m_smartHomeSensorOnlyWelcomeEnabled},
+            {"welcome_cooldown_minutes", m_smartHomeWelcomeCooldownMinutes},
+            {"room_absence_grace_minutes", m_smartHomeRoomAbsenceGraceMinutes},
+            {"request_timeout_ms", m_smartHomeRequestTimeoutMs}
+        }},
         {"gestureEnabled", m_gestureEnabled},
         {"gestureStabilityMs", m_gestureStabilityMs},
         {"gestureCooldownMs", m_gestureCooldownMs},
@@ -765,6 +829,74 @@ double AppSettings::visionGesturesMinConfidence() const { return m_visionGesture
 void AppSettings::setVisionGesturesMinConfidence(double confidence)
 {
     m_visionGesturesMinConfidence = clampVisionConfidence(confidence, 0.70);
+    emit settingsChanged();
+}
+bool AppSettings::smartHomeEnabled() const { return m_smartHomeEnabled; }
+void AppSettings::setSmartHomeEnabled(bool enabled)
+{
+    m_smartHomeEnabled = enabled;
+    emit settingsChanged();
+}
+QString AppSettings::smartHomeProvider() const { return m_smartHomeProvider; }
+void AppSettings::setSmartHomeProvider(const QString &provider)
+{
+    m_smartHomeProvider = normalizeSmartHomeProvider(provider);
+    emit settingsChanged();
+}
+QString AppSettings::smartHomeHomeAssistantBaseUrl() const { return m_smartHomeHomeAssistantBaseUrl; }
+void AppSettings::setSmartHomeHomeAssistantBaseUrl(const QString &baseUrl)
+{
+    m_smartHomeHomeAssistantBaseUrl = baseUrl.trimmed();
+    emit settingsChanged();
+}
+QString AppSettings::smartHomeHomeAssistantTokenEnvVar() const { return m_smartHomeHomeAssistantTokenEnvVar; }
+void AppSettings::setSmartHomeHomeAssistantTokenEnvVar(const QString &envVar)
+{
+    m_smartHomeHomeAssistantTokenEnvVar = envVar.trimmed().isEmpty()
+        ? QStringLiteral("VAXIL_HOME_ASSISTANT_TOKEN")
+        : envVar.trimmed();
+    emit settingsChanged();
+}
+QString AppSettings::smartHomePresenceEntityId() const { return m_smartHomePresenceEntityId; }
+void AppSettings::setSmartHomePresenceEntityId(const QString &entityId)
+{
+    m_smartHomePresenceEntityId = entityId.trimmed();
+    emit settingsChanged();
+}
+QString AppSettings::smartHomeLightEntityId() const { return m_smartHomeLightEntityId; }
+void AppSettings::setSmartHomeLightEntityId(const QString &entityId)
+{
+    m_smartHomeLightEntityId = entityId.trimmed();
+    emit settingsChanged();
+}
+int AppSettings::smartHomePollIntervalMs() const { return m_smartHomePollIntervalMs; }
+void AppSettings::setSmartHomePollIntervalMs(int intervalMs)
+{
+    m_smartHomePollIntervalMs = clampSmartHomePollIntervalMs(intervalMs);
+    emit settingsChanged();
+}
+bool AppSettings::smartHomeSensorOnlyWelcomeEnabled() const { return m_smartHomeSensorOnlyWelcomeEnabled; }
+void AppSettings::setSmartHomeSensorOnlyWelcomeEnabled(bool enabled)
+{
+    m_smartHomeSensorOnlyWelcomeEnabled = enabled;
+    emit settingsChanged();
+}
+int AppSettings::smartHomeWelcomeCooldownMinutes() const { return m_smartHomeWelcomeCooldownMinutes; }
+void AppSettings::setSmartHomeWelcomeCooldownMinutes(int minutes)
+{
+    m_smartHomeWelcomeCooldownMinutes = clampSmartHomeWelcomeCooldownMinutes(minutes);
+    emit settingsChanged();
+}
+int AppSettings::smartHomeRoomAbsenceGraceMinutes() const { return m_smartHomeRoomAbsenceGraceMinutes; }
+void AppSettings::setSmartHomeRoomAbsenceGraceMinutes(int minutes)
+{
+    m_smartHomeRoomAbsenceGraceMinutes = clampSmartHomeRoomAbsenceGraceMinutes(minutes);
+    emit settingsChanged();
+}
+int AppSettings::smartHomeRequestTimeoutMs() const { return m_smartHomeRequestTimeoutMs; }
+void AppSettings::setSmartHomeRequestTimeoutMs(int timeoutMs)
+{
+    m_smartHomeRequestTimeoutMs = clampSmartHomeRequestTimeoutMs(timeoutMs);
     emit settingsChanged();
 }
 bool AppSettings::gestureEnabled() const { return m_gestureEnabled; }

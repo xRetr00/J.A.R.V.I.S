@@ -58,6 +58,12 @@ private:
     ToolExecutionResult executeComputerOpenUrl(const ToolExecutionRequest &request);
     ToolExecutionResult executeComputerWriteFile(const ToolExecutionRequest &request);
     ToolExecutionResult executeComputerSetTimer(const ToolExecutionRequest &request);
+    ToolExecutionResult executeSmartHomeGetRoomStatus(const ToolExecutionRequest &request);
+    ToolExecutionResult executeSmartHomeGetLightStatus(const ToolExecutionRequest &request);
+    ToolExecutionResult executeSmartHomeTurnLightOn(const ToolExecutionRequest &request);
+    ToolExecutionResult executeSmartHomeTurnLightOff(const ToolExecutionRequest &request);
+    ToolExecutionResult executeSmartHomeSetLightBrightness(const ToolExecutionRequest &request);
+    ToolExecutionResult executeSmartHomeSetLightColor(const ToolExecutionRequest &request);
     ToolExecutionResult executeSkillList(const ToolExecutionRequest &request);
     ToolExecutionResult executeSkillInstall(const ToolExecutionRequest &request);
     ToolExecutionResult executeSkillCreate(const ToolExecutionRequest &request);

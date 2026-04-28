@@ -1,6 +1,7 @@
 #include "core/AssistantBehaviorPolicy.h"
 
 #include <algorithm>
+#include <optional>
 
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -45,6 +46,8 @@ bool containsWholeWordOrPhraseAny(const QString &input, const QStringList &needl
     }
     return false;
 }
+
+std::optional<AgentTask> smartHomeTaskForInput(const QString &input);
 
 bool isProfileMemory(const MemoryRecord &record)
 {
@@ -91,6 +94,12 @@ int riskScoreForTool(const QString &toolName)
         || toolName == QStringLiteral("computer_open_url")
         || toolName == QStringLiteral("browser_open")) {
         return 72;
+    }
+    if (toolName == QStringLiteral("turn_light_on")
+        || toolName == QStringLiteral("turn_light_off")
+        || toolName == QStringLiteral("set_light_brightness")
+        || toolName == QStringLiteral("set_light_color")) {
+        return 58;
     }
     if (toolName == QStringLiteral("memory_delete")) {
         return 70;
@@ -162,6 +171,13 @@ bool isExplicitStateChangingRequest(const QString &input)
         QStringLiteral("delete"),
         QStringLiteral("remove"),
         QStringLiteral("set a timer"),
+        QStringLiteral("turn on"),
+        QStringLiteral("turn off"),
+        QStringLiteral("switch on"),
+        QStringLiteral("switch off"),
+        QStringLiteral("set light"),
+        QStringLiteral("set the light"),
+        QStringLiteral("make the light"),
         QStringLiteral("remember"),
         QStringLiteral("forget")
     });
@@ -200,6 +216,13 @@ QString reasonForTool(const QString &toolName)
     }
     if (toolName == QStringLiteral("memory_search") || toolName == QStringLiteral("memory_write")) {
         return QStringLiteral("Use memory as structured assistant continuity, not just a fact store.");
+    }
+    if (toolName.startsWith(QStringLiteral("turn_light_"))
+        || toolName == QStringLiteral("set_light_brightness")
+        || toolName == QStringLiteral("set_light_color")
+        || toolName == QStringLiteral("get_room_status")
+        || toolName == QStringLiteral("get_light_status")) {
+        return QStringLiteral("Use the smart-home adapter instead of device-specific logic.");
     }
     return QStringLiteral("Tool selected by capability fit.");
 }
@@ -317,6 +340,21 @@ int affordanceScoreForTool(const QString &input, IntentType intent, const AgentT
     if (containsAny(lowered, {QStringLiteral("timer"), QStringLiteral("remind")})) {
         if (toolName == QStringLiteral("computer_set_timer")) {
             score += 135;
+        }
+    }
+
+    const bool smartHomeRequest = smartHomeTaskForInput(userRequest).has_value();
+    if (smartHomeRequest) {
+        const std::optional<AgentTask> requestedTask = smartHomeTaskForInput(userRequest);
+        if (requestedTask.has_value() && toolName == requestedTask->type) {
+            score += 240;
+        } else if (toolName == QStringLiteral("get_room_status")
+                   || toolName == QStringLiteral("get_light_status")
+                   || toolName == QStringLiteral("turn_light_on")
+                   || toolName == QStringLiteral("turn_light_off")
+                   || toolName == QStringLiteral("set_light_brightness")
+                   || toolName == QStringLiteral("set_light_color")) {
+            score += 60;
         }
     }
 
@@ -507,6 +545,130 @@ bool isSpecificContinuationRequest(const QString &input)
         QStringLiteral("summarize the results")
     });
 }
+
+std::optional<int> smartHomeBrightnessPercent(const QString &input)
+{
+    const QRegularExpression percentPattern(QStringLiteral("(\\d{1,3})\\s*%"));
+    const QRegularExpressionMatch percentMatch = percentPattern.match(input);
+    if (percentMatch.hasMatch()) {
+        return std::clamp(percentMatch.captured(1).toInt(), 1, 100);
+    }
+
+    const QRegularExpression brightnessPattern(QStringLiteral("brightness\\D+(\\d{1,3})"));
+    const QRegularExpressionMatch brightnessMatch = brightnessPattern.match(input);
+    if (brightnessMatch.hasMatch()) {
+        return std::clamp(brightnessMatch.captured(1).toInt(), 1, 100);
+    }
+    return std::nullopt;
+}
+
+std::optional<QString> smartHomeColorName(const QString &input)
+{
+    static const QStringList colors{
+        QStringLiteral("warm"),
+        QStringLiteral("white"),
+        QStringLiteral("red"),
+        QStringLiteral("blue")
+    };
+    for (const QString &color : colors) {
+        if (containsWholeWordOrPhrase(input, color)) {
+            return color;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<AgentTask> smartHomeTaskForInput(const QString &input)
+{
+    const QString lowered = normalizedText(input);
+    if (lowered.isEmpty()) {
+        return std::nullopt;
+    }
+
+    const bool mentionsLight = containsWholeWordOrPhraseAny(lowered, {
+        QStringLiteral("light"),
+        QStringLiteral("lamp"),
+        QStringLiteral("smart light"),
+        QStringLiteral("smart lamp")
+    });
+    const bool mentionsRoom = containsWholeWordOrPhraseAny(lowered, {
+        QStringLiteral("room"),
+        QStringLiteral("occupied"),
+        QStringLiteral("occupancy"),
+        QStringLiteral("presence"),
+        QStringLiteral("anyone in the room"),
+        QStringLiteral("somebody in the room"),
+        QStringLiteral("someone in the room"),
+        QStringLiteral("smart room")
+    });
+
+    AgentTask task;
+    task.priority = 90;
+
+    if (mentionsLight) {
+        if (containsWholeWordOrPhraseAny(lowered, {
+                QStringLiteral("turn on"),
+                QStringLiteral("switch on"),
+                QStringLiteral("light on"),
+                QStringLiteral("lamp on")
+            })) {
+            task.type = QStringLiteral("turn_light_on");
+            return task;
+        }
+        if (containsWholeWordOrPhraseAny(lowered, {
+                QStringLiteral("turn off"),
+                QStringLiteral("switch off"),
+                QStringLiteral("light off"),
+                QStringLiteral("lamp off")
+            })) {
+            task.type = QStringLiteral("turn_light_off");
+            return task;
+        }
+        if (lowered.contains(QStringLiteral("brightness"))) {
+            const std::optional<int> brightness = smartHomeBrightnessPercent(lowered);
+            if (brightness.has_value()) {
+                task.type = QStringLiteral("set_light_brightness");
+                task.args.insert(QStringLiteral("brightness_percent"), *brightness);
+                return task;
+            }
+        }
+        if (containsWholeWordOrPhraseAny(lowered, {QStringLiteral("make"), QStringLiteral("set"), QStringLiteral("turn")})
+            || lowered.contains(QStringLiteral("color"))) {
+            const std::optional<QString> color = smartHomeColorName(lowered);
+            if (color.has_value()) {
+                task.type = QStringLiteral("set_light_color");
+                task.args.insert(QStringLiteral("color"), *color);
+                return task;
+            }
+        }
+        if (containsWholeWordOrPhraseAny(lowered, {
+                QStringLiteral("is the light on"),
+                QStringLiteral("is the lamp on"),
+                QStringLiteral("light status"),
+                QStringLiteral("lamp status"),
+                QStringLiteral("smart light status")
+            })) {
+            task.type = QStringLiteral("get_light_status");
+            return task;
+        }
+    }
+
+    if (mentionsRoom && containsWholeWordOrPhraseAny(lowered, {
+            QStringLiteral("is there anyone in the room"),
+            QStringLiteral("is anyone in the room"),
+            QStringLiteral("is someone in the room"),
+            QStringLiteral("is somebody in the room"),
+            QStringLiteral("is the room occupied"),
+            QStringLiteral("room occupied"),
+            QStringLiteral("smart room status"),
+            QStringLiteral("room status")
+        })) {
+        task.type = QStringLiteral("get_room_status");
+        return task;
+    }
+
+    return std::nullopt;
+}
 }
 
 InputRouteDecision AssistantBehaviorPolicy::decideRoute(const InputRouterContext &context) const
@@ -558,6 +720,14 @@ InputRouteDecision AssistantBehaviorPolicy::decideRoute(const InputRouterContext
         decision.kind = InputRouteKind::BackgroundTasks;
         decision.tasks = context.backgroundTasks;
         decision.message = context.backgroundSpokenMessage;
+        return decision;
+    }
+
+    if (const std::optional<AgentTask> smartHomeTask = smartHomeTaskForInput(context.rawInput);
+        smartHomeTask.has_value()) {
+        decision.kind = InputRouteKind::BackgroundTasks;
+        decision.tasks = {*smartHomeTask};
+        decision.status = QStringLiteral("Smart room task queued");
         return decision;
     }
 

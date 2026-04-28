@@ -33,6 +33,12 @@ QList<PermissionCapabilityInfo> capabilityRegistry()
             QStringLiteral("Network Grounding"),
             QStringLiteral("Fetch or search online sources for grounded context."),
             QStringLiteral("route_execution")
+        },
+        {
+            QStringLiteral("smart_home_control"),
+            QStringLiteral("Smart Home Control"),
+            QStringLiteral("Control configured smart-room devices through approved adapters."),
+            QStringLiteral("route_execution")
         }
     };
 }
@@ -52,7 +58,11 @@ QList<ToolPermissionRule> registry()
         {QStringLiteral("skill_create"), QStringLiteral("skill_management"), QStringLiteral("route_execution"), QStringLiteral("tool_permission_registry.v1")},
         {QStringLiteral("web_search"), QStringLiteral("network_grounding"), QStringLiteral("route_execution"), QStringLiteral("tool_permission_registry.v1")},
         {QStringLiteral("web_fetch"), QStringLiteral("network_grounding"), QStringLiteral("route_execution"), QStringLiteral("tool_permission_registry.v1")},
-        {QStringLiteral("browser_fetch_text"), QStringLiteral("network_grounding"), QStringLiteral("route_execution"), QStringLiteral("tool_permission_registry.v1")}
+        {QStringLiteral("browser_fetch_text"), QStringLiteral("network_grounding"), QStringLiteral("route_execution"), QStringLiteral("tool_permission_registry.v1")},
+        {QStringLiteral("turn_light_on"), QStringLiteral("smart_home_control"), QStringLiteral("route_execution"), QStringLiteral("tool_permission_registry.v1")},
+        {QStringLiteral("turn_light_off"), QStringLiteral("smart_home_control"), QStringLiteral("route_execution"), QStringLiteral("tool_permission_registry.v1")},
+        {QStringLiteral("set_light_brightness"), QStringLiteral("smart_home_control"), QStringLiteral("route_execution"), QStringLiteral("tool_permission_registry.v1")},
+        {QStringLiteral("set_light_color"), QStringLiteral("smart_home_control"), QStringLiteral("route_execution"), QStringLiteral("tool_permission_registry.v1")}
     };
 }
 }

@@ -368,6 +368,10 @@ set(JARVIS_SOURCES
     src/platform/PlatformRuntime.cpp
     src/python/PythonRuntimeManager.cpp
     src/settings/AppSettings.cpp
+    src/smart_home/HomeAssistantSmartHomeAdapter.cpp
+    src/smart_home/SmartHomeRuntime.cpp
+    src/smart_home/SmartRoomBehaviorPolicy.cpp
+    src/smart_home/SmartRoomStateMachine.cpp
     src/settings/IdentityProfileService.cpp
     src/skills/SkillStore.cpp
     src/stt/WhisperSttEngine.cpp
@@ -549,6 +553,12 @@ set(JARVIS_HEADERS
     src/platform/PlatformRuntime.h
     src/python/PythonRuntimeManager.h
     src/settings/AppSettings.h
+    src/smart_home/HomeAssistantSmartHomeAdapter.h
+    src/smart_home/SmartHomePorts.h
+    src/smart_home/SmartHomeRuntime.h
+    src/smart_home/SmartHomeTypes.h
+    src/smart_home/SmartRoomBehaviorPolicy.h
+    src/smart_home/SmartRoomStateMachine.h
     src/settings/IdentityProfileService.h
     src/skills/SkillStore.h
     src/stt/WhisperSttEngine.h
@@ -1495,6 +1505,42 @@ if(JARVIS_BUILD_TESTS)
     add_test(NAME jarvis_settings_tests COMMAND jarvis_settings_tests)
     set_tests_properties(jarvis_settings_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
     jarvis_copy_optional_runtime_libraries(jarvis_settings_tests)
+
+    qt_add_executable(jarvis_smart_home_settings_tests
+        tests/SmartHomeSettingsTests.cpp
+        src/core/PermissionOverrideSettings.cpp
+        src/core/ToolPermissionRegistry.cpp
+        src/settings/AppSettings.cpp
+    )
+
+    target_include_directories(jarvis_smart_home_settings_tests PRIVATE src)
+    target_link_libraries(jarvis_smart_home_settings_tests
+        PRIVATE
+            Qt6::Core
+            Qt6::Test
+            nlohmann_json::nlohmann_json
+    )
+
+    add_test(NAME jarvis_smart_home_settings_tests COMMAND jarvis_smart_home_settings_tests)
+    set_tests_properties(jarvis_smart_home_settings_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_smart_home_settings_tests)
+
+    qt_add_executable(jarvis_smart_room_state_machine_tests
+        tests/SmartRoomStateMachineTests.cpp
+        src/smart_home/SmartRoomBehaviorPolicy.cpp
+        src/smart_home/SmartRoomStateMachine.cpp
+    )
+
+    target_include_directories(jarvis_smart_room_state_machine_tests PRIVATE src)
+    target_link_libraries(jarvis_smart_room_state_machine_tests
+        PRIVATE
+            Qt6::Core
+            Qt6::Test
+    )
+
+    add_test(NAME jarvis_smart_room_state_machine_tests COMMAND jarvis_smart_room_state_machine_tests)
+    set_tests_properties(jarvis_smart_room_state_machine_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_smart_room_state_machine_tests)
 
     qt_add_executable(jarvis_cooldown_tests
         tests/CooldownEngineTests.cpp

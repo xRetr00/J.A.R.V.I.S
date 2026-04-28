@@ -27,6 +27,7 @@ private slots:
     void emitsConfirmationOutcomeEvent();
     void appliesUserPermissionOverrides();
     void decidesRouteFromPolicyContext();
+    void routesSmartHomeSpeechToBackgroundTools();
     void routesHighConfidenceToolIntentToAgent();
     void acceptsExplicitConfirmationReply();
     void recognizesRejectionReply();
@@ -285,6 +286,7 @@ void AssistantBehaviorPolicyTests::exposesPermissionCapabilitiesForSettingsUi()
         capabilityIds.insert(capability.capabilityId);
     }
     QVERIFY(capabilityIds.contains(QStringLiteral("network_grounding")));
+    QVERIFY(capabilityIds.contains(QStringLiteral("smart_home_control")));
 }
 
 void AssistantBehaviorPolicyTests::emitsConfirmationOutcomeEvent()
@@ -378,6 +380,25 @@ void AssistantBehaviorPolicyTests::decidesRouteFromPolicyContext()
     QCOMPARE(decision.kind, InputRouteKind::BackgroundTasks);
     QCOMPARE(decision.tasks.size(), 1);
     QCOMPARE(decision.tasks.first().type, QStringLiteral("web_search"));
+}
+
+void AssistantBehaviorPolicyTests::routesSmartHomeSpeechToBackgroundTools()
+{
+    AssistantBehaviorPolicy policy;
+    InputRouterContext context;
+    context.aiAvailable = true;
+    context.rawInput = QStringLiteral("set light brightness to 30%");
+
+    InputRouteDecision decision = policy.decideRoute(context);
+    QCOMPARE(decision.kind, InputRouteKind::BackgroundTasks);
+    QCOMPARE(decision.tasks.size(), 1);
+    QCOMPARE(decision.tasks.first().type, QStringLiteral("set_light_brightness"));
+    QCOMPARE(decision.tasks.first().args.value(QStringLiteral("brightness_percent")).toInt(), 30);
+
+    context.rawInput = QStringLiteral("is there anyone in the room?");
+    decision = policy.decideRoute(context);
+    QCOMPARE(decision.kind, InputRouteKind::BackgroundTasks);
+    QCOMPARE(decision.tasks.first().type, QStringLiteral("get_room_status"));
 }
 
 void AssistantBehaviorPolicyTests::routesHighConfidenceToolIntentToAgent()
