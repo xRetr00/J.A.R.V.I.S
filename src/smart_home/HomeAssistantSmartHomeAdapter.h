@@ -35,6 +35,9 @@ public:
     static SmartLightSnapshot parseLightState(const QJsonObject &stateObject,
                                               const QString &entityId,
                                               qint64 observedAtMs);
+    static BleIdentitySnapshot parseIdentityState(const QJsonObject &stateObject,
+                                                  const QString &entityId,
+                                                  qint64 observedAtMs);
 
 private:
     QUrl stateUrl(const QString &entityId) const;

@@ -24,6 +24,7 @@ Window {
         { label: "Ollama", value: "ollama" }
     ]
     property bool openRouterSelected: providerCombo.currentValue === "openrouter"
+    property string smartHomeTestMessage: ""
     readonly property string iconRoot: "qrc:/qt/qml/VAXIL/gui/assets/Icons/"
 
     onClosing: function(close) {
@@ -129,6 +130,30 @@ Window {
         braveApiKeyField.text = settingsVm.braveSearchApiKey
         braveValidationMessage = ""
         tracePanelCheck.checked = settingsVm.tracePanelEnabled
+        smartHomeEnabledCheck.checked = settingsVm.smartHomeEnabled
+        smartHomeProviderField.text = settingsVm.smartHomeProvider
+        smartHomeBaseUrlField.text = settingsVm.smartHomeHomeAssistantBaseUrl
+        smartHomeTokenEnvField.text = settingsVm.smartHomeHomeAssistantTokenEnvVar
+        smartHomePresenceEntityField.text = settingsVm.smartHomePresenceEntityId
+        smartHomeLightEntityField.text = settingsVm.smartHomeLightEntityId
+        smartHomeIdentityModeField.text = settingsVm.smartHomeIdentityMode
+        smartHomeIdentityEntityField.text = settingsVm.smartHomeHomeAssistantIdentityEntityId
+        smartHomePollSpin.value = settingsVm.smartHomePollIntervalMs
+        smartHomeRequestTimeoutSpin.value = settingsVm.smartHomeRequestTimeoutMs
+        smartHomeSensorOnlyWelcomeCheck.checked = settingsVm.smartHomeSensorOnlyWelcomeEnabled
+        smartHomeWelcomeCooldownSpin.value = settingsVm.smartHomeWelcomeCooldownMinutes
+        smartHomeRoomGraceSpin.value = settingsVm.smartHomeRoomAbsenceGraceMinutes
+        smartHomeIdentityTimeoutSpin.value = settingsVm.smartHomeIdentityMissingTimeoutMinutes
+        smartHomeBleUuidField.text = settingsVm.smartHomeBleBeaconUuid
+        smartHomeBleMissingSpin.value = settingsVm.smartHomeBleMissingTimeoutMinutes
+        smartHomeBleScanSpin.value = settingsVm.smartHomeBleScanIntervalMs
+        smartHomeBleRssiSpin.value = settingsVm.smartHomeBleRssiThreshold
+        smartHomePersonalWelcomeCheck.checked = settingsVm.smartHomePersonalWelcomeEnabled
+        smartHomeUnknownAlertsCheck.checked = settingsVm.smartHomeUnknownOccupantSpokenAlertsEnabled
+        smartHomePersonalTemplateField.text = settingsVm.smartHomePersonalWelcomeTemplate
+        smartHomePersonalAlertTemplateField.text = settingsVm.smartHomePersonalWelcomeWithAlertTemplate
+        smartHomeUnknownMessageTemplateField.text = settingsVm.smartHomeUnknownOccupantMessageTemplate
+        smartHomeUnknownAlertTemplateField.text = settingsVm.smartHomeUnknownOccupantAlertResponseTemplate
         if (permissionOverridesPanel) {
             permissionOverridesPanel.syncFromBackend()
         }
@@ -1437,6 +1462,134 @@ Window {
                                 }
                             }
                         }
+                    }
+                }
+            }
+
+            JarvisUi.VisionGlassPanel {
+                width: parent.width
+                implicitHeight: smartHomeColumn.implicitHeight + 44
+                radius: 30
+                panelColor: "#161b2124"
+                innerColor: "#1d242b31"
+                outlineColor: "#20ffffff"
+                highlightColor: "#16ffffff"
+                shadowOpacity: 0.22
+
+                ColumnLayout {
+                    id: smartHomeColumn
+                    anchors.fill: parent
+                    anchors.margins: 22
+                    spacing: 12
+
+                    Text {
+                        text: "Smart Room"
+                        color: "#eef7ff"
+                        font.pixelSize: 18
+                        font.weight: Font.DemiBold
+                    }
+
+                    CheckBox { id: smartHomeEnabledCheck; text: "Enable smart-home integration"; checked: settingsVm.smartHomeEnabled }
+
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: 2
+                        columnSpacing: 12
+                        rowSpacing: 10
+
+                        Text { text: "Provider"; color: "#b8c6d8" }
+                        TextField { id: smartHomeProviderField; Layout.fillWidth: true; text: settingsVm.smartHomeProvider }
+                        Text { text: "HA base URL"; color: "#b8c6d8" }
+                        TextField { id: smartHomeBaseUrlField; Layout.fillWidth: true; text: settingsVm.smartHomeHomeAssistantBaseUrl }
+                        Text { text: "HA token env var"; color: "#b8c6d8" }
+                        TextField { id: smartHomeTokenEnvField; Layout.fillWidth: true; text: settingsVm.smartHomeHomeAssistantTokenEnvVar }
+                        Text { text: "Presence entity"; color: "#b8c6d8" }
+                        TextField { id: smartHomePresenceEntityField; Layout.fillWidth: true; text: settingsVm.smartHomePresenceEntityId }
+                        Text { text: "Light entity"; color: "#b8c6d8" }
+                        TextField { id: smartHomeLightEntityField; Layout.fillWidth: true; text: settingsVm.smartHomeLightEntityId }
+                        Text { text: "Identity mode"; color: "#b8c6d8" }
+                        TextField { id: smartHomeIdentityModeField; Layout.fillWidth: true; text: settingsVm.smartHomeIdentityMode }
+                        Text { text: "HA identity entity"; color: "#b8c6d8" }
+                        TextField { id: smartHomeIdentityEntityField; Layout.fillWidth: true; text: settingsVm.smartHomeHomeAssistantIdentityEntityId }
+                        Text { text: "Poll interval ms"; color: "#b8c6d8" }
+                        SpinBox { id: smartHomePollSpin; from: 1000; to: 600000; stepSize: 500; value: settingsVm.smartHomePollIntervalMs }
+                        Text { text: "Request timeout ms"; color: "#b8c6d8" }
+                        SpinBox { id: smartHomeRequestTimeoutSpin; from: 500; to: 60000; stepSize: 500; value: settingsVm.smartHomeRequestTimeoutMs }
+                        Text { text: "Welcome cooldown min"; color: "#b8c6d8" }
+                        SpinBox { id: smartHomeWelcomeCooldownSpin; from: 0; to: 1440; value: settingsVm.smartHomeWelcomeCooldownMinutes }
+                        Text { text: "Room grace min"; color: "#b8c6d8" }
+                        SpinBox { id: smartHomeRoomGraceSpin; from: 0; to: 30; value: settingsVm.smartHomeRoomAbsenceGraceMinutes }
+                        Text { text: "Identity missing timeout min"; color: "#b8c6d8" }
+                        SpinBox { id: smartHomeIdentityTimeoutSpin; from: 1; to: 1440; value: settingsVm.smartHomeIdentityMissingTimeoutMinutes }
+                        Text { text: "BLE beacon UUID"; color: "#b8c6d8" }
+                        TextField { id: smartHomeBleUuidField; Layout.fillWidth: true; text: settingsVm.smartHomeBleBeaconUuid }
+                        Text { text: "BLE missing timeout min"; color: "#b8c6d8" }
+                        SpinBox { id: smartHomeBleMissingSpin; from: 1; to: 1440; value: settingsVm.smartHomeBleMissingTimeoutMinutes }
+                        Text { text: "BLE scan interval ms"; color: "#b8c6d8" }
+                        SpinBox { id: smartHomeBleScanSpin; from: 500; to: 60000; stepSize: 500; value: settingsVm.smartHomeBleScanIntervalMs }
+                        Text { text: "BLE RSSI threshold"; color: "#b8c6d8" }
+                        SpinBox { id: smartHomeBleRssiSpin; from: -127; to: 0; value: settingsVm.smartHomeBleRssiThreshold }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        CheckBox { id: smartHomeSensorOnlyWelcomeCheck; text: "Sensor-only test welcomes"; checked: settingsVm.smartHomeSensorOnlyWelcomeEnabled }
+                        CheckBox { id: smartHomePersonalWelcomeCheck; text: "Personal welcomes"; checked: settingsVm.smartHomePersonalWelcomeEnabled }
+                        CheckBox { id: smartHomeUnknownAlertsCheck; text: "Speak unknown-occupant alerts"; checked: settingsVm.smartHomeUnknownOccupantSpokenAlertsEnabled }
+                    }
+
+                    TextField { id: smartHomePersonalTemplateField; Layout.fillWidth: true; placeholderText: "Personal welcome template"; text: settingsVm.smartHomePersonalWelcomeTemplate }
+                    TextField { id: smartHomePersonalAlertTemplateField; Layout.fillWidth: true; placeholderText: "Personal welcome with alert"; text: settingsVm.smartHomePersonalWelcomeWithAlertTemplate }
+                    TextField { id: smartHomeUnknownMessageTemplateField; Layout.fillWidth: true; placeholderText: "Unknown occupant message"; text: settingsVm.smartHomeUnknownOccupantMessageTemplate }
+                    TextField { id: smartHomeUnknownAlertTemplateField; Layout.fillWidth: true; placeholderText: "Unknown occupant alert response"; text: settingsVm.smartHomeUnknownOccupantAlertResponseTemplate }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Button {
+                            text: "Test Welcome"
+                            onClicked: smartHomeTestMessage = settingsVm.testSmartHomeWelcome()
+                        }
+                        Button {
+                            text: "Test Occupancy Alert"
+                            onClicked: smartHomeTestMessage = settingsVm.testSmartHomeOccupancyAlert()
+                        }
+                        Button {
+                            text: "Save Smart Room"
+                            onClicked: settingsVm.saveSmartHomeSettings(
+                                smartHomeEnabledCheck.checked,
+                                smartHomeProviderField.text,
+                                smartHomeBaseUrlField.text,
+                                smartHomeTokenEnvField.text,
+                                smartHomePresenceEntityField.text,
+                                smartHomeLightEntityField.text,
+                                smartHomeIdentityModeField.text,
+                                smartHomeIdentityEntityField.text,
+                                smartHomePollSpin.value,
+                                smartHomeRequestTimeoutSpin.value,
+                                smartHomeSensorOnlyWelcomeCheck.checked,
+                                smartHomeWelcomeCooldownSpin.value,
+                                smartHomeRoomGraceSpin.value,
+                                smartHomeIdentityTimeoutSpin.value,
+                                smartHomeBleUuidField.text,
+                                smartHomeBleMissingSpin.value,
+                                smartHomeBleScanSpin.value,
+                                smartHomeBleRssiSpin.value,
+                                smartHomePersonalWelcomeCheck.checked,
+                                smartHomeUnknownAlertsCheck.checked,
+                                smartHomePersonalTemplateField.text,
+                                smartHomePersonalAlertTemplateField.text,
+                                smartHomeUnknownMessageTemplateField.text,
+                                smartHomeUnknownAlertTemplateField.text
+                            )
+                        }
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: smartHomeTestMessage
+                        color: "#dbe8f8"
+                        wrapMode: Text.Wrap
+                        visible: smartHomeTestMessage.length > 0
                     }
                 }
             }

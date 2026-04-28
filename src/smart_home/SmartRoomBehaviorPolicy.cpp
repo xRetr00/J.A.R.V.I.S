@@ -34,9 +34,24 @@ SmartWelcomeDecision SmartRoomBehaviorPolicy::evaluateWelcome(const WelcomeInput
             decision.reasonCode = QStringLiteral("welcome.allowed.identity_away_to_in_room");
             decision.message = QStringLiteral("Welcome back.");
             decision.nextLastWelcomeAtMs = nowMs;
+            decision.personal = true;
+            return decision;
+        }
+        if (input.transition.previousState == SmartRoomOccupancyState::HOME_NOT_ROOM
+            && input.transition.returnedFromAway) {
+            decision.allowed = true;
+            decision.reasonCode = QStringLiteral("welcome.allowed.identity_returned_home_then_in_room");
+            decision.message = QStringLiteral("Welcome back.");
+            decision.nextLastWelcomeAtMs = nowMs;
+            decision.personal = true;
             return decision;
         }
         decision.reasonCode = QStringLiteral("welcome.blocked.not_away_to_in_room");
+        return decision;
+    }
+
+    if (input.transition.currentState == SmartRoomOccupancyState::UNKNOWN_OCCUPANT_IN_ROOM) {
+        decision.reasonCode = QStringLiteral("welcome.blocked.unknown_occupant");
         return decision;
     }
 
@@ -50,6 +65,7 @@ SmartWelcomeDecision SmartRoomBehaviorPolicy::evaluateWelcome(const WelcomeInput
             decision.reasonCode = QStringLiteral("welcome.allowed.sensor_only_test");
             decision.message = QStringLiteral("Welcome back.");
             decision.nextLastWelcomeAtMs = nowMs;
+            decision.sensorOnlyTest = true;
             return decision;
         }
         decision.reasonCode = QStringLiteral("welcome.blocked.sensor_only_not_entry");

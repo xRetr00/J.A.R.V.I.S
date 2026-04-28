@@ -532,6 +532,31 @@ QString SettingsViewModel::skillsRoot() const
     return m_backend ? m_backend->skillsRoot() : QString();
 }
 
+bool SettingsViewModel::smartHomeEnabled() const { return m_backend && m_backend->smartHomeEnabled(); }
+QString SettingsViewModel::smartHomeProvider() const { return m_backend ? m_backend->smartHomeProvider() : QStringLiteral("home_assistant"); }
+QString SettingsViewModel::smartHomeHomeAssistantBaseUrl() const { return m_backend ? m_backend->smartHomeHomeAssistantBaseUrl() : QString(); }
+QString SettingsViewModel::smartHomeHomeAssistantTokenEnvVar() const { return m_backend ? m_backend->smartHomeHomeAssistantTokenEnvVar() : QStringLiteral("VAXIL_HOME_ASSISTANT_TOKEN"); }
+QString SettingsViewModel::smartHomePresenceEntityId() const { return m_backend ? m_backend->smartHomePresenceEntityId() : QString(); }
+QString SettingsViewModel::smartHomeLightEntityId() const { return m_backend ? m_backend->smartHomeLightEntityId() : QString(); }
+QString SettingsViewModel::smartHomeIdentityMode() const { return m_backend ? m_backend->smartHomeIdentityMode() : QStringLiteral("none"); }
+QString SettingsViewModel::smartHomeHomeAssistantIdentityEntityId() const { return m_backend ? m_backend->smartHomeHomeAssistantIdentityEntityId() : QString(); }
+int SettingsViewModel::smartHomePollIntervalMs() const { return m_backend ? m_backend->smartHomePollIntervalMs() : 5000; }
+int SettingsViewModel::smartHomeRequestTimeoutMs() const { return m_backend ? m_backend->smartHomeRequestTimeoutMs() : 5000; }
+bool SettingsViewModel::smartHomeSensorOnlyWelcomeEnabled() const { return m_backend && m_backend->smartHomeSensorOnlyWelcomeEnabled(); }
+int SettingsViewModel::smartHomeWelcomeCooldownMinutes() const { return m_backend ? m_backend->smartHomeWelcomeCooldownMinutes() : 30; }
+int SettingsViewModel::smartHomeRoomAbsenceGraceMinutes() const { return m_backend ? m_backend->smartHomeRoomAbsenceGraceMinutes() : 6; }
+int SettingsViewModel::smartHomeIdentityMissingTimeoutMinutes() const { return m_backend ? m_backend->smartHomeIdentityMissingTimeoutMinutes() : 10; }
+QString SettingsViewModel::smartHomeBleBeaconUuid() const { return m_backend ? m_backend->smartHomeBleBeaconUuid() : QString(); }
+int SettingsViewModel::smartHomeBleMissingTimeoutMinutes() const { return m_backend ? m_backend->smartHomeBleMissingTimeoutMinutes() : 10; }
+int SettingsViewModel::smartHomeBleScanIntervalMs() const { return m_backend ? m_backend->smartHomeBleScanIntervalMs() : 1000; }
+int SettingsViewModel::smartHomeBleRssiThreshold() const { return m_backend ? m_backend->smartHomeBleRssiThreshold() : -127; }
+bool SettingsViewModel::smartHomePersonalWelcomeEnabled() const { return m_backend == nullptr || m_backend->smartHomePersonalWelcomeEnabled(); }
+bool SettingsViewModel::smartHomeUnknownOccupantSpokenAlertsEnabled() const { return m_backend == nullptr || m_backend->smartHomeUnknownOccupantSpokenAlertsEnabled(); }
+QString SettingsViewModel::smartHomePersonalWelcomeTemplate() const { return m_backend ? m_backend->smartHomePersonalWelcomeTemplate() : QStringLiteral("Welcome back, {user_name}."); }
+QString SettingsViewModel::smartHomePersonalWelcomeWithAlertTemplate() const { return m_backend ? m_backend->smartHomePersonalWelcomeWithAlertTemplate() : QStringLiteral("Welcome back, {user_name}. Someone entered your room at {event_time}."); }
+QString SettingsViewModel::smartHomeUnknownOccupantMessageTemplate() const { return m_backend ? m_backend->smartHomeUnknownOccupantMessageTemplate() : QStringLiteral("There appears to be someone in the room."); }
+QString SettingsViewModel::smartHomeUnknownOccupantAlertResponseTemplate() const { return m_backend ? m_backend->smartHomeUnknownOccupantAlertResponseTemplate() : QStringLiteral("Someone was detected in your room at {event_time}."); }
+
 QVariantMap SettingsViewModel::evaluateSetupRequirements(const QString &endpoint,
                                                          const QString &modelId,
                                                          const QString &whisperPath,
@@ -873,6 +898,67 @@ QString SettingsViewModel::behaviorLedgerDatabasePath() const
 QString SettingsViewModel::behaviorLedgerNdjsonPath() const
 {
     return m_backend ? m_backend->behaviorLedgerNdjsonPath() : QString();
+}
+
+bool SettingsViewModel::saveSmartHomeSettings(bool enabled,
+                                              const QString &provider,
+                                              const QString &baseUrl,
+                                              const QString &tokenEnvVar,
+                                              const QString &presenceEntityId,
+                                              const QString &lightEntityId,
+                                              const QString &identityMode,
+                                              const QString &identityEntityId,
+                                              int pollIntervalMs,
+                                              int requestTimeoutMs,
+                                              bool sensorOnlyWelcomeEnabled,
+                                              int welcomeCooldownMinutes,
+                                              int roomAbsenceGraceMinutes,
+                                              int identityMissingTimeoutMinutes,
+                                              const QString &bleBeaconUuid,
+                                              int bleMissingTimeoutMinutes,
+                                              int bleScanIntervalMs,
+                                              int bleRssiThreshold,
+                                              bool personalWelcomeEnabled,
+                                              bool unknownOccupantSpokenAlertsEnabled,
+                                              const QString &personalWelcomeTemplate,
+                                              const QString &personalWelcomeWithAlertTemplate,
+                                              const QString &unknownOccupantMessageTemplate,
+                                              const QString &unknownOccupantAlertResponseTemplate)
+{
+    return m_backend && m_backend->saveSmartHomeSettings(enabled,
+                                                         provider,
+                                                         baseUrl,
+                                                         tokenEnvVar,
+                                                         presenceEntityId,
+                                                         lightEntityId,
+                                                         identityMode,
+                                                         identityEntityId,
+                                                         pollIntervalMs,
+                                                         requestTimeoutMs,
+                                                         sensorOnlyWelcomeEnabled,
+                                                         welcomeCooldownMinutes,
+                                                         roomAbsenceGraceMinutes,
+                                                         identityMissingTimeoutMinutes,
+                                                         bleBeaconUuid,
+                                                         bleMissingTimeoutMinutes,
+                                                         bleScanIntervalMs,
+                                                         bleRssiThreshold,
+                                                         personalWelcomeEnabled,
+                                                         unknownOccupantSpokenAlertsEnabled,
+                                                         personalWelcomeTemplate,
+                                                         personalWelcomeWithAlertTemplate,
+                                                         unknownOccupantMessageTemplate,
+                                                         unknownOccupantAlertResponseTemplate);
+}
+
+QString SettingsViewModel::testSmartHomeWelcome() const
+{
+    return m_backend ? m_backend->testSmartHomeWelcome() : QStringLiteral("Welcome back.");
+}
+
+QString SettingsViewModel::testSmartHomeOccupancyAlert() const
+{
+    return m_backend ? m_backend->testSmartHomeOccupancyAlert() : QStringLiteral("Someone was detected in your room.");
 }
 
 void SettingsViewModel::activateFocusMode(int durationMinutes, bool allowCriticalAlerts)

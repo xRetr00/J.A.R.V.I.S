@@ -12,4 +12,5 @@ private:
     SmartRoomOccupancyState m_currentState = SmartRoomOccupancyState::UNKNOWN;
     qint64 m_lastOccupiedAtMs = 0;
     qint64 m_lastIdentityPresentAtMs = 0;
+    bool m_returnedHomeFromAway = false;
 };

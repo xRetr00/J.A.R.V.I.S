@@ -121,6 +121,9 @@ public:
     QString smartHomeHomeAssistantTokenEnvVar() const;
     void setSmartHomeHomeAssistantTokenEnvVar(const QString &envVar);
 
+    QString smartHomeHomeAssistantIdentityEntityId() const;
+    void setSmartHomeHomeAssistantIdentityEntityId(const QString &entityId);
+
     QString smartHomePresenceEntityId() const;
     void setSmartHomePresenceEntityId(const QString &entityId);
 
@@ -135,6 +138,9 @@ public:
 
     int smartHomeBleMissingTimeoutMinutes() const;
     void setSmartHomeBleMissingTimeoutMinutes(int minutes);
+
+    int smartHomeIdentityMissingTimeoutMinutes() const;
+    void setSmartHomeIdentityMissingTimeoutMinutes(int minutes);
 
     int smartHomeBleScanIntervalMs() const;
     void setSmartHomeBleScanIntervalMs(int intervalMs);
@@ -156,6 +162,24 @@ public:
 
     int smartHomeRequestTimeoutMs() const;
     void setSmartHomeRequestTimeoutMs(int timeoutMs);
+
+    bool smartHomePersonalWelcomeEnabled() const;
+    void setSmartHomePersonalWelcomeEnabled(bool enabled);
+
+    bool smartHomeUnknownOccupantSpokenAlertsEnabled() const;
+    void setSmartHomeUnknownOccupantSpokenAlertsEnabled(bool enabled);
+
+    QString smartHomePersonalWelcomeTemplate() const;
+    void setSmartHomePersonalWelcomeTemplate(const QString &value);
+
+    QString smartHomePersonalWelcomeWithAlertTemplate() const;
+    void setSmartHomePersonalWelcomeWithAlertTemplate(const QString &value);
+
+    QString smartHomeUnknownOccupantMessageTemplate() const;
+    void setSmartHomeUnknownOccupantMessageTemplate(const QString &value);
+
+    QString smartHomeUnknownOccupantAlertResponseTemplate() const;
+    void setSmartHomeUnknownOccupantAlertResponseTemplate(const QString &value);
 
     bool gestureEnabled() const;
     void setGestureEnabled(bool enabled);
@@ -378,11 +402,13 @@ private:
     QString m_smartHomeProvider = QStringLiteral("home_assistant");
     QString m_smartHomeHomeAssistantBaseUrl;
     QString m_smartHomeHomeAssistantTokenEnvVar = QStringLiteral("VAXIL_HOME_ASSISTANT_TOKEN");
+    QString m_smartHomeHomeAssistantIdentityEntityId;
     QString m_smartHomePresenceEntityId;
     QString m_smartHomeLightEntityId;
-    QString m_smartHomeIdentityMode;
+    QString m_smartHomeIdentityMode = QStringLiteral("none");
     QString m_smartHomeBleBeaconUuid;
     int m_smartHomeBleMissingTimeoutMinutes = 10;
+    int m_smartHomeIdentityMissingTimeoutMinutes = 10;
     int m_smartHomeBleScanIntervalMs = 1000;
     int m_smartHomeBleRssiThreshold = -127;
     int m_smartHomePollIntervalMs = 5000;
@@ -390,6 +416,12 @@ private:
     int m_smartHomeWelcomeCooldownMinutes = 30;
     int m_smartHomeRoomAbsenceGraceMinutes = 6;
     int m_smartHomeRequestTimeoutMs = 5000;
+    bool m_smartHomePersonalWelcomeEnabled = true;
+    bool m_smartHomeUnknownOccupantSpokenAlertsEnabled = true;
+    QString m_smartHomePersonalWelcomeTemplate = QStringLiteral("Welcome back, {user_name}.");
+    QString m_smartHomePersonalWelcomeWithAlertTemplate = QStringLiteral("Welcome back, {user_name}. Someone entered your room at {event_time}.");
+    QString m_smartHomeUnknownOccupantMessageTemplate = QStringLiteral("There appears to be someone in the room.");
+    QString m_smartHomeUnknownOccupantAlertResponseTemplate = QStringLiteral("Someone was detected in your room at {event_time}.");
     bool m_gestureEnabled = false;
     int m_gestureStabilityMs = 180;
     int m_gestureCooldownMs = 500;

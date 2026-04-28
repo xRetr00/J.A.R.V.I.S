@@ -582,6 +582,7 @@ SmartHomeConfig smartHomeConfigFromSettings(const AppSettings *settings)
     config.provider = settings->smartHomeProvider();
     config.homeAssistantBaseUrl = settings->smartHomeHomeAssistantBaseUrl();
     config.homeAssistantTokenEnvVar = settings->smartHomeHomeAssistantTokenEnvVar();
+    config.homeAssistantIdentityEntityId = settings->smartHomeHomeAssistantIdentityEntityId();
     config.presenceEntityId = settings->smartHomePresenceEntityId();
     config.lightEntityId = settings->smartHomeLightEntityId();
     config.identityMode = settings->smartHomeIdentityMode();
@@ -591,6 +592,7 @@ SmartHomeConfig smartHomeConfigFromSettings(const AppSettings *settings)
     config.welcomeCooldownMinutes = settings->smartHomeWelcomeCooldownMinutes();
     config.roomAbsenceGraceMinutes = settings->smartHomeRoomAbsenceGraceMinutes();
     config.requestTimeoutMs = settings->smartHomeRequestTimeoutMs();
+    config.identityMissingTimeoutMinutes = settings->smartHomeIdentityMissingTimeoutMinutes();
     config.bleAwayTimeoutMinutes = settings->smartHomeBleMissingTimeoutMinutes();
     config.bleScanIntervalMs = settings->smartHomeBleScanIntervalMs();
     config.bleRssiThreshold = settings->smartHomeBleRssiThreshold();
@@ -601,6 +603,15 @@ QString roomStatusSummary(const SmartHomeSnapshot &snapshot)
 {
     if (!snapshot.success || !snapshot.presence.available) {
         return QStringLiteral("Smart room is unavailable.");
+    }
+    if (snapshot.roomState == SmartRoomOccupancyState::UNKNOWN_OCCUPANT_IN_ROOM || snapshot.unknownOccupant.active) {
+        return QStringLiteral("Yes, someone appears to be in the room, but your phone is not detected as home.");
+    }
+    if (snapshot.roomState == SmartRoomOccupancyState::IN_ROOM) {
+        return QStringLiteral("Yes, your phone is home and the room sensor is occupied.");
+    }
+    if (snapshot.roomState == SmartRoomOccupancyState::HOME_NOT_ROOM) {
+        return QStringLiteral("Your phone is home, but the room sensor is not occupied.");
     }
     QString text = snapshot.presence.occupied
         ? QStringLiteral("The room is occupied.")
@@ -662,7 +673,15 @@ QJsonObject snapshotPayload(const SmartHomeSnapshot &snapshot)
         {QStringLiteral("identity_available"), snapshot.identity.has_value() ? snapshot.identity->available : false},
         {QStringLiteral("identity_present"), snapshot.identity.has_value() ? snapshot.identity->present : false},
         {QStringLiteral("identity_source"), snapshot.identity.has_value() ? snapshot.identity->source : QString{}},
+        {QStringLiteral("identity_entity_id"), snapshot.identity.has_value() ? snapshot.identity->entityId : QString{}},
+        {QStringLiteral("identity_state"), snapshot.identity.has_value() ? snapshot.identity->rawState : QString{}},
+        {QStringLiteral("identity_stale"), snapshot.identity.has_value() ? snapshot.identity->stale : true},
         {QStringLiteral("identity_rssi"), snapshot.identity.has_value() ? snapshot.identity->rssi : 0},
+        {QStringLiteral("unknown_occupant_active"), snapshot.unknownOccupant.active},
+        {QStringLiteral("unknown_occupant_first_detected_at_utc_ms"), snapshot.unknownOccupant.firstDetectedAtUtcMs},
+        {QStringLiteral("unknown_occupant_last_seen_at_utc_ms"), snapshot.unknownOccupant.lastSeenAtUtcMs},
+        {QStringLiteral("unknown_occupant_acknowledged"), snapshot.unknownOccupant.acknowledged},
+        {QStringLiteral("unknown_occupant_reason_code"), snapshot.unknownOccupant.reasonCode},
         {QStringLiteral("room_state"), smartRoomOccupancyStateName(snapshot.roomState)},
         {QStringLiteral("room_reason"), snapshot.roomReasonCode},
         {QStringLiteral("http_status"), snapshot.httpStatus},
@@ -674,6 +693,7 @@ SmartHomeSnapshot mergeRuntimeIdentitySnapshot(SmartHomeSnapshot snapshot)
 {
     const SmartHomeSnapshot runtimeSnapshot = SmartHomeRuntime::latestSharedSnapshot();
     snapshot.identity = runtimeSnapshot.identity;
+    snapshot.unknownOccupant = runtimeSnapshot.unknownOccupant;
     if (!runtimeSnapshot.roomReasonCode.isEmpty()) {
         snapshot.roomState = runtimeSnapshot.roomState;
         snapshot.roomReasonCode = runtimeSnapshot.roomReasonCode;

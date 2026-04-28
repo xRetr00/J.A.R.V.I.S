@@ -96,6 +96,7 @@
 #include "memory/MemoryStore.h"
 #include "settings/AppSettings.h"
 #include "settings/IdentityProfileService.h"
+#include "smart_home/LocalSmartHomeIntentRouter.h"
 #include "smart_home/SmartHomeRuntime.h"
 #include "skills/SkillStore.h"
 #include "stt/RuntimeSpeechRecognizer.h"
@@ -1477,7 +1478,8 @@ AssistantController::AssistantController(
     m_localResponseEngine = new LocalResponseEngine(this);
     m_taskDispatcher = new TaskDispatcher(m_loggingService, this);
     m_toolWorker = new ToolWorker(backgroundAllowedRoots(), m_loggingService, m_settings);
-    m_smartHomeRuntime = new SmartHomeRuntime(m_settings, m_loggingService, this);
+    m_localSmartHomeIntentRouter = new LocalSmartHomeIntentRouter(m_settings, m_loggingService, this);
+    m_smartHomeRuntime = new SmartHomeRuntime(m_settings, m_identityProfileService, m_loggingService, this);
     m_browserBookmarksMonitor = new BrowserBookmarksMonitor(this);
     m_calendarIcsMonitor = new CalendarIcsMonitor(this);
     m_connectorSnapshotMonitor = new ConnectorSnapshotMonitor(m_settings, m_loggingService, this);
@@ -2807,6 +2809,24 @@ void AssistantController::submitText(const QString &text)
             .arg(routedInput.left(240)));
     }
     m_memoryPolicyHandler->processUserTurn(trimmed, effectiveInput);
+
+    if (!(wakeDetected && routedInput.isEmpty()) && m_localSmartHomeIntentRouter != nullptr) {
+        const QString smartHomeInput = routedInput.trimmed().isEmpty() ? trimmed : routedInput;
+        const bool handled = m_localSmartHomeIntentRouter->handle(
+            smartHomeInput,
+            [this](const LocalSmartHomeRouteResult &result) {
+                const QString response = result.response.trimmed().isEmpty()
+                    ? QStringLiteral("Smart room is unavailable.")
+                    : result.response.trimmed();
+                const QString status = result.status.trimmed().isEmpty()
+                    ? QStringLiteral("Smart room")
+                    : result.status.trimmed();
+                deliverLocalResponse(response, status, true);
+            });
+        if (handled) {
+            return;
+        }
+    }
 
     AgentTask deterministicTask;
     QString deterministicSpoken;

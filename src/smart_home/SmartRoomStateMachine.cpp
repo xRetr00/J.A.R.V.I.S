@@ -25,6 +25,8 @@ QString smartRoomOccupancyStateName(SmartRoomOccupancyState state)
         return QStringLiteral("IN_ROOM");
     case SmartRoomOccupancyState::ROOM_OCCUPIED_SENSOR_ONLY:
         return QStringLiteral("ROOM_OCCUPIED_SENSOR_ONLY");
+    case SmartRoomOccupancyState::UNKNOWN_OCCUPANT_IN_ROOM:
+        return QStringLiteral("UNKNOWN_OCCUPANT_IN_ROOM");
     case SmartRoomOccupancyState::UNKNOWN:
     default:
         return QStringLiteral("UNKNOWN");
@@ -47,36 +49,53 @@ SmartRoomTransition SmartRoomStateMachine::evaluate(const SmartRoomStateMachineI
     }
 
     const bool identityAvailable = input.identity.has_value() && input.identity->available && !input.identity->stale;
+    transition.identityAvailable = identityAvailable;
     if (identityAvailable && input.identity->present) {
         m_lastIdentityPresentAtMs = nowMs;
         transition.phonePresent = true;
     }
 
-    const int awayTimeoutMinutes = std::max(1, input.config.bleAwayTimeoutMinutes);
+    const int configuredIdentityTimeout = input.config.identityMissingTimeoutMinutes > 0
+        ? input.config.identityMissingTimeoutMinutes
+        : input.config.bleAwayTimeoutMinutes;
+    const int awayTimeoutMinutes = std::max(1, configuredIdentityTimeout);
     const int absenceGraceMinutes = std::clamp(input.config.roomAbsenceGraceMinutes, 0, 30);
 
     if (identityAvailable) {
         if (input.identity->present) {
+            const bool justReturnedFromAway = previous == SmartRoomOccupancyState::AWAY;
+            if (justReturnedFromAway) {
+                m_returnedHomeFromAway = true;
+            }
             m_currentState = roomOccupied
                 ? SmartRoomOccupancyState::IN_ROOM
                 : SmartRoomOccupancyState::HOME_NOT_ROOM;
+            transition.returnedFromAway = justReturnedFromAway
+                || (m_returnedHomeFromAway && m_currentState == SmartRoomOccupancyState::IN_ROOM);
             transition.reasonCode = roomOccupied
                 ? QStringLiteral("smart_room.identity_and_sensor_present")
                 : QStringLiteral("smart_room.identity_present_sensor_clear");
+            if (m_currentState == SmartRoomOccupancyState::IN_ROOM) {
+                m_returnedHomeFromAway = false;
+            }
         } else {
             const qint64 missingFromMs = input.identity->observedAtMs > 0
                 ? input.identity->observedAtMs
                 : m_lastIdentityPresentAtMs;
             transition.bleMissingMs = positiveElapsed(missingFromMs, nowMs);
-            if (transition.bleMissingMs >= awayTimeoutMinutes * kMinuteMs) {
+            if (roomOccupied) {
+                m_currentState = SmartRoomOccupancyState::UNKNOWN_OCCUPANT_IN_ROOM;
+                transition.reasonCode = QStringLiteral("smart_room.unknown_occupant_identity_absent");
+                transition.unknownOccupant = true;
+            } else if (transition.bleMissingMs >= awayTimeoutMinutes * kMinuteMs) {
                 m_currentState = SmartRoomOccupancyState::AWAY;
                 transition.reasonCode = QStringLiteral("smart_room.identity_absent_timeout");
-            } else if (roomOccupied) {
-                m_currentState = SmartRoomOccupancyState::ROOM_OCCUPIED_SENSOR_ONLY;
-                transition.reasonCode = QStringLiteral("smart_room.sensor_occupied_identity_missing_grace");
             } else {
                 m_currentState = SmartRoomOccupancyState::UNKNOWN;
                 transition.reasonCode = QStringLiteral("smart_room.identity_missing_pending_timeout");
+            }
+            if (m_currentState == SmartRoomOccupancyState::AWAY) {
+                m_returnedHomeFromAway = false;
             }
         }
     } else if (presenceAvailable) {

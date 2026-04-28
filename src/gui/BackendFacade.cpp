@@ -38,6 +38,7 @@
 #include "platform/PlatformRuntime.h"
 #include "settings/AppSettings.h"
 #include "settings/IdentityProfileService.h"
+#include "smart_home/SmartHomeRuntime.h"
 #include "tools/ToolManager.h"
 #include "tts/TtsVoiceProfilePolicy.h"
 
@@ -1240,6 +1241,78 @@ void BackendFacade::logOrbRendererStatus(const QString &eventName, const QVarian
     m_loggingService->infoFor(QStringLiteral("orb_render"), message);
 }
 
+bool BackendFacade::saveSmartHomeSettings(bool enabled,
+                                          const QString &provider,
+                                          const QString &baseUrl,
+                                          const QString &tokenEnvVar,
+                                          const QString &presenceEntityId,
+                                          const QString &lightEntityId,
+                                          const QString &identityMode,
+                                          const QString &identityEntityId,
+                                          int pollIntervalMs,
+                                          int requestTimeoutMs,
+                                          bool sensorOnlyWelcomeEnabled,
+                                          int welcomeCooldownMinutes,
+                                          int roomAbsenceGraceMinutes,
+                                          int identityMissingTimeoutMinutes,
+                                          const QString &bleBeaconUuid,
+                                          int bleMissingTimeoutMinutes,
+                                          int bleScanIntervalMs,
+                                          int bleRssiThreshold,
+                                          bool personalWelcomeEnabled,
+                                          bool unknownOccupantSpokenAlertsEnabled,
+                                          const QString &personalWelcomeTemplate,
+                                          const QString &personalWelcomeWithAlertTemplate,
+                                          const QString &unknownOccupantMessageTemplate,
+                                          const QString &unknownOccupantAlertResponseTemplate)
+{
+    if (!m_settings) {
+        return false;
+    }
+    m_settings->setSmartHomeEnabled(enabled);
+    m_settings->setSmartHomeProvider(provider);
+    m_settings->setSmartHomeHomeAssistantBaseUrl(baseUrl);
+    m_settings->setSmartHomeHomeAssistantTokenEnvVar(tokenEnvVar);
+    m_settings->setSmartHomePresenceEntityId(presenceEntityId);
+    m_settings->setSmartHomeLightEntityId(lightEntityId);
+    m_settings->setSmartHomeIdentityMode(identityMode);
+    m_settings->setSmartHomeHomeAssistantIdentityEntityId(identityEntityId);
+    m_settings->setSmartHomePollIntervalMs(pollIntervalMs);
+    m_settings->setSmartHomeRequestTimeoutMs(requestTimeoutMs);
+    m_settings->setSmartHomeSensorOnlyWelcomeEnabled(sensorOnlyWelcomeEnabled);
+    m_settings->setSmartHomeWelcomeCooldownMinutes(welcomeCooldownMinutes);
+    m_settings->setSmartHomeRoomAbsenceGraceMinutes(roomAbsenceGraceMinutes);
+    m_settings->setSmartHomeIdentityMissingTimeoutMinutes(identityMissingTimeoutMinutes);
+    m_settings->setSmartHomeBleBeaconUuid(bleBeaconUuid);
+    m_settings->setSmartHomeBleMissingTimeoutMinutes(bleMissingTimeoutMinutes);
+    m_settings->setSmartHomeBleScanIntervalMs(bleScanIntervalMs);
+    m_settings->setSmartHomeBleRssiThreshold(bleRssiThreshold);
+    m_settings->setSmartHomePersonalWelcomeEnabled(personalWelcomeEnabled);
+    m_settings->setSmartHomeUnknownOccupantSpokenAlertsEnabled(unknownOccupantSpokenAlertsEnabled);
+    m_settings->setSmartHomePersonalWelcomeTemplate(personalWelcomeTemplate);
+    m_settings->setSmartHomePersonalWelcomeWithAlertTemplate(personalWelcomeWithAlertTemplate);
+    m_settings->setSmartHomeUnknownOccupantMessageTemplate(unknownOccupantMessageTemplate);
+    m_settings->setSmartHomeUnknownOccupantAlertResponseTemplate(unknownOccupantAlertResponseTemplate);
+    const bool saved = m_settings->save();
+    emit settingsChanged();
+    return saved;
+}
+
+QString BackendFacade::testSmartHomeWelcome() const
+{
+    SmartRoomUnknownOccupantEvent emptyEvent;
+    return SmartHomeRuntime::renderTemplate(smartHomePersonalWelcomeTemplate(), userName(), emptyEvent);
+}
+
+QString BackendFacade::testSmartHomeOccupancyAlert() const
+{
+    SmartRoomUnknownOccupantEvent event;
+    event.hasEvent = true;
+    event.firstDetectedAtUtcMs = QDateTime::currentDateTimeUtc().toMSecsSinceEpoch();
+    event.lastSeenAtUtcMs = event.firstDetectedAtUtcMs;
+    return SmartHomeRuntime::renderTemplate(smartHomeUnknownOccupantAlertResponseTemplate(), userName(), event);
+}
+
 QString BackendFacade::stateName() const { return m_assistantController->stateName(); }
 QString BackendFacade::transcript() const { return m_assistantController->transcript(); }
 QString BackendFacade::responseText() const { return m_assistantController->responseText(); }
@@ -1652,6 +1725,30 @@ QString BackendFacade::platformName() const { return PlatformRuntime::platformLa
 QVariantMap BackendFacade::platformCapabilities() const { return platformCapabilitiesToVariantMap(PlatformRuntime::currentCapabilities()); }
 bool BackendFacade::supportsAutoToolInstall() const { return PlatformRuntime::currentCapabilities().supportsAutoToolInstall; }
 QString BackendFacade::skillsRoot() const { return QDir::currentPath() + QStringLiteral("/skills"); }
+bool BackendFacade::smartHomeEnabled() const { return m_settings && m_settings->smartHomeEnabled(); }
+QString BackendFacade::smartHomeProvider() const { return m_settings ? m_settings->smartHomeProvider() : QStringLiteral("home_assistant"); }
+QString BackendFacade::smartHomeHomeAssistantBaseUrl() const { return m_settings ? m_settings->smartHomeHomeAssistantBaseUrl() : QString(); }
+QString BackendFacade::smartHomeHomeAssistantTokenEnvVar() const { return m_settings ? m_settings->smartHomeHomeAssistantTokenEnvVar() : QStringLiteral("VAXIL_HOME_ASSISTANT_TOKEN"); }
+QString BackendFacade::smartHomePresenceEntityId() const { return m_settings ? m_settings->smartHomePresenceEntityId() : QString(); }
+QString BackendFacade::smartHomeLightEntityId() const { return m_settings ? m_settings->smartHomeLightEntityId() : QString(); }
+QString BackendFacade::smartHomeIdentityMode() const { return m_settings ? m_settings->smartHomeIdentityMode() : QStringLiteral("none"); }
+QString BackendFacade::smartHomeHomeAssistantIdentityEntityId() const { return m_settings ? m_settings->smartHomeHomeAssistantIdentityEntityId() : QString(); }
+int BackendFacade::smartHomePollIntervalMs() const { return m_settings ? m_settings->smartHomePollIntervalMs() : 5000; }
+int BackendFacade::smartHomeRequestTimeoutMs() const { return m_settings ? m_settings->smartHomeRequestTimeoutMs() : 5000; }
+bool BackendFacade::smartHomeSensorOnlyWelcomeEnabled() const { return m_settings && m_settings->smartHomeSensorOnlyWelcomeEnabled(); }
+int BackendFacade::smartHomeWelcomeCooldownMinutes() const { return m_settings ? m_settings->smartHomeWelcomeCooldownMinutes() : 30; }
+int BackendFacade::smartHomeRoomAbsenceGraceMinutes() const { return m_settings ? m_settings->smartHomeRoomAbsenceGraceMinutes() : 6; }
+int BackendFacade::smartHomeIdentityMissingTimeoutMinutes() const { return m_settings ? m_settings->smartHomeIdentityMissingTimeoutMinutes() : 10; }
+QString BackendFacade::smartHomeBleBeaconUuid() const { return m_settings ? m_settings->smartHomeBleBeaconUuid() : QString(); }
+int BackendFacade::smartHomeBleMissingTimeoutMinutes() const { return m_settings ? m_settings->smartHomeBleMissingTimeoutMinutes() : 10; }
+int BackendFacade::smartHomeBleScanIntervalMs() const { return m_settings ? m_settings->smartHomeBleScanIntervalMs() : 1000; }
+int BackendFacade::smartHomeBleRssiThreshold() const { return m_settings ? m_settings->smartHomeBleRssiThreshold() : -127; }
+bool BackendFacade::smartHomePersonalWelcomeEnabled() const { return m_settings == nullptr || m_settings->smartHomePersonalWelcomeEnabled(); }
+bool BackendFacade::smartHomeUnknownOccupantSpokenAlertsEnabled() const { return m_settings == nullptr || m_settings->smartHomeUnknownOccupantSpokenAlertsEnabled(); }
+QString BackendFacade::smartHomePersonalWelcomeTemplate() const { return m_settings ? m_settings->smartHomePersonalWelcomeTemplate() : QStringLiteral("Welcome back, {user_name}."); }
+QString BackendFacade::smartHomePersonalWelcomeWithAlertTemplate() const { return m_settings ? m_settings->smartHomePersonalWelcomeWithAlertTemplate() : QStringLiteral("Welcome back, {user_name}. Someone entered your room at {event_time}."); }
+QString BackendFacade::smartHomeUnknownOccupantMessageTemplate() const { return m_settings ? m_settings->smartHomeUnknownOccupantMessageTemplate() : QStringLiteral("There appears to be someone in the room."); }
+QString BackendFacade::smartHomeUnknownOccupantAlertResponseTemplate() const { return m_settings ? m_settings->smartHomeUnknownOccupantAlertResponseTemplate() : QStringLiteral("Someone was detected in your room at {event_time}."); }
 void BackendFacade::toggleOverlay() { m_overlayController->toggleOverlay(); }
 void BackendFacade::setUiMode(const QString &mode)
 {

@@ -371,6 +371,7 @@ set(JARVIS_SOURCES
     src/settings/AppSettings.cpp
     src/smart_home/DesktopBleIdentityAdapter.cpp
     src/smart_home/HomeAssistantSmartHomeAdapter.cpp
+    src/smart_home/LocalSmartHomeIntentRouter.cpp
     src/smart_home/SmartHomeRuntime.cpp
     src/smart_home/SmartRoomBehaviorPolicy.cpp
     src/smart_home/SmartRoomStateMachine.cpp
@@ -557,6 +558,7 @@ set(JARVIS_HEADERS
     src/settings/AppSettings.h
     src/smart_home/DesktopBleIdentityAdapter.h
     src/smart_home/HomeAssistantSmartHomeAdapter.h
+    src/smart_home/LocalSmartHomeIntentRouter.h
     src/smart_home/SmartHomePorts.h
     src/smart_home/SmartHomeRuntime.h
     src/smart_home/SmartHomeTypes.h
@@ -1545,6 +1547,38 @@ if(JARVIS_BUILD_TESTS)
     add_test(NAME jarvis_desktop_ble_identity_adapter_tests COMMAND jarvis_desktop_ble_identity_adapter_tests)
     set_tests_properties(jarvis_desktop_ble_identity_adapter_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
     jarvis_copy_optional_runtime_libraries(jarvis_desktop_ble_identity_adapter_tests)
+
+    qt_add_executable(jarvis_home_assistant_smart_home_adapter_tests
+        tests/HomeAssistantSmartHomeAdapterTests.cpp
+        src/smart_home/HomeAssistantSmartHomeAdapter.cpp
+    )
+
+    target_include_directories(jarvis_home_assistant_smart_home_adapter_tests PRIVATE src)
+    target_link_libraries(jarvis_home_assistant_smart_home_adapter_tests
+        PRIVATE
+            Qt6::Core
+            Qt6::Network
+            Qt6::Test
+    )
+
+    add_test(NAME jarvis_home_assistant_smart_home_adapter_tests COMMAND jarvis_home_assistant_smart_home_adapter_tests)
+    set_tests_properties(jarvis_home_assistant_smart_home_adapter_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_home_assistant_smart_home_adapter_tests)
+
+    qt_add_executable(jarvis_local_smart_home_intent_router_tests
+        tests/LocalSmartHomeIntentRouterTests.cpp
+    )
+
+    target_include_directories(jarvis_local_smart_home_intent_router_tests PRIVATE src)
+    target_link_libraries(jarvis_local_smart_home_intent_router_tests
+        PRIVATE
+            Qt6::Core
+            Qt6::Test
+    )
+
+    add_test(NAME jarvis_local_smart_home_intent_router_tests COMMAND jarvis_local_smart_home_intent_router_tests)
+    set_tests_properties(jarvis_local_smart_home_intent_router_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_local_smart_home_intent_router_tests)
 
     qt_add_executable(jarvis_smart_room_state_machine_tests
         tests/SmartRoomStateMachineTests.cpp

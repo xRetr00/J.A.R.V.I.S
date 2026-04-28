@@ -62,7 +62,9 @@ QList<ToolPermissionRule> registry()
         {QStringLiteral("turn_light_on"), QStringLiteral("smart_home_control"), QStringLiteral("route_execution"), QStringLiteral("tool_permission_registry.v1")},
         {QStringLiteral("turn_light_off"), QStringLiteral("smart_home_control"), QStringLiteral("route_execution"), QStringLiteral("tool_permission_registry.v1")},
         {QStringLiteral("set_light_brightness"), QStringLiteral("smart_home_control"), QStringLiteral("route_execution"), QStringLiteral("tool_permission_registry.v1")},
-        {QStringLiteral("set_light_color"), QStringLiteral("smart_home_control"), QStringLiteral("route_execution"), QStringLiteral("tool_permission_registry.v1")}
+        {QStringLiteral("set_light_color"), QStringLiteral("smart_home_control"), QStringLiteral("route_execution"), QStringLiteral("tool_permission_registry.v1")},
+        {QStringLiteral("get_room_status"), QStringLiteral("smart_home_control"), QStringLiteral("route_execution"), QStringLiteral("tool_permission_registry.v1")},
+        {QStringLiteral("get_light_status"), QStringLiteral("smart_home_control"), QStringLiteral("route_execution"), QStringLiteral("tool_permission_registry.v1")}
     };
 }
 }

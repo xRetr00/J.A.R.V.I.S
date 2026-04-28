@@ -212,6 +212,11 @@ int clampSmartHomeBleMissingTimeoutMinutes(int value)
     return std::clamp(value, 1, 24 * 60);
 }
 
+int clampSmartHomeIdentityMissingTimeoutMinutes(int value)
+{
+    return std::clamp(value, 1, 24 * 60);
+}
+
 int clampSmartHomeBleScanIntervalMs(int value)
 {
     return std::clamp(value, 500, 60000);
@@ -234,10 +239,21 @@ QString normalizeSmartHomeProvider(QString value)
 QString normalizeSmartHomeIdentityMode(QString value)
 {
     value = value.trimmed().toLower();
-    if (value == QStringLiteral("desktop_ble_beacon")) {
+    if (value.isEmpty() || value == QStringLiteral("none")) {
+        return QStringLiteral("none");
+    }
+    if (value == QStringLiteral("desktop_ble_beacon")
+        || value == QStringLiteral("home_assistant_device_tracker")
+        || value == QStringLiteral("espresense")) {
         return value;
     }
-    return {};
+    return QStringLiteral("none");
+}
+
+QString smartHomeTemplateOrDefault(QString value, const QString &fallback)
+{
+    value = value.trimmed();
+    return value.isEmpty() ? fallback : value;
 }
 
 QString normalizeSmartHomeBleBeaconUuid(QString value)
@@ -446,6 +462,9 @@ bool AppSettings::load()
         m_smartHomeIdentityMode = normalizeSmartHomeIdentityMode(QString::fromStdString(smartHome.value("identity_mode", m_smartHomeIdentityMode.toStdString())));
         m_smartHomeBleBeaconUuid = normalizeSmartHomeBleBeaconUuid(QString::fromStdString(smartHome.value("ble_beacon_uuid", m_smartHomeBleBeaconUuid.toStdString())));
         m_smartHomeBleMissingTimeoutMinutes = clampSmartHomeBleMissingTimeoutMinutes(smartHome.value("ble_missing_timeout_minutes", m_smartHomeBleMissingTimeoutMinutes));
+        m_smartHomeIdentityMissingTimeoutMinutes = clampSmartHomeIdentityMissingTimeoutMinutes(
+            smartHome.value("identity_missing_timeout_minutes",
+                            smartHome.value("ble_missing_timeout_minutes", m_smartHomeIdentityMissingTimeoutMinutes)));
         m_smartHomeBleScanIntervalMs = clampSmartHomeBleScanIntervalMs(smartHome.value("ble_scan_interval_ms", m_smartHomeBleScanIntervalMs));
         m_smartHomeBleRssiThreshold = clampSmartHomeBleRssiThreshold(smartHome.value("ble_rssi_threshold", m_smartHomeBleRssiThreshold));
         m_smartHomePollIntervalMs = clampSmartHomePollIntervalMs(smartHome.value("poll_interval_ms", m_smartHomePollIntervalMs));
@@ -453,11 +472,31 @@ bool AppSettings::load()
         m_smartHomeWelcomeCooldownMinutes = clampSmartHomeWelcomeCooldownMinutes(smartHome.value("welcome_cooldown_minutes", m_smartHomeWelcomeCooldownMinutes));
         m_smartHomeRoomAbsenceGraceMinutes = clampSmartHomeRoomAbsenceGraceMinutes(smartHome.value("room_absence_grace_minutes", m_smartHomeRoomAbsenceGraceMinutes));
         m_smartHomeRequestTimeoutMs = clampSmartHomeRequestTimeoutMs(smartHome.value("request_timeout_ms", m_smartHomeRequestTimeoutMs));
+        m_smartHomePersonalWelcomeEnabled = smartHome.value("personal_welcome_enabled", m_smartHomePersonalWelcomeEnabled);
+        m_smartHomeUnknownOccupantSpokenAlertsEnabled = smartHome.value("unknown_occupant_spoken_alerts_enabled",
+                                                                        m_smartHomeUnknownOccupantSpokenAlertsEnabled);
+        if (smartHome.contains("welcome_templates") && smartHome.at("welcome_templates").is_object()) {
+            const auto templates = smartHome.at("welcome_templates");
+            m_smartHomePersonalWelcomeTemplate = smartHomeTemplateOrDefault(
+                QString::fromStdString(templates.value("personal_welcome", m_smartHomePersonalWelcomeTemplate.toStdString())),
+                QStringLiteral("Welcome back, {user_name}."));
+            m_smartHomePersonalWelcomeWithAlertTemplate = smartHomeTemplateOrDefault(
+                QString::fromStdString(templates.value("personal_welcome_with_alert", m_smartHomePersonalWelcomeWithAlertTemplate.toStdString())),
+                QStringLiteral("Welcome back, {user_name}. Someone entered your room at {event_time}."));
+            m_smartHomeUnknownOccupantMessageTemplate = smartHomeTemplateOrDefault(
+                QString::fromStdString(templates.value("unknown_occupant_message", m_smartHomeUnknownOccupantMessageTemplate.toStdString())),
+                QStringLiteral("There appears to be someone in the room."));
+            m_smartHomeUnknownOccupantAlertResponseTemplate = smartHomeTemplateOrDefault(
+                QString::fromStdString(templates.value("unknown_occupant_alert_response", m_smartHomeUnknownOccupantAlertResponseTemplate.toStdString())),
+                QStringLiteral("Someone was detected in your room at {event_time}."));
+        }
         if (smartHome.contains("home_assistant") && smartHome.at("home_assistant").is_object()) {
             const auto homeAssistant = smartHome.at("home_assistant");
             m_smartHomeHomeAssistantBaseUrl = QString::fromStdString(homeAssistant.value("base_url", m_smartHomeHomeAssistantBaseUrl.toStdString())).trimmed();
             m_smartHomeHomeAssistantTokenEnvVar = normalizeSmartHomeTokenEnvVar(
                 QString::fromStdString(homeAssistant.value("token_env_var", m_smartHomeHomeAssistantTokenEnvVar.toStdString())));
+            m_smartHomeHomeAssistantIdentityEntityId =
+                QString::fromStdString(homeAssistant.value("identity_entity_id", m_smartHomeHomeAssistantIdentityEntityId.toStdString())).trimmed();
         }
     }
     m_gestureEnabled = parsed.value("gestureEnabled", false);
@@ -628,20 +667,30 @@ bool AppSettings::save() const
             {"provider", m_smartHomeProvider.toStdString()},
             {"home_assistant", {
                 {"base_url", m_smartHomeHomeAssistantBaseUrl.toStdString()},
-                {"token_env_var", m_smartHomeHomeAssistantTokenEnvVar.toStdString()}
+                {"token_env_var", m_smartHomeHomeAssistantTokenEnvVar.toStdString()},
+                {"identity_entity_id", m_smartHomeHomeAssistantIdentityEntityId.toStdString()}
             }},
             {"presence_entity_id", m_smartHomePresenceEntityId.toStdString()},
             {"light_entity_id", m_smartHomeLightEntityId.toStdString()},
             {"identity_mode", m_smartHomeIdentityMode.toStdString()},
             {"ble_beacon_uuid", m_smartHomeBleBeaconUuid.toStdString()},
             {"ble_missing_timeout_minutes", m_smartHomeBleMissingTimeoutMinutes},
+            {"identity_missing_timeout_minutes", m_smartHomeIdentityMissingTimeoutMinutes},
             {"ble_scan_interval_ms", m_smartHomeBleScanIntervalMs},
             {"ble_rssi_threshold", m_smartHomeBleRssiThreshold},
             {"poll_interval_ms", m_smartHomePollIntervalMs},
             {"sensor_only_welcome_enabled", m_smartHomeSensorOnlyWelcomeEnabled},
             {"welcome_cooldown_minutes", m_smartHomeWelcomeCooldownMinutes},
             {"room_absence_grace_minutes", m_smartHomeRoomAbsenceGraceMinutes},
-            {"request_timeout_ms", m_smartHomeRequestTimeoutMs}
+            {"request_timeout_ms", m_smartHomeRequestTimeoutMs},
+            {"personal_welcome_enabled", m_smartHomePersonalWelcomeEnabled},
+            {"unknown_occupant_spoken_alerts_enabled", m_smartHomeUnknownOccupantSpokenAlertsEnabled},
+            {"welcome_templates", {
+                {"personal_welcome", m_smartHomePersonalWelcomeTemplate.toStdString()},
+                {"personal_welcome_with_alert", m_smartHomePersonalWelcomeWithAlertTemplate.toStdString()},
+                {"unknown_occupant_message", m_smartHomeUnknownOccupantMessageTemplate.toStdString()},
+                {"unknown_occupant_alert_response", m_smartHomeUnknownOccupantAlertResponseTemplate.toStdString()}
+            }}
         }},
         {"gestureEnabled", m_gestureEnabled},
         {"gestureStabilityMs", m_gestureStabilityMs},
@@ -915,6 +964,12 @@ void AppSettings::setSmartHomeHomeAssistantTokenEnvVar(const QString &envVar)
     m_smartHomeHomeAssistantTokenEnvVar = normalizeSmartHomeTokenEnvVar(envVar);
     emit settingsChanged();
 }
+QString AppSettings::smartHomeHomeAssistantIdentityEntityId() const { return m_smartHomeHomeAssistantIdentityEntityId; }
+void AppSettings::setSmartHomeHomeAssistantIdentityEntityId(const QString &entityId)
+{
+    m_smartHomeHomeAssistantIdentityEntityId = entityId.trimmed();
+    emit settingsChanged();
+}
 QString AppSettings::smartHomePresenceEntityId() const { return m_smartHomePresenceEntityId; }
 void AppSettings::setSmartHomePresenceEntityId(const QString &entityId)
 {
@@ -943,6 +998,12 @@ int AppSettings::smartHomeBleMissingTimeoutMinutes() const { return m_smartHomeB
 void AppSettings::setSmartHomeBleMissingTimeoutMinutes(int minutes)
 {
     m_smartHomeBleMissingTimeoutMinutes = clampSmartHomeBleMissingTimeoutMinutes(minutes);
+    emit settingsChanged();
+}
+int AppSettings::smartHomeIdentityMissingTimeoutMinutes() const { return m_smartHomeIdentityMissingTimeoutMinutes; }
+void AppSettings::setSmartHomeIdentityMissingTimeoutMinutes(int minutes)
+{
+    m_smartHomeIdentityMissingTimeoutMinutes = clampSmartHomeIdentityMissingTimeoutMinutes(minutes);
     emit settingsChanged();
 }
 int AppSettings::smartHomeBleScanIntervalMs() const { return m_smartHomeBleScanIntervalMs; }
@@ -985,6 +1046,44 @@ int AppSettings::smartHomeRequestTimeoutMs() const { return m_smartHomeRequestTi
 void AppSettings::setSmartHomeRequestTimeoutMs(int timeoutMs)
 {
     m_smartHomeRequestTimeoutMs = clampSmartHomeRequestTimeoutMs(timeoutMs);
+    emit settingsChanged();
+}
+bool AppSettings::smartHomePersonalWelcomeEnabled() const { return m_smartHomePersonalWelcomeEnabled; }
+void AppSettings::setSmartHomePersonalWelcomeEnabled(bool enabled)
+{
+    m_smartHomePersonalWelcomeEnabled = enabled;
+    emit settingsChanged();
+}
+bool AppSettings::smartHomeUnknownOccupantSpokenAlertsEnabled() const { return m_smartHomeUnknownOccupantSpokenAlertsEnabled; }
+void AppSettings::setSmartHomeUnknownOccupantSpokenAlertsEnabled(bool enabled)
+{
+    m_smartHomeUnknownOccupantSpokenAlertsEnabled = enabled;
+    emit settingsChanged();
+}
+QString AppSettings::smartHomePersonalWelcomeTemplate() const { return m_smartHomePersonalWelcomeTemplate; }
+void AppSettings::setSmartHomePersonalWelcomeTemplate(const QString &value)
+{
+    m_smartHomePersonalWelcomeTemplate = smartHomeTemplateOrDefault(value, QStringLiteral("Welcome back, {user_name}."));
+    emit settingsChanged();
+}
+QString AppSettings::smartHomePersonalWelcomeWithAlertTemplate() const { return m_smartHomePersonalWelcomeWithAlertTemplate; }
+void AppSettings::setSmartHomePersonalWelcomeWithAlertTemplate(const QString &value)
+{
+    m_smartHomePersonalWelcomeWithAlertTemplate =
+        smartHomeTemplateOrDefault(value, QStringLiteral("Welcome back, {user_name}. Someone entered your room at {event_time}."));
+    emit settingsChanged();
+}
+QString AppSettings::smartHomeUnknownOccupantMessageTemplate() const { return m_smartHomeUnknownOccupantMessageTemplate; }
+void AppSettings::setSmartHomeUnknownOccupantMessageTemplate(const QString &value)
+{
+    m_smartHomeUnknownOccupantMessageTemplate = smartHomeTemplateOrDefault(value, QStringLiteral("There appears to be someone in the room."));
+    emit settingsChanged();
+}
+QString AppSettings::smartHomeUnknownOccupantAlertResponseTemplate() const { return m_smartHomeUnknownOccupantAlertResponseTemplate; }
+void AppSettings::setSmartHomeUnknownOccupantAlertResponseTemplate(const QString &value)
+{
+    m_smartHomeUnknownOccupantAlertResponseTemplate =
+        smartHomeTemplateOrDefault(value, QStringLiteral("Someone was detected in your room at {event_time}."));
     emit settingsChanged();
 }
 bool AppSettings::gestureEnabled() const { return m_gestureEnabled; }

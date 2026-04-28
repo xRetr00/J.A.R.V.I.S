@@ -12,6 +12,8 @@ private slots:
     void smartHomeTokenEnvVarRejectsSecretValues();
     void smartHomeBleIdentityDefaultsAreSafe();
     void smartHomeBleIdentitySettersNormalizeAndClamp();
+    void smartHomeHomeAssistantIdentitySettersNormalizeAndClamp();
+    void smartHomeWelcomeTemplateDefaultsAndOverrides();
 };
 
 void SmartHomeSettingsTests::smartHomeDefaultsAreSafe()
@@ -54,9 +56,10 @@ void SmartHomeSettingsTests::smartHomeBleIdentityDefaultsAreSafe()
 {
     AppSettings settings;
 
-    QVERIFY(settings.smartHomeIdentityMode().isEmpty());
+    QCOMPARE(settings.smartHomeIdentityMode(), QStringLiteral("none"));
     QVERIFY(settings.smartHomeBleBeaconUuid().isEmpty());
     QCOMPARE(settings.smartHomeBleMissingTimeoutMinutes(), 10);
+    QCOMPARE(settings.smartHomeIdentityMissingTimeoutMinutes(), 10);
     QCOMPARE(settings.smartHomeBleScanIntervalMs(), 1000);
     QCOMPARE(settings.smartHomeBleRssiThreshold(), -127);
 }
@@ -84,6 +87,52 @@ void SmartHomeSettingsTests::smartHomeBleIdentitySettersNormalizeAndClamp()
     QCOMPARE(settings.smartHomeBleMissingTimeoutMinutes(), 1440);
     QCOMPARE(settings.smartHomeBleScanIntervalMs(), 60000);
     QCOMPARE(settings.smartHomeBleRssiThreshold(), 0);
+}
+
+void SmartHomeSettingsTests::smartHomeHomeAssistantIdentitySettersNormalizeAndClamp()
+{
+    AppSettings settings;
+
+    settings.setSmartHomeIdentityMode(QStringLiteral(" HOME_ASSISTANT_DEVICE_TRACKER "));
+    settings.setSmartHomeHomeAssistantIdentityEntityId(QStringLiteral(" device_tracker.my_iphone "));
+    settings.setSmartHomeIdentityMissingTimeoutMinutes(0);
+
+    QCOMPARE(settings.smartHomeIdentityMode(), QStringLiteral("home_assistant_device_tracker"));
+    QCOMPARE(settings.smartHomeHomeAssistantIdentityEntityId(), QStringLiteral("device_tracker.my_iphone"));
+    QCOMPARE(settings.smartHomeIdentityMissingTimeoutMinutes(), 1);
+
+    settings.setSmartHomeIdentityMode(QStringLiteral("espresense"));
+    settings.setSmartHomeIdentityMissingTimeoutMinutes(9999);
+
+    QCOMPARE(settings.smartHomeIdentityMode(), QStringLiteral("espresense"));
+    QCOMPARE(settings.smartHomeIdentityMissingTimeoutMinutes(), 1440);
+}
+
+void SmartHomeSettingsTests::smartHomeWelcomeTemplateDefaultsAndOverrides()
+{
+    AppSettings settings;
+
+    QCOMPARE(settings.smartHomePersonalWelcomeTemplate(), QStringLiteral("Welcome back, {user_name}."));
+    QCOMPARE(settings.smartHomePersonalWelcomeWithAlertTemplate(),
+             QStringLiteral("Welcome back, {user_name}. Someone entered your room at {event_time}."));
+    QCOMPARE(settings.smartHomeUnknownOccupantMessageTemplate(), QStringLiteral("There appears to be someone in the room."));
+    QCOMPARE(settings.smartHomeUnknownOccupantAlertResponseTemplate(), QStringLiteral("Someone was detected in your room at {event_time}."));
+    QVERIFY(settings.smartHomePersonalWelcomeEnabled());
+    QVERIFY(settings.smartHomeUnknownOccupantSpokenAlertsEnabled());
+
+    settings.setSmartHomePersonalWelcomeTemplate(QStringLiteral("Hi {user_name}"));
+    settings.setSmartHomePersonalWelcomeWithAlertTemplate(QStringLiteral("Hi {user_name}, alert {event_time}"));
+    settings.setSmartHomeUnknownOccupantMessageTemplate(QStringLiteral("Someone is here."));
+    settings.setSmartHomeUnknownOccupantAlertResponseTemplate(QStringLiteral("Detected {event_time}."));
+    settings.setSmartHomePersonalWelcomeEnabled(false);
+    settings.setSmartHomeUnknownOccupantSpokenAlertsEnabled(false);
+
+    QCOMPARE(settings.smartHomePersonalWelcomeTemplate(), QStringLiteral("Hi {user_name}"));
+    QCOMPARE(settings.smartHomePersonalWelcomeWithAlertTemplate(), QStringLiteral("Hi {user_name}, alert {event_time}"));
+    QCOMPARE(settings.smartHomeUnknownOccupantMessageTemplate(), QStringLiteral("Someone is here."));
+    QCOMPARE(settings.smartHomeUnknownOccupantAlertResponseTemplate(), QStringLiteral("Detected {event_time}."));
+    QVERIFY(!settings.smartHomePersonalWelcomeEnabled());
+    QVERIFY(!settings.smartHomeUnknownOccupantSpokenAlertsEnabled());
 }
 
 QTEST_APPLESS_MAIN(SmartHomeSettingsTests)

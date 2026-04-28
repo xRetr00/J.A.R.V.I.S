@@ -112,6 +112,30 @@ class SettingsViewModel : public QObject
     Q_PROPERTY(QVariantMap platformCapabilities READ platformCapabilities NOTIFY settingsChanged)
     Q_PROPERTY(bool supportsAutoToolInstall READ supportsAutoToolInstall NOTIFY settingsChanged)
     Q_PROPERTY(QString skillsRoot READ skillsRoot NOTIFY toolStatusesChanged)
+    Q_PROPERTY(bool smartHomeEnabled READ smartHomeEnabled NOTIFY settingsChanged)
+    Q_PROPERTY(QString smartHomeProvider READ smartHomeProvider NOTIFY settingsChanged)
+    Q_PROPERTY(QString smartHomeHomeAssistantBaseUrl READ smartHomeHomeAssistantBaseUrl NOTIFY settingsChanged)
+    Q_PROPERTY(QString smartHomeHomeAssistantTokenEnvVar READ smartHomeHomeAssistantTokenEnvVar NOTIFY settingsChanged)
+    Q_PROPERTY(QString smartHomePresenceEntityId READ smartHomePresenceEntityId NOTIFY settingsChanged)
+    Q_PROPERTY(QString smartHomeLightEntityId READ smartHomeLightEntityId NOTIFY settingsChanged)
+    Q_PROPERTY(QString smartHomeIdentityMode READ smartHomeIdentityMode NOTIFY settingsChanged)
+    Q_PROPERTY(QString smartHomeHomeAssistantIdentityEntityId READ smartHomeHomeAssistantIdentityEntityId NOTIFY settingsChanged)
+    Q_PROPERTY(int smartHomePollIntervalMs READ smartHomePollIntervalMs NOTIFY settingsChanged)
+    Q_PROPERTY(int smartHomeRequestTimeoutMs READ smartHomeRequestTimeoutMs NOTIFY settingsChanged)
+    Q_PROPERTY(bool smartHomeSensorOnlyWelcomeEnabled READ smartHomeSensorOnlyWelcomeEnabled NOTIFY settingsChanged)
+    Q_PROPERTY(int smartHomeWelcomeCooldownMinutes READ smartHomeWelcomeCooldownMinutes NOTIFY settingsChanged)
+    Q_PROPERTY(int smartHomeRoomAbsenceGraceMinutes READ smartHomeRoomAbsenceGraceMinutes NOTIFY settingsChanged)
+    Q_PROPERTY(int smartHomeIdentityMissingTimeoutMinutes READ smartHomeIdentityMissingTimeoutMinutes NOTIFY settingsChanged)
+    Q_PROPERTY(QString smartHomeBleBeaconUuid READ smartHomeBleBeaconUuid NOTIFY settingsChanged)
+    Q_PROPERTY(int smartHomeBleMissingTimeoutMinutes READ smartHomeBleMissingTimeoutMinutes NOTIFY settingsChanged)
+    Q_PROPERTY(int smartHomeBleScanIntervalMs READ smartHomeBleScanIntervalMs NOTIFY settingsChanged)
+    Q_PROPERTY(int smartHomeBleRssiThreshold READ smartHomeBleRssiThreshold NOTIFY settingsChanged)
+    Q_PROPERTY(bool smartHomePersonalWelcomeEnabled READ smartHomePersonalWelcomeEnabled NOTIFY settingsChanged)
+    Q_PROPERTY(bool smartHomeUnknownOccupantSpokenAlertsEnabled READ smartHomeUnknownOccupantSpokenAlertsEnabled NOTIFY settingsChanged)
+    Q_PROPERTY(QString smartHomePersonalWelcomeTemplate READ smartHomePersonalWelcomeTemplate NOTIFY settingsChanged)
+    Q_PROPERTY(QString smartHomePersonalWelcomeWithAlertTemplate READ smartHomePersonalWelcomeWithAlertTemplate NOTIFY settingsChanged)
+    Q_PROPERTY(QString smartHomeUnknownOccupantMessageTemplate READ smartHomeUnknownOccupantMessageTemplate NOTIFY settingsChanged)
+    Q_PROPERTY(QString smartHomeUnknownOccupantAlertResponseTemplate READ smartHomeUnknownOccupantAlertResponseTemplate NOTIFY settingsChanged)
 
 public:
     explicit SettingsViewModel(BackendFacade *backend, QObject *parent = nullptr);
@@ -218,6 +242,30 @@ public:
     QVariantMap platformCapabilities() const;
     bool supportsAutoToolInstall() const;
     QString skillsRoot() const;
+    bool smartHomeEnabled() const;
+    QString smartHomeProvider() const;
+    QString smartHomeHomeAssistantBaseUrl() const;
+    QString smartHomeHomeAssistantTokenEnvVar() const;
+    QString smartHomePresenceEntityId() const;
+    QString smartHomeLightEntityId() const;
+    QString smartHomeIdentityMode() const;
+    QString smartHomeHomeAssistantIdentityEntityId() const;
+    int smartHomePollIntervalMs() const;
+    int smartHomeRequestTimeoutMs() const;
+    bool smartHomeSensorOnlyWelcomeEnabled() const;
+    int smartHomeWelcomeCooldownMinutes() const;
+    int smartHomeRoomAbsenceGraceMinutes() const;
+    int smartHomeIdentityMissingTimeoutMinutes() const;
+    QString smartHomeBleBeaconUuid() const;
+    int smartHomeBleMissingTimeoutMinutes() const;
+    int smartHomeBleScanIntervalMs() const;
+    int smartHomeBleRssiThreshold() const;
+    bool smartHomePersonalWelcomeEnabled() const;
+    bool smartHomeUnknownOccupantSpokenAlertsEnabled() const;
+    QString smartHomePersonalWelcomeTemplate() const;
+    QString smartHomePersonalWelcomeWithAlertTemplate() const;
+    QString smartHomeUnknownOccupantMessageTemplate() const;
+    QString smartHomeUnknownOccupantAlertResponseTemplate() const;
 
     Q_INVOKABLE QVariantMap evaluateSetupRequirements(const QString &endpoint,
                                                       const QString &modelId,
@@ -316,6 +364,32 @@ public:
     Q_INVOKABLE QVariantList recentBehaviorEvents(int limit = 50) const;
     Q_INVOKABLE QString behaviorLedgerDatabasePath() const;
     Q_INVOKABLE QString behaviorLedgerNdjsonPath() const;
+    Q_INVOKABLE bool saveSmartHomeSettings(bool enabled,
+                                           const QString &provider,
+                                           const QString &baseUrl,
+                                           const QString &tokenEnvVar,
+                                           const QString &presenceEntityId,
+                                           const QString &lightEntityId,
+                                           const QString &identityMode,
+                                           const QString &identityEntityId,
+                                           int pollIntervalMs,
+                                           int requestTimeoutMs,
+                                           bool sensorOnlyWelcomeEnabled,
+                                           int welcomeCooldownMinutes,
+                                           int roomAbsenceGraceMinutes,
+                                           int identityMissingTimeoutMinutes,
+                                           const QString &bleBeaconUuid,
+                                           int bleMissingTimeoutMinutes,
+                                           int bleScanIntervalMs,
+                                           int bleRssiThreshold,
+                                           bool personalWelcomeEnabled,
+                                           bool unknownOccupantSpokenAlertsEnabled,
+                                           const QString &personalWelcomeTemplate,
+                                           const QString &personalWelcomeWithAlertTemplate,
+                                           const QString &unknownOccupantMessageTemplate,
+                                           const QString &unknownOccupantAlertResponseTemplate);
+    Q_INVOKABLE QString testSmartHomeWelcome() const;
+    Q_INVOKABLE QString testSmartHomeOccupancyAlert() const;
     Q_INVOKABLE void activateFocusMode(int durationMinutes = 0, bool allowCriticalAlerts = true);
     Q_INVOKABLE void deactivateFocusMode();
     Q_INVOKABLE void setPrivateModeEnabled(bool enabled);

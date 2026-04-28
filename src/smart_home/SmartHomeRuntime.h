@@ -11,6 +11,7 @@
 class AppSettings;
 class DesktopBleIdentityAdapter;
 class HomeAssistantSmartHomeAdapter;
+class IdentityProfileService;
 class LoggingService;
 class QTimer;
 
@@ -19,12 +20,19 @@ class SmartHomeRuntime final : public QObject
     Q_OBJECT
 
 public:
-    SmartHomeRuntime(AppSettings *settings, LoggingService *loggingService, QObject *parent = nullptr);
+    SmartHomeRuntime(AppSettings *settings,
+                     IdentityProfileService *identityProfileService,
+                     LoggingService *loggingService,
+                     QObject *parent = nullptr);
 
     void start();
     void stop();
     SmartHomeSnapshot latestSnapshot() const;
     static SmartHomeSnapshot latestSharedSnapshot();
+    static QString renderTemplate(QString templ,
+                                  const QString &userName,
+                                  const SmartRoomUnknownOccupantEvent &event,
+                                  qint64 fallbackTimeMs = 0);
 
 signals:
     void roomTransitionReady(const SmartRoomTransition &transition);
@@ -39,10 +47,14 @@ private:
     SmartHomeConfig configFromSettings() const;
     void handleSnapshot(const SmartHomeSnapshot &snapshot);
     void reconfigureIdentityAdapter();
+    void updateUnknownOccupant(const SmartRoomTransition &transition, const SmartHomeSnapshot &snapshot);
+    QString welcomeMessageForDecision(const SmartWelcomeDecision &decision);
     void logTransition(const SmartRoomTransition &transition) const;
     void logWelcomeDecision(const SmartWelcomeDecision &decision, const SmartRoomTransition &transition) const;
+    void logUnknownOccupant(const QString &action, const SmartRoomUnknownOccupantEvent &event) const;
 
     AppSettings *m_settings = nullptr;
+    IdentityProfileService *m_identityProfileService = nullptr;
     LoggingService *m_loggingService = nullptr;
     QTimer *m_pollTimer = nullptr;
     HomeAssistantSmartHomeAdapter *m_adapter = nullptr;
@@ -51,6 +63,7 @@ private:
     SmartRoomBehaviorPolicy m_behaviorPolicy;
     SmartHomeConfig m_config;
     SmartHomeSnapshot m_latestSnapshot;
+    SmartRoomUnknownOccupantEvent m_unknownOccupant;
     qint64 m_lastWelcomeAtMs = 0;
     bool m_pollInFlight = false;
 };

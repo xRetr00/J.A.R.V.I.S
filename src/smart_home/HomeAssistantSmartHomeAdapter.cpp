@@ -122,6 +122,14 @@ SmartHomeSnapshot unavailableSnapshot(const SmartHomeConfig &config, const QStri
     snapshot.light.lightId = config.lightEntityId;
     snapshot.presence.source = QStringLiteral("home_assistant");
     snapshot.light.source = QStringLiteral("home_assistant");
+    if (config.identityMode == QStringLiteral("home_assistant_device_tracker")) {
+        BleIdentitySnapshot identity;
+        identity.identityId = config.homeAssistantIdentityEntityId;
+        identity.entityId = config.homeAssistantIdentityEntityId;
+        identity.source = QStringLiteral("home_assistant_device_tracker");
+        identity.stale = true;
+        snapshot.identity = identity;
+    }
     snapshot.presence.stale = true;
     snapshot.light.stale = true;
     return snapshot;
@@ -172,6 +180,12 @@ BlockingHttpResult blockingRequest(const QNetworkRequest &request,
     reply->deleteLater();
     return result;
 }
+
+enum class StateEntityRole {
+    Presence,
+    Light,
+    Identity
+};
 }
 
 HomeAssistantSmartHomeAdapter::HomeAssistantSmartHomeAdapter(const SmartHomeConfig &config, QObject *parent)
@@ -215,7 +229,7 @@ void HomeAssistantSmartHomeAdapter::fetchState(std::function<void(const SmartHom
         callback(*aggregate);
     };
 
-    const auto queueGet = [&](const QString &entityId, bool presence) {
+    const auto queueGet = [&](const QString &entityId, StateEntityRole role) {
         if (entityId.trimmed().isEmpty()) {
             return;
         }
@@ -236,10 +250,12 @@ void HomeAssistantSmartHomeAdapter::fetchState(std::function<void(const SmartHom
             } else {
                 const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
                 if (doc.isObject()) {
-                    if (presence) {
+                    if (role == StateEntityRole::Presence) {
                         aggregate->presence = parsePresenceState(doc.object(), entityId, observedAtMs);
-                    } else {
+                    } else if (role == StateEntityRole::Light) {
                         aggregate->light = parseLightState(doc.object(), entityId, observedAtMs);
+                    } else {
+                        aggregate->identity = parseIdentityState(doc.object(), entityId, observedAtMs);
                     }
                 }
             }
@@ -248,8 +264,11 @@ void HomeAssistantSmartHomeAdapter::fetchState(std::function<void(const SmartHom
         });
     };
 
-    queueGet(m_config.presenceEntityId, true);
-    queueGet(m_config.lightEntityId, false);
+    queueGet(m_config.presenceEntityId, StateEntityRole::Presence);
+    queueGet(m_config.lightEntityId, StateEntityRole::Light);
+    if (m_config.identityMode == QStringLiteral("home_assistant_device_tracker")) {
+        queueGet(m_config.homeAssistantIdentityEntityId, StateEntityRole::Identity);
+    }
     if (*remaining == 0) {
         callback(unavailableSnapshot(m_config,
                                      QStringLiteral("Smart room unavailable"),
@@ -270,7 +289,7 @@ SmartHomeSnapshot HomeAssistantSmartHomeAdapter::fetchStateBlocking()
     const qint64 startedAtMs = QDateTime::currentMSecsSinceEpoch();
     const qint64 observedAtMs = startedAtMs;
 
-    auto fetchEntity = [&](const QString &entityId, bool presence) {
+    auto fetchEntity = [&](const QString &entityId, StateEntityRole role) {
         if (entityId.trimmed().isEmpty()) {
             return;
         }
@@ -289,15 +308,20 @@ SmartHomeSnapshot HomeAssistantSmartHomeAdapter::fetchStateBlocking()
             snapshot.errorKind = QStringLiteral("invalid");
             return;
         }
-        if (presence) {
+        if (role == StateEntityRole::Presence) {
             snapshot.presence = parsePresenceState(doc.object(), entityId, observedAtMs);
-        } else {
+        } else if (role == StateEntityRole::Light) {
             snapshot.light = parseLightState(doc.object(), entityId, observedAtMs);
+        } else {
+            snapshot.identity = parseIdentityState(doc.object(), entityId, observedAtMs);
         }
     };
 
-    fetchEntity(m_config.presenceEntityId, true);
-    fetchEntity(m_config.lightEntityId, false);
+    fetchEntity(m_config.presenceEntityId, StateEntityRole::Presence);
+    fetchEntity(m_config.lightEntityId, StateEntityRole::Light);
+    if (m_config.identityMode == QStringLiteral("home_assistant_device_tracker")) {
+        fetchEntity(m_config.homeAssistantIdentityEntityId, StateEntityRole::Identity);
+    }
     snapshot.latencyMs = std::max<qint64>(0, QDateTime::currentMSecsSinceEpoch() - startedAtMs);
     snapshot.summary = snapshot.success ? QStringLiteral("Smart room state updated") : QStringLiteral("Smart room unavailable");
     return snapshot;
@@ -306,7 +330,68 @@ SmartHomeSnapshot HomeAssistantSmartHomeAdapter::fetchStateBlocking()
 void HomeAssistantSmartHomeAdapter::executeLightCommand(const SmartLightCommand &command,
                                                         std::function<void(const SmartLightCommandResult &)> callback)
 {
-    callback(executeLightCommandBlocking(command));
+    SmartLightCommandResult configResult;
+    QString configError;
+    if (!hasUsableConfig(&configError) || m_config.lightEntityId.trimmed().isEmpty()) {
+        configResult.errorKind = QStringLiteral("config");
+        configResult.summary = QStringLiteral("Smart light unavailable");
+        configResult.detail = configError.isEmpty() ? QStringLiteral("Light entity id is not configured.") : configError;
+        callback(configResult);
+        return;
+    }
+
+    QString service = QStringLiteral("turn_on");
+    QJsonObject body{{QStringLiteral("entity_id"), m_config.lightEntityId}};
+    if (command.action == QStringLiteral("turn_light_off")) {
+        service = QStringLiteral("turn_off");
+    } else if (command.action == QStringLiteral("set_light_brightness")) {
+        body.insert(QStringLiteral("brightness_pct"), std::clamp(command.brightnessPercent, 1, 100));
+    } else if (command.action == QStringLiteral("set_light_color")) {
+        const QString color = command.colorName.trimmed().toLower();
+        if (color == QStringLiteral("warm")) {
+            body.insert(QStringLiteral("color_temp_kelvin"), 2700);
+        } else if (color == QStringLiteral("white")) {
+            body.insert(QStringLiteral("color_temp_kelvin"), 4000);
+        } else if (!color.isEmpty()) {
+            body.insert(QStringLiteral("color_name"), color);
+        }
+    }
+
+    const QByteArray payload = QJsonDocument(body).toJson(QJsonDocument::Compact);
+    const qint64 startedAtMs = QDateTime::currentMSecsSinceEpoch();
+    QNetworkReply *reply = m_network->post(buildRequest(serviceUrl(QStringLiteral("light"), service), true), payload);
+    QTimer::singleShot(std::max(500, m_config.requestTimeoutMs), reply, [reply]() {
+        if (reply->isRunning()) {
+            reply->abort();
+        }
+    });
+    connect(reply, &QNetworkReply::finished, this, [=]() mutable {
+        SmartLightCommandResult result;
+        result.httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        result.latencyMs = std::max<qint64>(0, QDateTime::currentMSecsSinceEpoch() - startedAtMs);
+        result.success = reply->error() == QNetworkReply::NoError && result.httpStatus >= 200 && result.httpStatus < 300;
+        if (!result.success) {
+            result.errorKind = result.httpStatus == 401 || result.httpStatus == 403 ? QStringLiteral("auth") : QStringLiteral("transport");
+            result.summary = QStringLiteral("Smart light command failed");
+            result.detail = reply->errorString();
+        } else if (service == QStringLiteral("turn_off")) {
+            result.summary = QStringLiteral("Light turned off.");
+            result.detail = result.summary;
+        } else if (command.action == QStringLiteral("set_light_brightness")) {
+            result.summary = QStringLiteral("Light brightness set to %1%.").arg(std::clamp(command.brightnessPercent, 1, 100));
+            result.detail = result.summary;
+        } else if (command.action == QStringLiteral("set_light_color")) {
+            result.summary = command.colorName.trimmed().isEmpty()
+                ? QStringLiteral("Light color updated.")
+                : QStringLiteral("Light set to %1.").arg(command.colorName.trimmed().toLower());
+            result.detail = result.summary;
+        } else {
+            result.summary = QStringLiteral("Light turned on.");
+            result.detail = result.summary;
+        }
+        reply->deleteLater();
+        callback(result);
+    });
 }
 
 SmartLightCommandResult HomeAssistantSmartHomeAdapter::executeLightCommandBlocking(const SmartLightCommand &command)
@@ -399,6 +484,23 @@ SmartLightSnapshot HomeAssistantSmartHomeAdapter::parseLightState(const QJsonObj
     snapshot.colorSupported = hasColorSupport(attributes);
     snapshot.colorName = colorNameFromAttributes(attributes);
     snapshot.stale = !snapshot.available;
+    return snapshot;
+}
+
+BleIdentitySnapshot HomeAssistantSmartHomeAdapter::parseIdentityState(const QJsonObject &stateObject,
+                                                                      const QString &entityId,
+                                                                      qint64 observedAtMs)
+{
+    BleIdentitySnapshot snapshot;
+    snapshot.identityId = entityId;
+    snapshot.entityId = entityId;
+    snapshot.source = QStringLiteral("home_assistant_device_tracker");
+    snapshot.observedAtMs = observedAtMs;
+    snapshot.rawState = stateObject.value(QStringLiteral("state")).toString();
+    const QString lowered = snapshot.rawState.trimmed().toLower();
+    snapshot.available = !isUnavailableState(lowered);
+    snapshot.stale = !snapshot.available;
+    snapshot.present = snapshot.available && lowered == QStringLiteral("home");
     return snapshot;
 }
 
