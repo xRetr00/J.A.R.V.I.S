@@ -28,6 +28,7 @@ private slots:
     void appliesUserPermissionOverrides();
     void decidesRouteFromPolicyContext();
     void routesSmartHomeSpeechToBackgroundTools();
+    void routesBleIdentitySpeechToRoomStatusTool();
     void routesHighConfidenceToolIntentToAgent();
     void acceptsExplicitConfirmationReply();
     void recognizesRejectionReply();
@@ -399,6 +400,25 @@ void AssistantBehaviorPolicyTests::routesSmartHomeSpeechToBackgroundTools()
     decision = policy.decideRoute(context);
     QCOMPARE(decision.kind, InputRouteKind::BackgroundTasks);
     QCOMPARE(decision.tasks.first().type, QStringLiteral("get_room_status"));
+}
+
+void AssistantBehaviorPolicyTests::routesBleIdentitySpeechToRoomStatusTool()
+{
+    AssistantBehaviorPolicy policy;
+    InputRouterContext context;
+    context.aiAvailable = true;
+
+    for (const QString &input : {
+             QStringLiteral("am I home?"),
+             QStringLiteral("is my phone detected?"),
+             QStringLiteral("am I in the room?")
+         }) {
+        context.rawInput = input;
+        const InputRouteDecision decision = policy.decideRoute(context);
+        QCOMPARE(decision.kind, InputRouteKind::BackgroundTasks);
+        QCOMPARE(decision.tasks.size(), 1);
+        QCOMPARE(decision.tasks.first().type, QStringLiteral("get_room_status"));
+    }
 }
 
 void AssistantBehaviorPolicyTests::routesHighConfidenceToolIntentToAgent()

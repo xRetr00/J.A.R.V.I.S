@@ -593,6 +593,8 @@ std::optional<AgentTask> smartHomeTaskForInput(const QString &input)
     });
     const bool mentionsRoom = containsWholeWordOrPhraseAny(lowered, {
         QStringLiteral("room"),
+        QStringLiteral("home"),
+        QStringLiteral("phone"),
         QStringLiteral("occupied"),
         QStringLiteral("occupancy"),
         QStringLiteral("presence"),
@@ -604,6 +606,17 @@ std::optional<AgentTask> smartHomeTaskForInput(const QString &input)
 
     AgentTask task;
     task.priority = 90;
+
+    if (containsWholeWordOrPhraseAny(lowered, {
+            QStringLiteral("am i home"),
+            QStringLiteral("is my phone detected"),
+            QStringLiteral("is my phone present"),
+            QStringLiteral("is my phone home"),
+            QStringLiteral("am i in the room")
+        })) {
+        task.type = QStringLiteral("get_room_status");
+        return task;
+    }
 
     if (mentionsLight) {
         if (containsWholeWordOrPhraseAny(lowered, {

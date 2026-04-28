@@ -6,7 +6,9 @@
 #include <QDir>
 #include <QFile>
 #include <QProcessEnvironment>
+#include <QRegularExpression>
 #include <QStandardPaths>
+#include <QUuid>
 #include <QVariantMap>
 
 #include "core/PermissionOverrideSettings.h"
@@ -205,6 +207,21 @@ int clampSmartHomeRoomAbsenceGraceMinutes(int value)
     return std::clamp(value, 0, 30);
 }
 
+int clampSmartHomeBleMissingTimeoutMinutes(int value)
+{
+    return std::clamp(value, 1, 24 * 60);
+}
+
+int clampSmartHomeBleScanIntervalMs(int value)
+{
+    return std::clamp(value, 500, 60000);
+}
+
+int clampSmartHomeBleRssiThreshold(int value)
+{
+    return std::clamp(value, -127, 0);
+}
+
 QString normalizeSmartHomeProvider(QString value)
 {
     value = value.trimmed().toLower();
@@ -212,6 +229,41 @@ QString normalizeSmartHomeProvider(QString value)
         return value;
     }
     return QStringLiteral("home_assistant");
+}
+
+QString normalizeSmartHomeIdentityMode(QString value)
+{
+    value = value.trimmed().toLower();
+    if (value == QStringLiteral("desktop_ble_beacon")) {
+        return value;
+    }
+    return {};
+}
+
+QString normalizeSmartHomeBleBeaconUuid(QString value)
+{
+    value = value.trimmed();
+    if (value.isEmpty()) {
+        return {};
+    }
+    const QUuid parsed(value);
+    if (parsed.isNull()) {
+        return {};
+    }
+    return parsed.toString(QUuid::WithoutBraces).toLower();
+}
+
+QString normalizeSmartHomeTokenEnvVar(QString value)
+{
+    value = value.trimmed();
+    if (value.isEmpty()) {
+        return QStringLiteral("VAXIL_HOME_ASSISTANT_TOKEN");
+    }
+    static const QRegularExpression envNamePattern(QStringLiteral("^[A-Za-z_][A-Za-z0-9_]*$"));
+    if (envNamePattern.match(value).hasMatch()) {
+        return value;
+    }
+    return QStringLiteral("VAXIL_HOME_ASSISTANT_TOKEN");
 }
 
 int clampGestureCooldownMs(int value)
@@ -391,6 +443,11 @@ bool AppSettings::load()
         m_smartHomeProvider = normalizeSmartHomeProvider(QString::fromStdString(smartHome.value("provider", m_smartHomeProvider.toStdString())));
         m_smartHomePresenceEntityId = QString::fromStdString(smartHome.value("presence_entity_id", m_smartHomePresenceEntityId.toStdString())).trimmed();
         m_smartHomeLightEntityId = QString::fromStdString(smartHome.value("light_entity_id", m_smartHomeLightEntityId.toStdString())).trimmed();
+        m_smartHomeIdentityMode = normalizeSmartHomeIdentityMode(QString::fromStdString(smartHome.value("identity_mode", m_smartHomeIdentityMode.toStdString())));
+        m_smartHomeBleBeaconUuid = normalizeSmartHomeBleBeaconUuid(QString::fromStdString(smartHome.value("ble_beacon_uuid", m_smartHomeBleBeaconUuid.toStdString())));
+        m_smartHomeBleMissingTimeoutMinutes = clampSmartHomeBleMissingTimeoutMinutes(smartHome.value("ble_missing_timeout_minutes", m_smartHomeBleMissingTimeoutMinutes));
+        m_smartHomeBleScanIntervalMs = clampSmartHomeBleScanIntervalMs(smartHome.value("ble_scan_interval_ms", m_smartHomeBleScanIntervalMs));
+        m_smartHomeBleRssiThreshold = clampSmartHomeBleRssiThreshold(smartHome.value("ble_rssi_threshold", m_smartHomeBleRssiThreshold));
         m_smartHomePollIntervalMs = clampSmartHomePollIntervalMs(smartHome.value("poll_interval_ms", m_smartHomePollIntervalMs));
         m_smartHomeSensorOnlyWelcomeEnabled = smartHome.value("sensor_only_welcome_enabled", m_smartHomeSensorOnlyWelcomeEnabled);
         m_smartHomeWelcomeCooldownMinutes = clampSmartHomeWelcomeCooldownMinutes(smartHome.value("welcome_cooldown_minutes", m_smartHomeWelcomeCooldownMinutes));
@@ -399,10 +456,8 @@ bool AppSettings::load()
         if (smartHome.contains("home_assistant") && smartHome.at("home_assistant").is_object()) {
             const auto homeAssistant = smartHome.at("home_assistant");
             m_smartHomeHomeAssistantBaseUrl = QString::fromStdString(homeAssistant.value("base_url", m_smartHomeHomeAssistantBaseUrl.toStdString())).trimmed();
-            m_smartHomeHomeAssistantTokenEnvVar = QString::fromStdString(homeAssistant.value("token_env_var", m_smartHomeHomeAssistantTokenEnvVar.toStdString())).trimmed();
-            if (m_smartHomeHomeAssistantTokenEnvVar.isEmpty()) {
-                m_smartHomeHomeAssistantTokenEnvVar = QStringLiteral("VAXIL_HOME_ASSISTANT_TOKEN");
-            }
+            m_smartHomeHomeAssistantTokenEnvVar = normalizeSmartHomeTokenEnvVar(
+                QString::fromStdString(homeAssistant.value("token_env_var", m_smartHomeHomeAssistantTokenEnvVar.toStdString())));
         }
     }
     m_gestureEnabled = parsed.value("gestureEnabled", false);
@@ -577,6 +632,11 @@ bool AppSettings::save() const
             }},
             {"presence_entity_id", m_smartHomePresenceEntityId.toStdString()},
             {"light_entity_id", m_smartHomeLightEntityId.toStdString()},
+            {"identity_mode", m_smartHomeIdentityMode.toStdString()},
+            {"ble_beacon_uuid", m_smartHomeBleBeaconUuid.toStdString()},
+            {"ble_missing_timeout_minutes", m_smartHomeBleMissingTimeoutMinutes},
+            {"ble_scan_interval_ms", m_smartHomeBleScanIntervalMs},
+            {"ble_rssi_threshold", m_smartHomeBleRssiThreshold},
             {"poll_interval_ms", m_smartHomePollIntervalMs},
             {"sensor_only_welcome_enabled", m_smartHomeSensorOnlyWelcomeEnabled},
             {"welcome_cooldown_minutes", m_smartHomeWelcomeCooldownMinutes},
@@ -852,9 +912,7 @@ void AppSettings::setSmartHomeHomeAssistantBaseUrl(const QString &baseUrl)
 QString AppSettings::smartHomeHomeAssistantTokenEnvVar() const { return m_smartHomeHomeAssistantTokenEnvVar; }
 void AppSettings::setSmartHomeHomeAssistantTokenEnvVar(const QString &envVar)
 {
-    m_smartHomeHomeAssistantTokenEnvVar = envVar.trimmed().isEmpty()
-        ? QStringLiteral("VAXIL_HOME_ASSISTANT_TOKEN")
-        : envVar.trimmed();
+    m_smartHomeHomeAssistantTokenEnvVar = normalizeSmartHomeTokenEnvVar(envVar);
     emit settingsChanged();
 }
 QString AppSettings::smartHomePresenceEntityId() const { return m_smartHomePresenceEntityId; }
@@ -867,6 +925,36 @@ QString AppSettings::smartHomeLightEntityId() const { return m_smartHomeLightEnt
 void AppSettings::setSmartHomeLightEntityId(const QString &entityId)
 {
     m_smartHomeLightEntityId = entityId.trimmed();
+    emit settingsChanged();
+}
+QString AppSettings::smartHomeIdentityMode() const { return m_smartHomeIdentityMode; }
+void AppSettings::setSmartHomeIdentityMode(const QString &mode)
+{
+    m_smartHomeIdentityMode = normalizeSmartHomeIdentityMode(mode);
+    emit settingsChanged();
+}
+QString AppSettings::smartHomeBleBeaconUuid() const { return m_smartHomeBleBeaconUuid; }
+void AppSettings::setSmartHomeBleBeaconUuid(const QString &uuid)
+{
+    m_smartHomeBleBeaconUuid = normalizeSmartHomeBleBeaconUuid(uuid);
+    emit settingsChanged();
+}
+int AppSettings::smartHomeBleMissingTimeoutMinutes() const { return m_smartHomeBleMissingTimeoutMinutes; }
+void AppSettings::setSmartHomeBleMissingTimeoutMinutes(int minutes)
+{
+    m_smartHomeBleMissingTimeoutMinutes = clampSmartHomeBleMissingTimeoutMinutes(minutes);
+    emit settingsChanged();
+}
+int AppSettings::smartHomeBleScanIntervalMs() const { return m_smartHomeBleScanIntervalMs; }
+void AppSettings::setSmartHomeBleScanIntervalMs(int intervalMs)
+{
+    m_smartHomeBleScanIntervalMs = clampSmartHomeBleScanIntervalMs(intervalMs);
+    emit settingsChanged();
+}
+int AppSettings::smartHomeBleRssiThreshold() const { return m_smartHomeBleRssiThreshold; }
+void AppSettings::setSmartHomeBleRssiThreshold(int threshold)
+{
+    m_smartHomeBleRssiThreshold = clampSmartHomeBleRssiThreshold(threshold);
     emit settingsChanged();
 }
 int AppSettings::smartHomePollIntervalMs() const { return m_smartHomePollIntervalMs; }

@@ -10,6 +10,7 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QProcessEnvironment>
+#include <QRegularExpression>
 #include <QTimer>
 #include <QUrl>
 
@@ -21,6 +22,19 @@ QString trimmedBaseUrl(QString value)
         value.chop(1);
     }
     return value;
+}
+
+QString normalizedTokenEnvVar(QString value)
+{
+    value = value.trimmed();
+    if (value.isEmpty()) {
+        return QStringLiteral("VAXIL_HOME_ASSISTANT_TOKEN");
+    }
+    static const QRegularExpression envNamePattern(QStringLiteral("^[A-Za-z_][A-Za-z0-9_]*$"));
+    if (envNamePattern.match(value).hasMatch()) {
+        return value;
+    }
+    return QStringLiteral("VAXIL_HOME_ASSISTANT_TOKEN");
 }
 
 bool isUnavailableState(const QString &state)
@@ -415,9 +429,7 @@ QNetworkRequest HomeAssistantSmartHomeAdapter::buildRequest(const QUrl &url, boo
 
 QString HomeAssistantSmartHomeAdapter::bearerToken() const
 {
-    const QString envName = m_config.homeAssistantTokenEnvVar.trimmed().isEmpty()
-        ? QStringLiteral("VAXIL_HOME_ASSISTANT_TOKEN")
-        : m_config.homeAssistantTokenEnvVar.trimmed();
+    const QString envName = normalizedTokenEnvVar(m_config.homeAssistantTokenEnvVar);
     return QProcessEnvironment::systemEnvironment().value(envName).trimmed();
 }
 

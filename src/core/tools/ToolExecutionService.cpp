@@ -26,6 +26,7 @@
 #include "python/PythonRuntimeManager.h"
 #include "settings/AppSettings.h"
 #include "smart_home/HomeAssistantSmartHomeAdapter.h"
+#include "smart_home/SmartHomeRuntime.h"
 #include "skills/SkillStore.h"
 
 namespace {
@@ -583,11 +584,16 @@ SmartHomeConfig smartHomeConfigFromSettings(const AppSettings *settings)
     config.homeAssistantTokenEnvVar = settings->smartHomeHomeAssistantTokenEnvVar();
     config.presenceEntityId = settings->smartHomePresenceEntityId();
     config.lightEntityId = settings->smartHomeLightEntityId();
+    config.identityMode = settings->smartHomeIdentityMode();
+    config.bleBeaconUuid = settings->smartHomeBleBeaconUuid();
     config.pollIntervalMs = settings->smartHomePollIntervalMs();
     config.sensorOnlyWelcomeEnabled = settings->smartHomeSensorOnlyWelcomeEnabled();
     config.welcomeCooldownMinutes = settings->smartHomeWelcomeCooldownMinutes();
     config.roomAbsenceGraceMinutes = settings->smartHomeRoomAbsenceGraceMinutes();
     config.requestTimeoutMs = settings->smartHomeRequestTimeoutMs();
+    config.bleAwayTimeoutMinutes = settings->smartHomeBleMissingTimeoutMinutes();
+    config.bleScanIntervalMs = settings->smartHomeBleScanIntervalMs();
+    config.bleRssiThreshold = settings->smartHomeBleRssiThreshold();
     return config;
 }
 
@@ -606,6 +612,19 @@ QString roomStatusSummary(const SmartHomeSnapshot &snapshot)
             text += QStringLiteral(" at %1%").arg(snapshot.light.brightnessPercent);
         }
         text += QLatin1Char('.');
+    }
+    if (snapshot.identity.has_value()) {
+        text += QLatin1Char(' ');
+        if (!snapshot.identity->available || snapshot.identity->stale) {
+            text += QStringLiteral("Phone identity is unavailable.");
+        } else {
+            text += snapshot.identity->present
+                ? QStringLiteral("Your phone is detected.")
+                : QStringLiteral("Your phone is not detected.");
+        }
+    }
+    if (!snapshot.roomReasonCode.isEmpty()) {
+        text += QStringLiteral(" State: %1.").arg(smartRoomOccupancyStateName(snapshot.roomState));
     }
     return text;
 }
@@ -640,16 +659,33 @@ QJsonObject snapshotPayload(const SmartHomeSnapshot &snapshot)
         {QStringLiteral("brightness_percent"), snapshot.light.brightnessPercent},
         {QStringLiteral("color_supported"), snapshot.light.colorSupported},
         {QStringLiteral("color"), snapshot.light.colorName},
+        {QStringLiteral("identity_available"), snapshot.identity.has_value() ? snapshot.identity->available : false},
+        {QStringLiteral("identity_present"), snapshot.identity.has_value() ? snapshot.identity->present : false},
+        {QStringLiteral("identity_source"), snapshot.identity.has_value() ? snapshot.identity->source : QString{}},
+        {QStringLiteral("identity_rssi"), snapshot.identity.has_value() ? snapshot.identity->rssi : 0},
+        {QStringLiteral("room_state"), smartRoomOccupancyStateName(snapshot.roomState)},
+        {QStringLiteral("room_reason"), snapshot.roomReasonCode},
         {QStringLiteral("http_status"), snapshot.httpStatus},
         {QStringLiteral("latency_ms"), snapshot.latencyMs}
     };
+}
+
+SmartHomeSnapshot mergeRuntimeIdentitySnapshot(SmartHomeSnapshot snapshot)
+{
+    const SmartHomeSnapshot runtimeSnapshot = SmartHomeRuntime::latestSharedSnapshot();
+    snapshot.identity = runtimeSnapshot.identity;
+    if (!runtimeSnapshot.roomReasonCode.isEmpty()) {
+        snapshot.roomState = runtimeSnapshot.roomState;
+        snapshot.roomReasonCode = runtimeSnapshot.roomReasonCode;
+    }
+    return snapshot;
 }
 }
 
 ToolExecutionResult ToolExecutionService::executeSmartHomeGetRoomStatus(const ToolExecutionRequest &request)
 {
     HomeAssistantSmartHomeAdapter adapter(smartHomeConfigFromSettings(m_settings));
-    const SmartHomeSnapshot snapshot = adapter.fetchStateBlocking();
+    const SmartHomeSnapshot snapshot = mergeRuntimeIdentitySnapshot(adapter.fetchStateBlocking());
     const QString summary = roomStatusSummary(snapshot);
     if (m_loggingService) {
         m_loggingService->infoFor(QStringLiteral("tools_mcp"),

@@ -127,6 +127,21 @@ public:
     QString smartHomeLightEntityId() const;
     void setSmartHomeLightEntityId(const QString &entityId);
 
+    QString smartHomeIdentityMode() const;
+    void setSmartHomeIdentityMode(const QString &mode);
+
+    QString smartHomeBleBeaconUuid() const;
+    void setSmartHomeBleBeaconUuid(const QString &uuid);
+
+    int smartHomeBleMissingTimeoutMinutes() const;
+    void setSmartHomeBleMissingTimeoutMinutes(int minutes);
+
+    int smartHomeBleScanIntervalMs() const;
+    void setSmartHomeBleScanIntervalMs(int intervalMs);
+
+    int smartHomeBleRssiThreshold() const;
+    void setSmartHomeBleRssiThreshold(int threshold);
+
     int smartHomePollIntervalMs() const;
     void setSmartHomePollIntervalMs(int intervalMs);
 
@@ -365,6 +380,11 @@ private:
     QString m_smartHomeHomeAssistantTokenEnvVar = QStringLiteral("VAXIL_HOME_ASSISTANT_TOKEN");
     QString m_smartHomePresenceEntityId;
     QString m_smartHomeLightEntityId;
+    QString m_smartHomeIdentityMode;
+    QString m_smartHomeBleBeaconUuid;
+    int m_smartHomeBleMissingTimeoutMinutes = 10;
+    int m_smartHomeBleScanIntervalMs = 1000;
+    int m_smartHomeBleRssiThreshold = -127;
     int m_smartHomePollIntervalMs = 5000;
     bool m_smartHomeSensorOnlyWelcomeEnabled = false;
     int m_smartHomeWelcomeCooldownMinutes = 30;

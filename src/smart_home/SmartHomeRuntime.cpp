@@ -1,11 +1,38 @@
 #include "smart_home/SmartHomeRuntime.h"
 
 #include <QDateTime>
+#include <QMutex>
+#include <QRegularExpression>
 #include <QTimer>
 
 #include "logging/LoggingService.h"
 #include "settings/AppSettings.h"
+#include "smart_home/DesktopBleIdentityAdapter.h"
 #include "smart_home/HomeAssistantSmartHomeAdapter.h"
+
+namespace {
+QMutex &sharedSnapshotMutex()
+{
+    static QMutex mutex;
+    return mutex;
+}
+
+SmartHomeSnapshot &sharedSnapshot()
+{
+    static SmartHomeSnapshot snapshot;
+    return snapshot;
+}
+
+QString safeTokenEnvVarForLog(QString value)
+{
+    value = value.trimmed();
+    static const QRegularExpression envNamePattern(QStringLiteral("^[A-Za-z_][A-Za-z0-9_]*$"));
+    if (envNamePattern.match(value).hasMatch()) {
+        return value;
+    }
+    return QStringLiteral("VAXIL_HOME_ASSISTANT_TOKEN");
+}
+}
 
 SmartHomeRuntime::SmartHomeRuntime(AppSettings *settings, LoggingService *loggingService, QObject *parent)
     : QObject(parent)
@@ -27,12 +54,21 @@ void SmartHomeRuntime::start()
 void SmartHomeRuntime::stop()
 {
     m_pollTimer->stop();
+    if (m_identityAdapter) {
+        m_identityAdapter->stop();
+    }
     m_pollInFlight = false;
 }
 
 SmartHomeSnapshot SmartHomeRuntime::latestSnapshot() const
 {
     return m_latestSnapshot;
+}
+
+SmartHomeSnapshot SmartHomeRuntime::latestSharedSnapshot()
+{
+    QMutexLocker locker(&sharedSnapshotMutex());
+    return sharedSnapshot();
 }
 
 void SmartHomeRuntime::reconfigureFromSettings()
@@ -43,6 +79,7 @@ void SmartHomeRuntime::reconfigureFromSettings()
     } else {
         m_adapter->setConfig(m_config);
     }
+    reconfigureIdentityAdapter();
 
     m_pollTimer->setInterval(std::max(1000, m_config.pollIntervalMs));
     if (!m_config.enabled) {
@@ -60,7 +97,7 @@ void SmartHomeRuntime::reconfigureFromSettings()
                      m_config.presenceEntityId,
                      m_config.lightEntityId,
                      QString::number(m_config.pollIntervalMs),
-                     m_config.homeAssistantTokenEnvVar));
+                     safeTokenEnvVarForLog(m_config.homeAssistantTokenEnvVar)));
     }
 
     if (!m_pollTimer->isActive()) {
@@ -93,17 +130,22 @@ SmartHomeConfig SmartHomeRuntime::configFromSettings() const
     config.homeAssistantTokenEnvVar = m_settings->smartHomeHomeAssistantTokenEnvVar();
     config.presenceEntityId = m_settings->smartHomePresenceEntityId();
     config.lightEntityId = m_settings->smartHomeLightEntityId();
+    config.identityMode = m_settings->smartHomeIdentityMode();
+    config.bleBeaconUuid = m_settings->smartHomeBleBeaconUuid();
     config.pollIntervalMs = m_settings->smartHomePollIntervalMs();
     config.sensorOnlyWelcomeEnabled = m_settings->smartHomeSensorOnlyWelcomeEnabled();
     config.welcomeCooldownMinutes = m_settings->smartHomeWelcomeCooldownMinutes();
     config.roomAbsenceGraceMinutes = m_settings->smartHomeRoomAbsenceGraceMinutes();
     config.requestTimeoutMs = m_settings->smartHomeRequestTimeoutMs();
+    config.bleAwayTimeoutMinutes = m_settings->smartHomeBleMissingTimeoutMinutes();
+    config.bleScanIntervalMs = m_settings->smartHomeBleScanIntervalMs();
+    config.bleRssiThreshold = m_settings->smartHomeBleRssiThreshold();
     return config;
 }
 
 void SmartHomeRuntime::handleSnapshot(const SmartHomeSnapshot &snapshot)
 {
-    m_latestSnapshot = snapshot;
+    SmartHomeSnapshot enrichedSnapshot = snapshot;
     if (m_loggingService) {
         m_loggingService->infoFor(
             QStringLiteral("tools_mcp"),
@@ -118,6 +160,7 @@ void SmartHomeRuntime::handleSnapshot(const SmartHomeSnapshot &snapshot)
     }
 
     if (!snapshot.success) {
+        m_latestSnapshot = enrichedSnapshot;
         emit statusChanged(snapshot.detail.trimmed().isEmpty() ? QStringLiteral("Smart room unavailable") : snapshot.detail, false);
         return;
     }
@@ -127,18 +170,30 @@ void SmartHomeRuntime::handleSnapshot(const SmartHomeSnapshot &snapshot)
     stateConfig.sensorOnlyWelcomeEnabled = m_config.sensorOnlyWelcomeEnabled;
     stateConfig.roomAbsenceGraceMinutes = m_config.roomAbsenceGraceMinutes;
     stateConfig.bleAwayTimeoutMinutes = m_config.bleAwayTimeoutMinutes;
+    const std::optional<BleIdentitySnapshot> identity = m_identityAdapter
+        ? m_identityAdapter->latestIdentityPresence()
+        : std::nullopt;
     const SmartRoomTransition transition = m_stateMachine.evaluate({
         .presence = snapshot.presence,
-        .identity = std::nullopt,
+        .identity = identity,
         .config = stateConfig,
         .nowMs = QDateTime::currentMSecsSinceEpoch()
     });
+    enrichedSnapshot.identity = identity;
+    enrichedSnapshot.roomState = transition.currentState;
+    enrichedSnapshot.roomReasonCode = transition.reasonCode;
+    m_latestSnapshot = enrichedSnapshot;
+    {
+        QMutexLocker locker(&sharedSnapshotMutex());
+        sharedSnapshot() = enrichedSnapshot;
+    }
     logTransition(transition);
     emit roomTransitionReady(transition);
 
+    const bool identityAvailable = identity.has_value() && identity->available && !identity->stale;
     const SmartWelcomeDecision welcome = m_behaviorPolicy.evaluateWelcome({
         .transition = transition,
-        .sensorOnlyWelcomeEnabled = m_config.sensorOnlyWelcomeEnabled,
+        .sensorOnlyWelcomeEnabled = identityAvailable ? false : m_config.sensorOnlyWelcomeEnabled,
         .welcomeCooldownMinutes = m_config.welcomeCooldownMinutes,
         .lastWelcomeAtMs = m_lastWelcomeAtMs,
         .nowMs = transition.occurredAtMs
@@ -147,6 +202,34 @@ void SmartHomeRuntime::handleSnapshot(const SmartHomeSnapshot &snapshot)
     if (welcome.allowed) {
         m_lastWelcomeAtMs = welcome.nextLastWelcomeAtMs;
         emit welcomeRequested(welcome.message, welcome);
+    }
+}
+
+void SmartHomeRuntime::reconfigureIdentityAdapter()
+{
+    if (m_config.identityMode == QStringLiteral("desktop_ble_beacon")) {
+        if (m_identityAdapter == nullptr) {
+            m_identityAdapter = new DesktopBleIdentityAdapter(
+                m_config,
+                [this](const QString &message) {
+                    if (m_loggingService) {
+                        m_loggingService->infoFor(QStringLiteral("tools_mcp"), message);
+                    }
+                },
+                this);
+        } else {
+            m_identityAdapter->setConfig(m_config);
+        }
+        if (m_config.enabled) {
+            m_identityAdapter->start();
+        }
+        return;
+    }
+
+    if (m_identityAdapter) {
+        m_identityAdapter->stop();
+        m_identityAdapter->deleteLater();
+        m_identityAdapter = nullptr;
     }
 }
 

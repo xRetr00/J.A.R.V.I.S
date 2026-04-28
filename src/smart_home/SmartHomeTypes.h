@@ -22,12 +22,16 @@ struct SmartHomeConfig
     QString homeAssistantTokenEnvVar = QStringLiteral("VAXIL_HOME_ASSISTANT_TOKEN");
     QString presenceEntityId;
     QString lightEntityId;
+    QString identityMode;
+    QString bleBeaconUuid;
     int pollIntervalMs = 5000;
     bool sensorOnlyWelcomeEnabled = false;
     int welcomeCooldownMinutes = 30;
     int roomAbsenceGraceMinutes = 6;
     int requestTimeoutMs = 5000;
     int bleAwayTimeoutMinutes = 10;
+    int bleScanIntervalMs = 1000;
+    int bleRssiThreshold = -127;
 };
 
 struct SmartRoomStateMachineConfig
@@ -79,6 +83,9 @@ struct SmartHomeSnapshot
 {
     SmartPresenceSnapshot presence;
     SmartLightSnapshot light;
+    std::optional<BleIdentitySnapshot> identity;
+    SmartRoomOccupancyState roomState = SmartRoomOccupancyState::UNKNOWN;
+    QString roomReasonCode;
     bool success = false;
     QString summary;
     QString detail;

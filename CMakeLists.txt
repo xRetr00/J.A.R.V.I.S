@@ -39,6 +39,7 @@ set(JARVIS_SPEEXDSP_ROOT "${CMAKE_SOURCE_DIR}/third_party/speexdsp" CACHE PATH "
 set(JARVIS_RNNOISE_ROOT "${CMAKE_SOURCE_DIR}/third_party/rnnoise/rnnoise-main" CACHE PATH "Path to a local RNNoise source tree")
 
 find_package(Qt6 6.6 REQUIRED COMPONENTS
+    Bluetooth
     Concurrent
     Core
     Gui
@@ -368,6 +369,7 @@ set(JARVIS_SOURCES
     src/platform/PlatformRuntime.cpp
     src/python/PythonRuntimeManager.cpp
     src/settings/AppSettings.cpp
+    src/smart_home/DesktopBleIdentityAdapter.cpp
     src/smart_home/HomeAssistantSmartHomeAdapter.cpp
     src/smart_home/SmartHomeRuntime.cpp
     src/smart_home/SmartRoomBehaviorPolicy.cpp
@@ -553,6 +555,7 @@ set(JARVIS_HEADERS
     src/platform/PlatformRuntime.h
     src/python/PythonRuntimeManager.h
     src/settings/AppSettings.h
+    src/smart_home/DesktopBleIdentityAdapter.h
     src/smart_home/HomeAssistantSmartHomeAdapter.h
     src/smart_home/SmartHomePorts.h
     src/smart_home/SmartHomeRuntime.h
@@ -751,6 +754,7 @@ target_compile_definitions(jarvis_lib PUBLIC
 target_link_libraries(jarvis_lib
     PUBLIC
         Qt6::Core
+        Qt6::Bluetooth
         Qt6::Concurrent
         Qt6::Gui
         Qt6::Multimedia
@@ -1524,6 +1528,23 @@ if(JARVIS_BUILD_TESTS)
     add_test(NAME jarvis_smart_home_settings_tests COMMAND jarvis_smart_home_settings_tests)
     set_tests_properties(jarvis_smart_home_settings_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
     jarvis_copy_optional_runtime_libraries(jarvis_smart_home_settings_tests)
+
+    qt_add_executable(jarvis_desktop_ble_identity_adapter_tests
+        tests/DesktopBleIdentityAdapterTests.cpp
+        src/smart_home/DesktopBleIdentityAdapter.cpp
+    )
+
+    target_include_directories(jarvis_desktop_ble_identity_adapter_tests PRIVATE src)
+    target_link_libraries(jarvis_desktop_ble_identity_adapter_tests
+        PRIVATE
+            Qt6::Bluetooth
+            Qt6::Core
+            Qt6::Test
+    )
+
+    add_test(NAME jarvis_desktop_ble_identity_adapter_tests COMMAND jarvis_desktop_ble_identity_adapter_tests)
+    set_tests_properties(jarvis_desktop_ble_identity_adapter_tests PROPERTIES ENVIRONMENT "PATH=${QT_BIN_DIR}${JARVIS_PATH_ENV_SEPARATOR}$ENV{PATH}")
+    jarvis_copy_optional_runtime_libraries(jarvis_desktop_ble_identity_adapter_tests)
 
     qt_add_executable(jarvis_smart_room_state_machine_tests
         tests/SmartRoomStateMachineTests.cpp

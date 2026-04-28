@@ -161,7 +161,7 @@ QString toolUseGuidance(const QString &toolName)
         return QStringLiteral("the user asks to set a local timer or reminder on this computer");
     }
     if (toolName == QStringLiteral("get_room_status")) {
-        return QStringLiteral("the user asks whether the smart room is occupied or asks for smart room status");
+        return QStringLiteral("the user asks whether the smart room is occupied, whether they are home/in-room, whether their phone beacon is detected, or asks for smart room status");
     }
     if (toolName == QStringLiteral("get_light_status")) {
         return QStringLiteral("the user asks whether the configured smart light is on or asks for light status");
@@ -1096,6 +1096,8 @@ QString PromptAdapter::buildFewShotExamples(IntentType intent) const
                        "Assistant: {\"intent\":\"GENERAL_CHAT\",\"message\":\"Okay, I'm turning the light on.\",\"tool_calls\":[{\"name\":\"turn_light_on\",\"arguments_json\":\"{}\",\"priority\":90}]}\n"
                        "User: is the room occupied?\n"
                        "Assistant: {\"intent\":\"GENERAL_CHAT\",\"message\":\"I'll check the smart room status.\",\"tool_calls\":[{\"name\":\"get_room_status\",\"arguments_json\":\"{}\",\"priority\":90}]}\n"
+                       "User: is my phone detected?\n"
+                       "Assistant: {\"intent\":\"GENERAL_CHAT\",\"message\":\"I'll check the smart room identity state.\",\"tool_calls\":[{\"name\":\"get_room_status\",\"arguments_json\":\"{}\",\"priority\":90}]}\n"
                        "User: create a file on my desktop called notes.txt with hello\n"
                        "Assistant: {\"intent\":\"WRITE_FILE\",\"message\":\"All right, I'm creating that file now.\",\"tool_calls\":[{\"name\":\"computer_write_file\",\"arguments_json\":\"{\\\"path\\\":\\\"notes.txt\\\",\\\"base_dir\\\":\\\"desktop\\\",\\\"content\\\":\\\"hello\\\"}\",\"priority\":92}]}\n"
                        "User: remember that I like short answers\n"

@@ -9,6 +9,7 @@
 #include "smart_home/SmartRoomStateMachine.h"
 
 class AppSettings;
+class DesktopBleIdentityAdapter;
 class HomeAssistantSmartHomeAdapter;
 class LoggingService;
 class QTimer;
@@ -23,6 +24,7 @@ public:
     void start();
     void stop();
     SmartHomeSnapshot latestSnapshot() const;
+    static SmartHomeSnapshot latestSharedSnapshot();
 
 signals:
     void roomTransitionReady(const SmartRoomTransition &transition);
@@ -36,6 +38,7 @@ private slots:
 private:
     SmartHomeConfig configFromSettings() const;
     void handleSnapshot(const SmartHomeSnapshot &snapshot);
+    void reconfigureIdentityAdapter();
     void logTransition(const SmartRoomTransition &transition) const;
     void logWelcomeDecision(const SmartWelcomeDecision &decision, const SmartRoomTransition &transition) const;
 
@@ -43,6 +46,7 @@ private:
     LoggingService *m_loggingService = nullptr;
     QTimer *m_pollTimer = nullptr;
     HomeAssistantSmartHomeAdapter *m_adapter = nullptr;
+    DesktopBleIdentityAdapter *m_identityAdapter = nullptr;
     SmartRoomStateMachine m_stateMachine;
     SmartRoomBehaviorPolicy m_behaviorPolicy;
     SmartHomeConfig m_config;
